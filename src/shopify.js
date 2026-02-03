@@ -136,12 +136,19 @@ const assignSkuToProduct = async (productId) => {
   const newSku = (currentMax + 1).toString();
   console.log(`[SKU] Assigning new SKU ${newSku} to Product ${globalId}`);
 
-  // 2. Fetch Product Variants
+  // 2. Fetch Product Variants (including Inventory Item ID)
   const productQuery = `
       query GetProductVariants($id: ID!) {
         product(id: $id) {
           variants(first: 100) {
-            edges { node { id } }
+            edges {
+              node {
+                id
+                inventoryItem {
+                  id
+                }
+              }
+            }
           }
         }
       }
@@ -149,23 +156,35 @@ const assignSkuToProduct = async (productId) => {
   const prodData = await graphqlRequest(productQuery, { id: globalId });
   const variants = prodData.product.variants.edges;
 
-  // 3. Update All Variants
-  // Iterate and update each variant individually to avoid bulk mutation schema issues
-  console.log(`[SKU] Updating ${variants.length} variants...`);
+  // 3. Update All Variants via InventoryItem
+  console.log(`[SKU] Updating ${variants.length} variants (via InventoryItem)...`);
 
   const updatePromises = variants.map(async (v) => {
+    // We need the Inventory Item ID, not the Variant ID, to update SKU via this mutation
+    const inventoryItemId = v.node.inventoryItem?.id;
+    if (!inventoryItemId) {
+      console.error(`[SKU] Variant ${v.node.id} has no inventory item!`);
+      return null;
+    }
+
     const mutation = `
-            mutation productVariantUpdate($input: ProductVariantInput!) {
-                productVariantUpdate(input: $input) {
-                    productVariant { id sku }
-                    userErrors { field message }
+            mutation inventoryItemUpdate($id: ID!, $input: InventoryItemInput!) {
+                inventoryItemUpdate(id: $id, input: $input) {
+                    inventoryItem {
+                        id
+                        sku
+                    }
+                    userErrors {
+                        field
+                        message
+                    }
                 }
             }
         `;
 
     return graphqlRequest(mutation, {
+      id: inventoryItemId,
       input: {
-        id: v.node.id,
         sku: newSku
       }
     });
