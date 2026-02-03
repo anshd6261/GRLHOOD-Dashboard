@@ -91,7 +91,7 @@ app.post('/api/download', async (req, res) => {
         }
 
         // Save to History (Async)
-        saveBatch({
+        const batch = saveBatch({
             type: 'DOWNLOAD',
             count: rows.length,
             rows: rows
@@ -99,8 +99,26 @@ app.post('/api/download', async (req, res) => {
 
         const csvContent = generateCSV(rows, gstRate);
 
+        // Determine File Name Based on Content
+        // YYYY-MM-DD_NLG_POD_{TYPE}_BATCH-{ID}.csv
+        const today = new Date().toISOString().split('T')[0];
+        const hasPrepaid = rows.some(r => r.payment === 'Prepaid');
+        const hasCOD = rows.some(r => r.payment === 'Cash on Delivery');
+
+        let type = 'MIXED';
+        if (hasPrepaid && !hasCOD) type = 'PREPAID';
+        if (!hasPrepaid && hasCOD) type = 'COD';
+
+        // Pad batch ID to 3 digits (e.g., 004)
+        // Since 'saveBatch' returns ID like date-random, we might want a simpler ID or just use what we have.
+        // User requested BATCH-004. We'll simplify the ID logic in history.js later or just use the last 3 chars of ID for now.
+        // For strict compliance, we'd need a counter. Let's use the batch.id directly if short, or suffix.
+        const batchId = batch.id.slice(-3);
+        const filename = `${today}_NLG_POD_${type}_BATCH-${batchId}.csv`;
+
         res.setHeader('Content-Type', 'text/csv');
-        res.setHeader('Content-Disposition', 'attachment; filename="orders.csv"');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('X-Filename', filename); // Custom header for frontend to read
         res.send(csvContent);
 
     } catch (error) {

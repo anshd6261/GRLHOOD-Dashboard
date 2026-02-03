@@ -42,7 +42,17 @@ function App() {
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Orders_${type}_${Date.now()}.csv`;
+
+      // Try to get filename from header
+      const contentDisposition = res.headers['content-disposition'];
+      let filename = `Orders_${type}_${Date.now()}.csv`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (match && match[1]) filename = match[1];
+      }
+      if (res.headers['x-filename']) filename = res.headers['x-filename'];
+
+      a.download = filename;
       a.click();
     } catch (e) { alert('Download failed'); }
   };
@@ -146,23 +156,24 @@ function App() {
                   <div className="text-xs text-lime-200/40">Individual SKUs</div>
                 </div>
 
-                {/* Purple Card - Revenue */}
+                {/* Purple Card - Revenue -> COGS */}
                 <div className="card-gradient grad-purple h-40">
                   <div className="flex justify-between items-start">
                     <div>
-                      <div className="text-sm text-purple-200/80 font-medium mb-1">Revenue</div>
+                      <div className="text-sm text-purple-200/80 font-medium mb-1">Total COGS</div>
                       <div className="text-4xl font-bold text-white tracking-tight">₹{data?.stats?.subtotal?.toFixed(0) || 0}</div>
                     </div>
                     <div className="icon-btn-filled bg-purple-500/20 text-purple-400"><IndianRupee size={20} /></div>
                   </div>
-                  <div className="text-xs text-purple-200/40">Subtotal COGS</div>
+                  <div className="text-xs text-purple-200/40">Tax 18% GST INCLUDED</div>
                 </div>
 
                 {/* Action Panel */}
                 <div className="panel-dark h-40 flex flex-col justify-center gap-3">
                   {workflowStatus === 'review' ? (
                     <>
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-3 gap-3">
+                        <button onClick={() => handleDownloadDashboard('all')} className="bg-[#1A1A1A] hover:bg-[#252525] p-3 rounded-xl border border-white/5 text-xs font-bold text-white flex items-center justify-center gap-2 transition-colors">All CSV</button>
                         <button onClick={() => handleDownloadDashboard('prepaid')} className="bg-[#1A1A1A] hover:bg-[#252525] p-3 rounded-xl border border-white/5 text-xs font-bold text-green-400 flex items-center justify-center gap-2 transition-colors">Prepaid CSV</button>
                         <button onClick={() => handleDownloadDashboard('cod')} className="bg-[#1A1A1A] hover:bg-[#252525] p-3 rounded-xl border border-white/5 text-xs font-bold text-orange-400 flex items-center justify-center gap-2 transition-colors">COD CSV</button>
                       </div>
@@ -196,8 +207,8 @@ function App() {
                         <tr>
                           <th className="table-header pl-4">Order ID</th>
                           <th className="table-header">Product Info</th>
-                          <th className="table-header">Details</th>
-                          <th className="table-header text-right pr-4">Link</th>
+                          <th className="table-header">Customer</th>
+                          <th className="table-header text-right pr-4">Cost (COGS)</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -223,7 +234,7 @@ function App() {
 
                                 {/* Inputs */}
                                 <div className="flex flex-col gap-1 w-full max-w-sm">
-                                  <input className="bg-transparent outline-none text-gray-300 font-medium hover:text-white focus:text-cyan-400 transition-colors w-full" value={row.category} onChange={(e) => { const n = [...data.orders]; n[i].category = e.target.value; setData({ ...data, orders: n }) }} />
+                                  <input className="bg-transparent outline-none text-gray-300 font-medium hover:text-white focus:text-cyan-400 transition-colors w-full" value={row.category} onChange={(e) => { const n = [...data.orders]; n[i].category = e.target.value; setData({ ...data, orders: n }) }} placeholder="Category" />
                                   <input className="bg-transparent outline-none text-xs text-gray-500 hover:text-gray-300 focus:text-lime-400 transition-colors w-full" value={row.model} onChange={(e) => { const n = [...data.orders]; n[i].model = e.target.value; setData({ ...data, orders: n }) }} placeholder="Model Name" />
 
                                   {/* SKU Display / Missing Warning */}
@@ -244,9 +255,9 @@ function App() {
                               </div>
                             </td>
 
-                            {/* Customer & COGS */}
+                            {/* Customer (Editable) & COGS */}
                             <td className="py-4 align-top">
-                              <div className="font-medium text-gray-300 text-sm">{row.customerName}</div>
+                              <input className="bg-transparent outline-none font-medium text-gray-300 text-sm hover:text-white focus:text-blue-400 w-full transition-colors" value={row.customerName} onChange={(e) => { const n = [...data.orders]; n[i].customerName = e.target.value; setData({ ...data, orders: n }) }} />
                               <div className="text-xs text-gray-500 mt-1">COGS: ₹{row.cogs}</div>
                             </td>
 
@@ -302,6 +313,10 @@ function App() {
               <div className="p-6 border-b border-white/5 flex justify-between items-center bg-[#151515]">
                 <h3 className="font-bold text-lg">Editing Batch {editingBatch.id}</h3>
                 <div className="flex gap-3">
+                  <button onClick={() => {
+                    const newRow = { orderId: 'NEW', category: '', model: '', customerName: '', cogs: 0, sku: '', payment: 'Prepaid' };
+                    setEditingBatch({ ...editingBatch, rows: [newRow, ...editingBatch.rows] });
+                  }} className="px-4 py-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-lg hover:bg-blue-500/20 font-bold text-sm flex items-center gap-2"><Plus size={16} /> Add Row</button>
                   <button onClick={() => setEditingBatch(null)} className="px-4 py-2 hover:bg-white/5 rounded-lg text-gray-400">Cancel</button>
                   <button onClick={saveHistory} className="px-6 py-2 bg-white text-black font-bold rounded-lg flex items-center gap-2 hover:bg-gray-200"><Save size={16} /> Save & Download</button>
                 </div>
@@ -309,7 +324,15 @@ function App() {
               <div className="flex-1 overflow-auto p-0">
                 <table className="w-full text-left">
                   <thead className="sticky top-0 bg-[#0F0F0F] z-10 text-xs text-gray-500 uppercase font-bold">
-                    <tr><th className="p-4">Action</th><th className="p-4">ID</th><th className="p-4">Category</th><th className="p-4">Model</th><th className="p-4 text-right">COGS</th></tr>
+                    <tr>
+                      <th className="p-4">Action</th>
+                      <th className="p-4">ID</th>
+                      <th className="p-4">Category</th>
+                      <th className="p-4">Model</th>
+                      <th className="p-4">SKU</th>
+                      <th className="p-4">Customer</th>
+                      <th className="p-4 text-right">COGS</th>
+                    </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {editingBatch.rows.map((r, i) => (
@@ -318,6 +341,8 @@ function App() {
                         <td className="p-4"><input value={r.orderId} onChange={(e) => { const n = [...editingBatch.rows]; n[i].orderId = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-20 text-cyan-400 font-mono" /></td>
                         <td className="p-4"><input value={r.category} onChange={(e) => { const n = [...editingBatch.rows]; n[i].category = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-white" /></td>
                         <td className="p-4"><input value={r.model} onChange={(e) => { const n = [...editingBatch.rows]; n[i].model = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-gray-400 focus:text-lime-400" /></td>
+                        <td className="p-4"><input value={r.sku || ''} onChange={(e) => { const n = [...editingBatch.rows]; n[i].sku = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-24 text-gray-500 font-mono text-xs" placeholder="SKU" /></td>
+                        <td className="p-4"><input value={r.customerName || ''} onChange={(e) => { const n = [...editingBatch.rows]; n[i].customerName = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-gray-300" placeholder="Customer" /></td>
                         <td className="p-4 text-right"><input value={r.cogs} type="number" onChange={(e) => { const n = [...editingBatch.rows]; n[i].cogs = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-20 text-right text-gray-300" /></td>
                       </tr>
                     ))}

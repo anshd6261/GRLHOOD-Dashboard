@@ -150,10 +150,10 @@ const assignSkuToProduct = async (productId) => {
   const variants = prodData.product.variants.edges;
 
   // 3. Update All Variants
-  // GraphQL Mutation to update variants
+  // Use productUpdate (simpler, more stable)
   const mutation = `
-      mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-        productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+      mutation productUpdate($input: ProductInput!) {
+        productUpdate(input: $input) {
           product {
             id
           }
@@ -171,8 +171,10 @@ const assignSkuToProduct = async (productId) => {
   }));
 
   await graphqlRequest(mutation, {
-    productId: globalId,
-    variants: variantInputs
+    input: {
+      id: globalId,
+      variants: variantInputs
+    }
   });
 
   return newSku;
