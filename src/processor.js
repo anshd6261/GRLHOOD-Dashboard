@@ -152,6 +152,7 @@ const processOrders = (orders, gstRate = 18) => {
             const quantity = item.quantity || 1;
             for (let i = 0; i < quantity; i++) {
                 processedRows.push({
+                    id: orderAdminId, // Numeric ID for API calls
                     category,
                     model,
                     sku,

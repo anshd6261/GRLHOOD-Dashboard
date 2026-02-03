@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, Search, Mail, UploadCloud, ChevronRight, Box, BarChart2, MessageSquare, Users, History, Plus, Trash2, Save, X, Grid, ExternalLink } from 'lucide-react';
+import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, Search, Mail, UploadCloud, ChevronRight, Box, BarChart2, MessageSquare, Users, History, Plus, Trash2, Save, X, Grid, ExternalLink, Truck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const API_URL = 'http://localhost:3001/api';
@@ -15,8 +15,59 @@ function App() {
   const [editingBatch, setEditingBatch] = useState(null);
   const [lookback, setLookback] = useState(3);
   const [workflowStatus, setWorkflowStatus] = useState('idle');
+  const [walletPopup, setWalletPopup] = useState(null);
 
   useEffect(() => { if (activeTab === 'history') fetchHistory(); }, [activeTab]);
+
+  const handleGenerateLabels = async () => {
+    if (!confirm('Generate Shiprocket Labels for the LAST BATCH in History?')) return;
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_URL}/shiprocket/generate-labels`);
+
+      if (res.data.requiresMoney) {
+        setWalletPopup(res.data);
+        return;
+      }
+
+      if (res.data.success) {
+        // Open Label URL
+        if (res.data.labelUrl) {
+          window.open(res.data.labelUrl, '_blank');
+        } else {
+          alert('No labels generated (maybe all failed or high risk?)');
+        }
+
+        // Download High Risk Report
+        if (res.data.highRiskUrl) {
+          const a = document.createElement('a');
+          a.href = res.data.highRiskUrl;
+          a.download = `HIGH_RISK_REPORT_${Date.now()}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+
+        // Download Failed Report
+        if (res.data.failedUrl) {
+          const a = document.createElement('a');
+          a.href = res.data.failedUrl;
+          a.download = `FAILED_report_${Date.now()}.csv`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+
+        alert(`Processed: ${res.data.processedCount}\nHigh Risk Skipped: ${res.data.highRiskCount}\nFailed: ${res.data.failedCount}`);
+      } else {
+        alert('Failed: ' + (res.data.error || 'Unknown Error'));
+      }
+    } catch (e) {
+      alert('Error: ' + (e.response?.data?.error || e.message));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchHistory = async () => {
     try { const res = await axios.get(`${API_URL}/history`); setHistoryData(res.data); } catch (e) { }
@@ -181,6 +232,7 @@ function App() {
                         <button onClick={handleSendEmail} className="flex-1 bg-[#1A1A1A] hover:bg-[#252525] p-3 rounded-xl border border-white/5 text-xs font-bold text-blue-400 flex items-center justify-center gap-2 transition-colors"><Mail size={16} /> Email</button>
                         <button onClick={handleUploadPortal} className="flex-1 bg-white text-black p-3 rounded-xl font-bold text-xs hover:bg-gray-200 flex items-center justify-center gap-2 transition-colors"><UploadCloud size={16} /> Upload</button>
                       </div>
+                      <button onClick={handleGenerateLabels} className="w-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 p-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-colors"><Truck size={16} /> Generate Labels (Last Batch)</button>
                     </>
                   ) : (
                     <div className="text-center text-gray-500 text-sm">Sync to enable actions</div>
@@ -394,6 +446,42 @@ function App() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* WALLET POPUP */}
+      <AnimatePresence>
+        {walletPopup && (
+          <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-8">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-[#1A1A1A] w-full max-w-md rounded-3xl border border-white/10 p-8 flex flex-col items-center text-center shadow-2xl">
+              <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center text-red-500 mb-6">
+                <IndianRupee size={32} />
+              </div>
+              <h3 className="text-2xl font-bold text-white mb-2">Insufficient Funds</h3>
+              <p className="text-gray-400 text-sm mb-6">
+                Your Shiprocket wallet balance is low.
+                <br />We estimate you need <b>₹{walletPopup.estimatedCost}</b> to process these orders.
+              </p>
+
+              <div className="bg-black/40 rounded-xl p-4 w-full mb-6 border border-white/5">
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-gray-500">Current Balance</span>
+                  <span className="text-white font-mono">₹{walletPopup.currentBalance}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Required (Est.)</span>
+                  <span className="text-red-400 font-mono">₹{walletPopup.estimatedCost}</span>
+                </div>
+              </div>
+
+              <div className="flex gap-3 w-full">
+                <button onClick={() => setWalletPopup(null)} className="flex-1 bg-white text-black py-3 rounded-xl font-bold hover:bg-gray-200 transition-colors">I've Added Funds</button>
+              </div>
+              <div className="mt-4 text-xs text-gray-600">
+                Add funds in Shiprocket panel and try again.
               </div>
             </motion.div>
           </div>

@@ -3,7 +3,7 @@ const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
 
-const { getUnfulfilledOrders, assignSkuToProduct } = require('./shopify');
+const { getUnfulfilledOrders, assignSkuToProduct, getOrder } = require('./shopify');
 const { processOrders } = require('./processor');
 const { generateCSV } = require('./csv');
 const { generateExcel } = require('./excel');
@@ -214,7 +214,179 @@ app.post('/api/products/:id/assign-sku', async (req, res) => {
     }
 });
 
-// 9. Catch-All for Frontend
+// 9. Shiprocket Label Generation
+const shiprocket = require('./shiprocket');
+
+app.post('/api/shiprocket/generate-labels', async (req, res) => {
+    try {
+        // 1. Get user confirmed IP? Middleware handles access.
+
+        // 2. Get Last Batch from History
+        const history = getHistory();
+        if (history.length === 0) return res.status(400).json({ error: 'No CSV history found to process.' });
+
+        const lastBatch = history[0]; // Most recent
+        const ordersToProcess = lastBatch.rows;
+
+        console.log(`[SHIPROCKET] Processing Batch ${lastBatch.id} with ${ordersToProcess.length} orders...`);
+
+        // 3. Filter Risk - Fetch fresh details from Shopify for Risk Status
+        // NOTE: We need to re-fetch these orders or assume 'riskLevel' is in the batch data if we synced recently.
+        // But the batch history might NOT have riskLevel if it was saved before this update. 
+        // Ideally we should rely on the Order ID.
+        // Optimization: Let's assume user just synced. But to be safe, we check if 'riskLevel' exists in row. 
+        // If not, we might process anyway or warn. 
+
+        // BETTER: We just iterate. If riskLevel is HIGH, we skip.
+        // Since we just added 'riskLevel' to `shopify.js`, new synced orders have it. Old ones don't.
+        // We will default to 'LOW' if missing to avoid blocking, or 'HIGH' if paranoid. 
+        // Let's default to LOW but log.
+
+        const safeOrdersObj = [];
+        const highRiskOrders = [];
+        const failedOrders = [];
+        const successfulShipmentIds = [];
+
+        // 3. Process Orders Serially (Fetch Details -> Risk Check)
+        for (const row of ordersToProcess) {
+            let orderId = row.id;
+
+            // Fallback for old batches without 'id'
+            if (!orderId && row.orderLink) {
+                orderId = row.orderLink.split('/').pop();
+            }
+
+            if (!orderId) {
+                console.warn(`[SHIPROCKET] Skipping row ${row.orderId}, no numeric ID found.`);
+                failedOrders.push({ ...row, error: 'No ID found' });
+                continue;
+            }
+
+            try {
+                // Fetch Full Details
+                const fullOrder = await getOrder(orderId);
+
+                // Risk Check
+                if (fullOrder.riskLevel === 'HIGH') {
+                    console.warn(`[SHIPROCKET] Order ${fullOrder.name} is HIGH RISK. Skipping.`);
+                    highRiskOrders.push(row);
+                    continue;
+                }
+
+                // Add to safe list with full details for creation
+                safeOrdersObj.push(fullOrder);
+            } catch (e) {
+                console.error(`[SHIPROCKET] Failed to fetch order ${row.orderId}:`, e.message);
+                failedOrders.push({ ...row, error: 'Fetch Failed: ' + e.message });
+            }
+        }
+
+        if (safeOrdersObj.length === 0) {
+            return res.status(400).json({
+                error: 'No eligible orders found. check High Risk report.',
+                highRiskCount: highRiskOrders.length
+            });
+        }
+
+        // 4. Authenticate & Check Wallet
+        await shiprocket.authenticate();
+        const walletBalance = await shiprocket.getWalletBalance();
+        const estimatedCost = safeOrdersObj.length * 100; // ₹100 est per order
+
+        if (walletBalance < estimatedCost) {
+            return res.json({
+                success: false,
+                requiresMoney: true,
+                currentBalance: walletBalance,
+                estimatedCost: estimatedCost,
+                message: `Low Wallet Balance`
+            });
+        }
+
+        // 5. Process Safe Orders (Create -> Assign -> Pickup)
+        console.log(`[SHIPROCKET] Processing ${safeOrdersObj.length} Safe Orders...`);
+
+        for (const order of safeOrdersObj) {
+            // A. Create Order
+            const createRes = await shiprocket.createOrder(order);
+            if (!createRes.success) {
+                failedOrders.push({ orderId: order.name, error: createRes.error });
+                continue;
+            }
+
+            const shipmentId = createRes.shipment_id;
+
+            // B. Assign Courier (Auto)
+            const assignRes = await shiprocket.assignCourier(shipmentId);
+            if (!assignRes.success) {
+                // If Low Wallet here (unlikely if check passed, but possible)
+                if (assignRes.error === 'LOW_WALLET') {
+                    return res.json({
+                        success: false,
+                        requiresMoney: true,
+                        currentBalance: await shiprocket.getWalletBalance(),
+                        estimatedCost: estimatedCost, // Rough msg
+                        message: "Insufficient funds during assignment."
+                    });
+                }
+                failedOrders.push({ orderId: order.name, error: 'Assign Failed: ' + assignRes.error });
+                continue;
+            }
+
+            // C. Schedule Pickup (Next Day)
+            await shiprocket.schedulePickup(shipmentId);
+
+            successfulShipmentIds.push(shipmentId);
+        }
+
+        // 6. Generate Labels
+        let labelUrl = null;
+        if (successfulShipmentIds.length > 0) {
+            labelUrl = await shiprocket.generateLabel(successfulShipmentIds);
+        }
+
+        // 7. Generate Reports
+        // High Risk Report
+        let highRiskUrl = null;
+        if (highRiskOrders.length > 0) {
+            const gstRate = parseFloat(process.env.GST_RATE || 18);
+            const csv = generateCSV(highRiskOrders, gstRate); // Reuse logic
+            const filename = `HIGH_RISK_ORDERS_${Date.now()}.csv`;
+            // We can serve this directly or save and link?
+            // Since we return JSON, better to save to temp or return Content in JSON?
+            // Or better: Return a separate download endpoint?
+            // For simplicity, we can't return multiple files easily in one HTTP response unless ZIP.
+            // We will save to a public/temp folder and return URL?
+            // Static serve is set to frontend/dist. 
+            // Let's create a temp file and serve via a specific route or data URI?
+            // Data URI is safest.
+            highRiskUrl = `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`;
+        }
+
+        // Failed Process Report
+        let failedUrl = null;
+        if (failedOrders.length > 0) {
+            const csv = ['Order ID,Error'].concat(failedOrders.map(f => `${f.orderId},${f.error}`)).join('\n');
+            failedUrl = `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`;
+        }
+
+        res.json({
+            success: true,
+            processedCount: successfulShipmentIds.length,
+            labelUrl: labelUrl,
+            highRiskUrl: highRiskUrl,
+            highRiskCount: highRiskOrders.length,
+            failedUrl: failedUrl,
+            failedCount: failedOrders.length
+        });
+
+    } catch (error) {
+        console.error('[SHIPROCKET] API Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 10. Catch-All for Frontend
 app.get(/.*/, (req, res) => {
     res.sendFile(path.join(__dirname, '../frontend/dist', 'index.html'));
 });

@@ -216,6 +216,7 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
             id   # Need Order ID for link
             name # #1001
             createdAt
+            riskLevel # HIGH, MEDIUM, LOW
             displayFinancialStatus
             paymentGatewayNames
             shippingAddress {
@@ -294,7 +295,54 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
   return allOrders;
 };
 
+const getOrder = async (id) => {
+  // ID can be "gid://shopify/Order/123" or just "123". 
+  // If just "123", we need to guess GID format? Or use `nodes` query?
+  // Safer to assume we have GID from the processing step.
+  const globalId = id.toString().includes('gid://') ? id : `gid://shopify/Order/${id}`;
+
+  const query = `
+      query GetOrder($id: ID!) {
+        order(id: $id) {
+            id
+            name
+            email
+            phone
+            createdAt
+            riskLevel
+            displayFinancialStatus
+            shippingAddress {
+              name
+              address1
+              address2
+              city
+              zip
+              province
+              country
+            }
+            lineItems(first: 50) {
+              edges {
+                node {
+                  title
+                  sku
+                  quantity
+                  originalUnitPrice
+                  variant {
+                    sku
+                  }
+                }
+              }
+            }
+        }
+      }
+    `;
+
+  const data = await graphqlRequest(query, { id: globalId });
+  return data.order;
+};
+
 module.exports = {
   getUnfulfilledOrders,
-  assignSkuToProduct
+  assignSkuToProduct,
+  getOrder
 };
