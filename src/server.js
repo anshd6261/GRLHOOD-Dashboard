@@ -14,6 +14,9 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
+// Serve Static Frontend (Production)
+app.use(express.static(path.join(__dirname, '../frontend/dist')));
+
 // 1. Status Check
 app.get('/api/status', (req, res) => {
     res.json({
@@ -158,6 +161,11 @@ app.post('/api/upload-portal', async (req, res) => {
         console.error('[API] Upload Error:', error);
         res.status(500).json({ success: false, error: error.message });
     }
+});
+
+// 7. Catch-All for Frontend
+app.get(/.*/, (req, res) => {
+    res.sendFile(path.join(__dirname, '../frontend/dist', 'index.html'));
 });
 
 // Start Server
