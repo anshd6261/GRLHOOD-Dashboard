@@ -122,31 +122,15 @@ const processOrders = (orders, gstRate = 18) => {
             // 3. SKU
             const sku = item.sku || variant.sku || '';
 
-            // 4. Preview URL & Admin Link
+            // 4. Preview URL
             // Sometimes in properties, sometimes construct from handle
             let previewUrl = '';
             if (product.onlineStoreUrl) {
                 previewUrl = product.onlineStoreUrl;
             } else if (product.handle) {
+                // Fallback to constructing URL
                 previewUrl = `https://${process.env.SHOPIFY_STORE_DOMAIN}/products/${product.handle}`;
             }
-
-            // Admin Link (for "Link Icon")
-            // Ideally extract store name from domain or just use domain if it redirects correctly
-            // e.g. admin.shopify.com/store/xyz/orders/123
-            const storeName = process.env.SHOPIFY_STORE_DOMAIN.replace('.myshopify.com', '');
-            const adminLink = order.legacyResourceId
-                ? `https://admin.shopify.com/store/${storeName}/orders/${order.legacyResourceId}`
-                : '';
-
-            // Product Image (Thumbnail) - Try Variant Image -> Product Image -> Placeholder
-            const variantImage = variant.image?.url;
-            const productImage = product.images?.edges?.[0]?.node?.url;
-            const thumbnail = variantImage || productImage || '';
-
-            // IDs for SKU Generation
-            const productId = product.id;
-            const variantId = variant.id;
 
             // 5. COGS & PRICE
             const unitCost = variant.inventoryItem?.unitCost?.amount;
@@ -163,10 +147,6 @@ const processOrders = (orders, gstRate = 18) => {
                     customerName,
                     orderId,
                     previewUrl,
-                    adminLink,
-                    thumbnail,
-                    productId,
-                    variantId,
                     payment,
                     cogs,
                     price // Added for Revenue calculation

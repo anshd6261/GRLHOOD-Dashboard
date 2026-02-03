@@ -109,20 +109,6 @@ app.post('/api/download', async (req, res) => {
     }
 });
 
-// 3.1 Create SKU Endpoint
-app.post('/api/create-sku', async (req, res) => {
-    try {
-        const { productId } = req.body;
-        if (!productId) return res.status(400).json({ error: 'Product ID required' });
-
-        const newSku = await require('./shopify').assignSkuToProduct(productId);
-        res.json({ success: true, sku: newSku });
-    } catch (error) {
-        console.error('[API] SKU Creation Error:', error.message);
-        res.status(500).json({ success: false, error: error.message });
-    }
-});
-
 // --- V2 workflow endpoints ---
 
 const { sendApprovalEmail } = require('./email');

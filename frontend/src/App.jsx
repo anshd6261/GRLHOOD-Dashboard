@@ -109,29 +109,29 @@ function App() {
       <main className="flex-1 ml-[80px] p-8 max-w-[1920px]">
 
         {/* CENTERED LOGO */}
-        <div className="flex justify-center py-8 mb-4">
-          <img src="/logo.png" className="h-40 object-contain drop-shadow-2xl" alt="Girlhood Logo" />
+        <div className="flex justify-center py-10 mb-6">
+          <img src="/logo.png" className="h-28 object-contain drop-shadow-2xl" alt="Girlhood Logo" />
         </div>
 
         {/* TOP BAR */}
-        <div className="flex justify-between items-center mb-6">
-          <div className="flex items-center gap-4 bg-[#111111] px-4 py-3 rounded-lg w-[400px] border border-white/5 focus-within:border-white/10 transition-colors">
-            <Search size={18} className="text-gray-600" />
+        <div className="flex justify-between items-center mb-10">
+          <div className="flex items-center gap-4 bg-[#1A1A1A] px-4 py-3 rounded-2xl w-[400px] border border-white/5 focus-within:border-white/10 transition-colors">
+            <Search size={18} className="text-gray-500" />
             <input
               type="text"
               placeholder="Search orders, customers..."
-              className="bg-transparent outline-none text-sm w-full placeholder-gray-700 text-gray-300"
+              className="bg-transparent outline-none text-sm w-full placeholder-gray-600"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 bg-[#1A1A1A] px-4 py-2.5 rounded-lg border border-white/5">
-              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Sync Days</span>
-              <input type="number" value={lookback} onChange={e => setLookback(e.target.value)} className="w-6 bg-transparent text-center font-bold text-white outline-none text-sm" />
+            <div className="flex items-center gap-2 bg-[#1A1A1A] px-4 py-2 rounded-xl border border-white/5">
+              <span className="text-xs text-gray-500 font-bold uppercase">Sync Days</span>
+              <input type="number" value={lookback} onChange={e => setLookback(e.target.value)} className="w-8 bg-transparent text-center font-bold text-white outline-none" />
             </div>
-            <button onClick={handleSync} disabled={loading} className="bg-white text-black px-6 py-2.5 rounded-lg font-bold text-sm hover:bg-gray-200 transition-colors flex items-center gap-2">
+            <button onClick={handleSync} disabled={loading} className="bg-white text-black px-6 py-3 rounded-xl font-bold text-sm hover:bg-gray-200 transition-colors flex items-center gap-2">
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> {loading ? 'Syncing...' : 'Sync Data'}
             </button>
           </div>
@@ -221,10 +221,9 @@ function App() {
                       <thead>
                         <tr>
                           <th className="table-header pl-4 w-12"></th>
-                          <th className="table-header pl-4 w-20">Order</th>
-                          <th className="table-header">Product</th>
+                          <th className="table-header pl-4">Order ID</th>
                           <th className="table-header">SKU / Model</th>
-                          <th className="table-header w-48">Attributes</th>
+                          <th className="table-header">Category</th>
                           <th className="table-header">Customer</th>
                           <th className="table-header text-right pr-4">COGS</th>
                         </tr>
@@ -235,67 +234,25 @@ function App() {
                             <td className="py-4 pl-4 text-center">
                               <button onClick={() => deleteDashboardOrder(i)} className="text-red-900 group-hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
                             </td>
-                            <td className="py-4 pl-4 align-top">
-                              <div className="flex flex-col gap-1">
-                                <div className="font-mono text-sm text-cyan-200 font-bold">
-                                  <input className="bg-transparent outline-none w-16" value={row.orderId} onChange={(e) => { const n = [...data.orders]; n[i].orderId = e.target.value; setData({ ...data, orders: n }) }} />
-                                </div>
-                                <div className={`text-[10px] font-bold px-2 py-0.5 rounded w-fit ${row.payment === 'Prepaid' ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'}`}>{row.payment}</div>
-                                {row.adminLink && (
-                                  <a href={row.adminLink} target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-white transition-colors mt-1" title="Open in Shopify Admin">
-                                    <div className="flex items-center gap-1 text-[10px] uppercase font-bold"><Settings size={10} /> Admin</div>
-                                  </a>
-                                )}
+                            <td className="py-4 pl-4">
+                              <div className="font-mono text-sm text-cyan-200 font-bold mb-1">
+                                <input className="bg-transparent outline-none w-20" value={row.orderId} onChange={(e) => { const n = [...data.orders]; n[i].orderId = e.target.value; setData({ ...data, orders: n }) }} />
+                              </div>
+                              <div className={`text-[10px] font-bold px-2 py-0.5 rounded w-fit ${row.payment === 'Prepaid' ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'}`}>{row.payment}</div>
+                            </td>
+                            <td className="py-4">
+                              <div className="flex flex-col gap-1 w-full max-w-md">
+                                <input className="bg-transparent outline-none text-white font-medium hover:text-cyan-200 transition-colors placeholder-gray-700" placeholder="SKU" value={row.sku || ''} onChange={(e) => { const n = [...data.orders]; n[i].sku = e.target.value; setData({ ...data, orders: n }) }} />
+                                <input className="bg-transparent outline-none text-xs text-gray-500 hover:text-gray-300 transition-colors placeholder-gray-800" placeholder="Model" value={row.model} onChange={(e) => { const n = [...data.orders]; n[i].model = e.target.value; setData({ ...data, orders: n }) }} />
                               </div>
                             </td>
-                            <td className="py-4 align-top">
-                              <div className="flex gap-4">
-                                {row.thumbnail ? (
-                                  <img src={row.thumbnail} className="w-12 h-12 rounded-lg border border-white/10 object-cover" alt="Product" />
-                                ) : (
-                                  <div className="w-12 h-12 rounded-lg border border-white/10 bg-white/5 flex items-center justify-center text-gray-600"><Box size={20} /></div>
-                                )}
-                                <div className="flex flex-col justify-center">
-                                  <input className="bg-transparent outline-none text-white font-medium hover:text-cyan-200 transition-colors placeholder-gray-700 w-full" value={row.category} onChange={(e) => { const n = [...data.orders]; n[i].category = e.target.value; setData({ ...data, orders: n }) }} />
-                                </div>
-                              </div>
+                            <td className="py-4">
+                              <input className="bg-transparent outline-none text-gray-400 text-sm hover:text-white transition-colors" value={row.category} onChange={(e) => { const n = [...data.orders]; n[i].category = e.target.value; setData({ ...data, orders: n }) }} />
                             </td>
-                            <td className="py-4 align-top">
-                              <div className="flex flex-col gap-2 w-full max-w-md">
-                                <div className="flex items-center gap-2">
-                                  {row.sku ? (
-                                    <input className="bg-transparent outline-none text-white font-mono text-sm hover:text-cyan-200 transition-colors placeholder-gray-700" placeholder="SKU" value={row.sku} onChange={(e) => { const n = [...data.orders]; n[i].sku = e.target.value; setData({ ...data, orders: n }) }} />
-                                  ) : (
-                                    row.productId ? (
-                                      <button onClick={async () => {
-                                        if (confirm('Generate new SKU for this product? This will update all variants.')) {
-                                          try {
-                                            const r = await axios.post(`${API_URL}/create-sku`, { productId: row.productId });
-                                            if (r.data.success) {
-                                              alert(`Generated SKU: ${r.data.sku}`);
-                                              handleSync(); // Refresh to get updates
-                                            }
-                                          } catch (err) { alert(err.response?.data?.error || err.message); }
-                                        }
-                                      }} className="bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-500 text-[10px] px-2 py-1 rounded border border-yellow-500/30 font-bold flex items-center gap-1 transition-colors">
-                                        <RefreshCw size={10} /> Create SKU
-                                      </button>
-                                    ) : <span className="text-gray-600 text-xs italic">No ID</span>
-                                  )}
-                                </div>
-                                <input className="bg-transparent outline-none text-xs text-lime-400 hover:text-lime-300 transition-colors placeholder-gray-800" placeholder="Model" value={row.model} onChange={(e) => { const n = [...data.orders]; n[i].model = e.target.value; setData({ ...data, orders: n }) }} />
-                              </div>
-                            </td>
-                            <td className="py-4 align-top">
-                              {/* Attributes Column placeholder if needed or additional inputs */}
-                              <div className="text-xs text-gray-500">
-                                {row.variantId && <div title="Variant ID">{row.variantId.split('/').pop()}</div>}
-                              </div>
-                            </td>
-                            <td className="py-4 font-medium text-gray-400 align-top">
+                            <td className="py-4 font-medium text-gray-400">
                               <input className="bg-transparent outline-none w-full" value={row.customerName} onChange={(e) => { const n = [...data.orders]; n[i].customerName = e.target.value; setData({ ...data, orders: n }) }} />
                             </td>
-                            <td className="py-4 pr-4 text-right font-mono text-white align-top">
+                            <td className="py-4 pr-4 text-right font-mono text-white">
                               <input type="number" className="bg-transparent outline-none w-20 text-right" value={row.cogs} onChange={(e) => { const n = [...data.orders]; n[i].cogs = e.target.value; setData({ ...data, orders: n }) }} />
                             </td>
                           </tr>

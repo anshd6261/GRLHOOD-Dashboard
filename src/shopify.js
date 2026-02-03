@@ -85,15 +85,19 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
   const query = `
     query GetUnfulfilledOrders($cursor: String, $query: String!) {
       orders(first: 50, after: $cursor, query: $query, sortKey: CREATED_AT, reverse: true) {
-        pageInfo { hasNextPage endCursor }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
         edges {
           node {
             name
-            legacyResourceId
             createdAt
             displayFinancialStatus
             paymentGatewayNames
-            shippingAddress { name }
+            shippingAddress {
+              name
+            }
             lineItems(first: 100) {
               edges {
                 node {
@@ -102,30 +106,35 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
                   sku
                   quantity
                   originalUnitPrice
-                  customAttributes { key value }
+                  customAttributes {
+                    key
+                    value
+                  }
                   variant {
-                    id
                     title
                     sku
-                    image { url }
-                    product {
-                        id
-                        legacyResourceId
-                    }
                     # Fetch "Custom Coded Handle" if it exists as a metafield
-                    handle_metafield: metafield(namespace: "custom", key: "handle") { value }
+                    handle_metafield: metafield(namespace: "custom", key: "handle") {
+                      value
+                    }
                     # Fallback: maybe they meant a color handle?
-                    color_handle: metafield(namespace: "custom", key: "color_handle") { value }
-                    selectedOptions { name value }
-                    inventoryItem { unitCost { amount } }
+                    color_handle: metafield(namespace: "custom", key: "color_handle") {
+                       value
+                    }
+                    selectedOptions {
+                      name
+                      value
+                    }
+                    inventoryItem {
+                      unitCost {
+                        amount
+                      }
+                    }
                   }
                   product {
-                    id
                     onlineStoreUrl
                     handle
                     productType
-                    legacyResourceId
-                    images(first: 1) { edges { node { url } } }
                   }
                 }
               }
@@ -144,9 +153,14 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
   let cursor = null;
 
   while (hasNextPage) {
-    const data = await graphqlRequest(query, { cursor, query: queryFilter });
+    const data = await graphqlRequest(query, {
+      cursor,
+      query: queryFilter
+    });
+
     const ordersData = data.orders;
     allOrders.push(...ordersData.edges.map(e => e.node));
+
     hasNextPage = ordersData.pageInfo.hasNextPage;
     cursor = ordersData.pageInfo.endCursor;
   }
@@ -155,102 +169,6 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
   return allOrders;
 };
 
-// --- SKU GENERATION LOGIC ---
-
-const getNextSku = async () => {
-  // Strategy: Fetch recent 250 products, extract numeric SKUs, find Max.
-  // This assumes the "highest" SKU is likely on a reasonably recent product.
-  const query = `
-        query {
-            products(first: 250, sortKey: CREATED_AT, reverse: true) {
-                edges {
-                    node {
-                        variants(first: 10) {
-                            edges { node { sku } }
-                        }
-                    }
-                }
-            }
-        }
-    `;
-  const data = await graphqlRequest(query);
-  let max = 0;
-
-  data.products.edges.forEach(p => {
-    p.node.variants.edges.forEach(v => {
-      const sku = v.node.sku;
-      if (sku && /^\d+$/.test(sku)) { // Check if SKU is purely numeric
-        const num = parseInt(sku, 10);
-        if (num > max) max = num;
-      }
-    });
-  });
-
-  // Default to 100 if no numeric SKUs found
-  return max === 0 ? 100 : max + 1;
-};
-
-const assignSkuToProduct = async (productId) => {
-  console.log(`[SKU] Assigning new SKU to Product ID: ${productId}`);
-
-  // 1. Get Next SKU
-  const nextSku = await getNextSku();
-  const nextSkuStr = nextSku.toString();
-  console.log(`[SKU] Generated SKU: ${nextSkuStr}`);
-
-  // 2. Update all variants of this product
-  // First, we need the ProductVariant IDs. GraphQL mutation requires them.
-  // We can fetch them or just assume the productId passed is the GID.
-
-  // Fetch variants of the target product
-  const productQuery = `
-        query($id: ID!) {
-            product(id: $id) {
-                variants(first: 100) {
-                   edges { node { id } }
-                }
-            }
-        }
-    `;
-  const prodData = await graphqlRequest(productQuery, { id: productId });
-  const variants = prodData.product.variants.edges.map(e => e.node.id);
-
-  if (variants.length === 0) throw new Error('Product has no variants');
-
-  // 3. Bulk Update Mutation
-  const mutation = `
-        mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-            productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-                product {
-                    id
-                }
-                userErrors {
-                    field
-                    message
-                }
-            }
-        }
-    `;
-
-  const variantInputs = variants.map(id => ({
-    id: id,
-    sku: nextSkuStr
-  }));
-
-  const result = await graphqlRequest(mutation, {
-    productId: productId,
-    variants: variantInputs
-  });
-
-  if (result.productVariantsBulkUpdate.userErrors.length > 0) {
-    throw new Error(JSON.stringify(result.productVariantsBulkUpdate.userErrors));
-  }
-
-  console.log(`[SKU] Successfully updated ${variants.length} variants to SKU ${nextSkuStr}`);
-  return nextSkuStr;
-};
-
 module.exports = {
-  getUnfulfilledOrders,
-  assignSkuToProduct
+  getUnfulfilledOrders
 };
