@@ -184,7 +184,27 @@ app.put('/api/history/:id', (req, res) => {
     }
 });
 
-// 7. Catch-All for Frontend
+// 8. Generate SKU Endpoint (User Request)
+const { calculateNextSku, updateProductSku } = require('./shopify');
+
+app.post('/api/generate-sku', async (req, res) => {
+    const { productId } = req.body;
+    if (!productId) return res.status(400).json({ error: 'Product ID required' });
+
+    try {
+        const nextSku = await calculateNextSku();
+        console.log(`[SKU] Generated Next SKU: ${nextSku}`);
+
+        await updateProductSku(productId, nextSku);
+
+        res.json({ success: true, newSku: nextSku });
+    } catch (error) {
+        console.error('[SKU] Generation Error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 9. Catch-All for Frontend
 app.get(/.*/, (req, res) => {
     res.sendFile(path.join(__dirname, '../frontend/dist', 'index.html'));
 });

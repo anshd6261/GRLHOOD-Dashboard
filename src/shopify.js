@@ -91,6 +91,8 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
         }
         edges {
           node {
+            id
+            legacyResourceId
             name
             createdAt
             displayFinancialStatus
@@ -111,8 +113,12 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
                     value
                   }
                   variant {
+                    id
                     title
                     sku
+                    image {
+                        url
+                    }
                     # Fetch "Custom Coded Handle" if it exists as a metafield
                     handle_metafield: metafield(namespace: "custom", key: "handle") {
                       value
@@ -132,6 +138,10 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
                     }
                   }
                   product {
+                    id
+                    featuredImage {
+                        url
+                    }
                     onlineStoreUrl
                     handle
                     productType
@@ -169,6 +179,114 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
   return allOrders;
 };
 
+// --- SKU GENERATION LOGIC ---
+
+const calculateNextSku = async () => {
+  // 1. Fetch recent products (last 250) to find the current highest numeric SKU
+  // Assumption: SKUs are essentially numeric like "100", "101". 
+  // We ignore non-numeric SKUs.
+  const query = `
+      query GetRecentProducts {
+        products(first: 250, sortKey: CREATED_AT, reverse: true) {
+          edges {
+            node {
+              variants(first: 20) {
+                edges {
+                  node {
+                    sku
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+  try {
+    const data = await graphqlRequest(query);
+    let maxSku = 0;
+
+    data.products.edges.forEach(p => {
+      p.node.variants.edges.forEach(v => {
+        const sku = v.node.sku;
+        if (sku && /^\d+$/.test(sku)) {
+          const val = parseInt(sku, 10);
+          if (val > maxSku) maxSku = val;
+        }
+      });
+    });
+
+    // If no numeric SKUs found, maybe start at 100?
+    if (maxSku === 0) return 100;
+
+    return maxSku + 1;
+  } catch (error) {
+    console.error('Error finding max SKU:', error);
+    throw error;
+  }
+};
+
+const updateProductSku = async (productId, newSku) => {
+  // 1. Get all variants of the product
+  console.log(`[SKU] Updating product ${productId} to SKU ${newSku}...`);
+
+  // We need to fetch variants first to get their IDs
+  const fetchVariantsQuery = `
+      query GetProductVariants($id: ID!) {
+        product(id: $id) {
+          variants(first: 100) {
+            edges {
+              node {
+                id
+              }
+            }
+          }
+        }
+      }
+    `;
+
+  const productData = await graphqlRequest(fetchVariantsQuery, { id: productId });
+  const variants = productData.product.variants.edges.map(e => e.node.id);
+
+  if (variants.length === 0) throw new Error('No variants found for product');
+
+  // 2. Update each variant
+  // We can use bulk mutation or just loop. Loop is safer for small count.
+
+  const mutation = `
+        mutation productVariantUpdate($input: ProductVariantInput!) {
+            productVariantUpdate(input: $input) {
+                userErrors {
+                    field
+                    message
+                }
+                productVariant {
+                    id
+                    sku
+                }
+            }
+        }
+    `;
+
+  for (const variantId of variants) {
+    const variables = {
+      input: {
+        id: variantId,
+        sku: newSku.toString()
+      }
+    };
+    const res = await graphqlRequest(mutation, variables);
+    if (res.productVariantUpdate.userErrors.length > 0) {
+      console.error('Error updating variant:', res.productVariantUpdate.userErrors);
+    }
+  }
+
+  return true;
+};
+
 module.exports = {
-  getUnfulfilledOrders
+  getUnfulfilledOrders,
+  calculateNextSku,
+  updateProductSku
 };

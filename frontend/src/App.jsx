@@ -89,6 +89,31 @@ function App() {
     return { totalOrders, totalItems, subtotal, total };
   };
 
+  // --- SKU & IMAGE LOGIC ---
+  const handleCreateSku = async (index, productId) => {
+    if (!productId) return alert("Product ID missing");
+    if (!confirm("Generate and assign next sequential SKU to all variants?")) return;
+
+    const newOrders = [...data.orders];
+    // Optimistic Update (shows loading state practically)
+    // Actually let's just wait for API
+
+    try {
+      const res = await axios.post(`${API_URL}/generate-sku`, { productId });
+      if (res.data.success) {
+        alert(`Generated SKU: ${res.data.newSku}`);
+        // Manually update all rows with this productId
+        const skuStr = res.data.newSku.toString();
+        newOrders.forEach(row => {
+          if (row.productId === productId) row.sku = skuStr;
+        });
+        setData({ ...data, orders: newOrders });
+      }
+    } catch (e) {
+      alert('Error generating SKU: ' + (e.response?.data?.error || e.message));
+    }
+  };
+
   const currentStats = getStats();
   const filteredOrders = data?.orders?.filter(r => !searchTerm || r.orderId.toString().includes(searchTerm) || r.customerName.toLowerCase().includes(searchTerm.toLowerCase())) || [];
 
@@ -102,7 +127,7 @@ function App() {
         <NavItem icon={<History size={22} />} active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
         <div className="flex-1"></div>
         <NavItem icon={<Settings size={22} />} />
-        <div className="mb-4 text-xs text-gray-600">v4.1</div>
+        <div className="mb-4 text-xs text-gray-600">v4.2</div>
       </nav>
 
       {/* MAIN CONTENT Area */}
@@ -221,7 +246,7 @@ function App() {
                       <thead>
                         <tr>
                           <th className="table-header pl-4 w-12"></th>
-                          <th className="table-header pl-4">Order ID</th>
+                          <th className="table-header pl-4">Order / Product</th>
                           <th className="table-header">SKU / Model</th>
                           <th className="table-header">Category</th>
                           <th className="table-header">Customer</th>
@@ -235,14 +260,41 @@ function App() {
                               <button onClick={() => deleteDashboardOrder(i)} className="text-red-900 group-hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
                             </td>
                             <td className="py-4 pl-4">
-                              <div className="font-mono text-sm text-cyan-200 font-bold mb-1">
-                                <input className="bg-transparent outline-none w-20" value={row.orderId} onChange={(e) => { const n = [...data.orders]; n[i].orderId = e.target.value; setData({ ...data, orders: n }) }} />
+                              <div className="flex items-center gap-3">
+                                {/* PRODUCT THUMBNAIL */}
+                                <div className="w-10 h-10 rounded-lg bg-white/5 overflow-hidden border border-white/10 flex-shrink-0">
+                                  {row.imageUrl ? (
+                                    <img src={row.imageUrl} className="w-full h-full object-cover" />
+                                  ) : (<div className="w-full h-full flex items-center justify-center text-gray-600"><Box size={14} /></div>)}
+                                </div>
+
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <div className="font-mono text-sm text-cyan-200 font-bold">
+                                      #{row.orderId}
+                                    </div>
+                                    {/* LINK TO SHOPIFY ADMIN */}
+                                    {row.adminOrderLink && (
+                                      <a href={row.adminOrderLink} target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-white transition-colors">
+                                        <LayoutGrid size={14} />
+                                      </a>
+                                    )}
+                                  </div>
+                                  <div className={`text-[10px] font-bold px-2 py-0.5 rounded w-fit mt-1 ${row.payment === 'Prepaid' ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'}`}>{row.payment}</div>
+                                </div>
                               </div>
-                              <div className={`text-[10px] font-bold px-2 py-0.5 rounded w-fit ${row.payment === 'Prepaid' ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'}`}>{row.payment}</div>
                             </td>
                             <td className="py-4">
                               <div className="flex flex-col gap-1 w-full max-w-md">
-                                <input className="bg-transparent outline-none text-white font-medium hover:text-cyan-200 transition-colors placeholder-gray-700" placeholder="SKU" value={row.sku || ''} onChange={(e) => { const n = [...data.orders]; n[i].sku = e.target.value; setData({ ...data, orders: n }) }} />
+                                <div className="flex items-center gap-2">
+                                  <input className="bg-transparent outline-none text-white font-medium hover:text-cyan-200 transition-colors placeholder-gray-700" placeholder="SKU" value={row.sku || ''} onChange={(e) => { const n = [...data.orders]; n[i].sku = e.target.value; setData({ ...data, orders: n }) }} />
+                                  {/* GENERATE SKU BUTTON */}
+                                  {(!row.sku && row.productId) && (
+                                    <button onClick={() => handleCreateSku(i, row.productId)} className="text-[10px] bg-accent-purple/20 text-accent-purple px-2 py-0.5 rounded-full hover:bg-accent-purple/40 transition-colors font-bold whitespace-nowrap">
+                                      + SKU
+                                    </button>
+                                  )}
+                                </div>
                                 <input className="bg-transparent outline-none text-xs text-gray-500 hover:text-gray-300 transition-colors placeholder-gray-800" placeholder="Model" value={row.model} onChange={(e) => { const n = [...data.orders]; n[i].model = e.target.value; setData({ ...data, orders: n }) }} />
                               </div>
                             </td>
