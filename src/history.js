@@ -26,8 +26,24 @@ const getHistory = () => {
 
 const saveBatch = (batchData) => {
     const history = getHistory();
+
+    // Calculate Next ID (001, 002...)
+    let nextId = 1;
+    if (history.length > 0) {
+        // Try to parse the sequential ID from the string (assuming mixed types initially)
+        const numericIds = history
+            .map(h => parseInt(h.id, 10))
+            .filter(n => !isNaN(n)); // Filter valid numbers
+
+        if (numericIds.length > 0) {
+            nextId = Math.max(...numericIds) + 1;
+        }
+    }
+
+    const paddedId = nextId.toString().padStart(3, '0');
+
     const newBatch = {
-        id: Date.now().toString(), // Simple ID
+        id: paddedId,
         timestamp: new Date().toISOString(),
         ...batchData
     };
