@@ -97,11 +97,11 @@ function App() {
 
     try {
       const res = await axios.post(`${API_URL}/download`, { rows: rowsToDownload }, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
 
       const date = new Date().toISOString().split('T')[0];
       const batchId = Math.floor(100 + Math.random() * 900);
-      const filename = `${date}_NLG_POD_${orderType}_BATCH-${batchId}.csv`;
+      const filename = `${date}_NLG_POD_${orderType}_BATCH-${batchId}.xlsx`;
 
       const link = document.createElement('a');
       link.href = url;

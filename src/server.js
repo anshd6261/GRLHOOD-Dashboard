@@ -6,6 +6,7 @@ require('dotenv').config();
 const { getUnfulfilledOrders } = require('./shopify');
 const { processOrders } = require('./processor');
 const { generateCSV } = require('./csv');
+const { generateExcel } = require('./excel');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -79,7 +80,7 @@ app.get('/api/orders', async (req, res) => {
 });
 
 // 3. Download CSV
-app.post('/api/download', (req, res) => {
+app.post('/api/download', async (req, res) => {
     try {
         const { rows } = req.body;
         const gstRate = parseFloat(process.env.GST_RATE || 18);
@@ -88,17 +89,14 @@ app.post('/api/download', (req, res) => {
             return res.status(400).json({ error: 'Invalid data provided' });
         }
 
-        const csvContent = generateCSV(rows, gstRate);
+        const buffer = await generateExcel(rows, gstRate);
 
-        const date = new Date();
-        const filename = `FULFILLMENT-${date.getMonth() + 1}-${date.getDate()}.csv`;
-
-        res.header('Content-Type', 'text/csv');
-        res.attachment(filename);
-        res.send(csvContent);
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', 'attachment; filename="orders.xlsx"');
+        res.send(buffer);
 
     } catch (error) {
-        console.error('[API] Error generating CSV:', error.message);
+        console.error('[API] Error generating Excel:', error.message);
         res.status(500).json({ error: error.message });
     }
 });
