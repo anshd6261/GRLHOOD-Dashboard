@@ -11,7 +11,6 @@ function App() {
   const [error, setError] = useState(null);
   const [status, setStatus] = useState({ connected: false });
   const [showSettings, setShowSettings] = useState(false);
-  const [showDownloadMenu, setShowDownloadMenu] = useState(false);
   const [workflowStatus, setWorkflowStatus] = useState('idle'); // idle, processing, review, approved
 
   // Filters
@@ -79,7 +78,7 @@ function App() {
 
   const handleDownload = async (type = 'all') => {
     if (!data?.orders) return;
-    
+
     let rowsToDownload = data.orders;
     let filenameParams = 'Full';
 
@@ -104,7 +103,8 @@ function App() {
       link.setAttribute('download', `ORDERS-${filenameParams}-${new Date().toLocaleDateString()}.csv`);
       document.body.appendChild(link);
       link.click();
-      setShowDownloadMenu(false);
+      document.body.appendChild(link);
+      link.click();
     } catch (err) {
       setError('Download unable to start');
     }
@@ -222,28 +222,33 @@ function App() {
 
             <div className="w-[1px] h-12 bg-white/10 mx-2"></div>
 
-            <div className="relative">
-              <button 
-                onClick={() => setShowDownloadMenu(!showDownloadMenu)} 
-                className="p-4 bg-dark-800 rounded-full text-gray-400 hover:text-white hover:bg-dark-700 transition-all flex items-center gap-2"
+            {/* DOWNLOAD BUTTONS */}
+            <div className="flex gap-2">
+              <button
+                onClick={() => handleDownload('prepaid')}
+                className="px-4 py-4 bg-accent-green/10 text-accent-green border border-accent-green/20 rounded-full font-bold hover:bg-accent-green/20 transition-all flex items-center gap-2"
+                title="Download Prepaid Orders CSV"
               >
-                <Download size={20} />
-                <ChevronDown size={14} />
+                <Download size={18} />
+                <span className="hidden xl:inline">Prepaid</span>
               </button>
 
-              {showDownloadMenu && (
-                <div className="absolute right-0 top-full mt-2 w-48 bg-[#1E1E1E] border border-white/10 rounded-xl shadow-xl overflow-hidden z-20 flex flex-col">
-                  <button onClick={() => handleDownload('all')} className="px-4 py-3 text-left text-sm text-gray-300 hover:bg-white/5 hover:text-white transition-colors border-b border-white/5">
-                    Download All
-                  </button>
-                  <button onClick={() => handleDownload('prepaid')} className="px-4 py-3 text-left text-sm text-accent-green hover:bg-white/5 hover:text-white transition-colors border-b border-white/5">
-                    Download Prepaid
-                  </button>
-                  <button onClick={() => handleDownload('cod')} className="px-4 py-3 text-left text-sm text-accent-peach hover:bg-white/5 hover:text-white transition-colors">
-                    Download COD
-                  </button>
-                </div>
-              )}
+              <button
+                onClick={() => handleDownload('cod')}
+                className="px-4 py-4 bg-accent-peach/10 text-accent-peach border border-accent-peach/20 rounded-full font-bold hover:bg-accent-peach/20 transition-all flex items-center gap-2"
+                title="Download COD Orders CSV"
+              >
+                <Download size={18} />
+                <span className="hidden xl:inline">COD</span>
+              </button>
+
+              <button
+                onClick={() => handleDownload('all')}
+                className="p-4 bg-dark-800 rounded-full text-gray-400 hover:text-white hover:bg-dark-700 transition-all"
+                title="Download All Orders"
+              >
+                <Download size={20} />
+              </button>
             </div>
 
             <button onClick={() => setShowSettings(!showSettings)} className="p-4 bg-dark-800 rounded-full text-gray-400 hover:text-white hover:bg-dark-700 transition-all">
