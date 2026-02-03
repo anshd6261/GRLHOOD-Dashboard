@@ -37,7 +37,6 @@ const getAccessToken = async () => {
     });
 
     accessToken = response.data.access_token;
-    // Set expiry to 23 hours to be safe (tokens usually last 24h)
     tokenExpiry = new Date(Date.now() + 23 * 60 * 60 * 1000);
 
     console.log('[AUTH] Token obtained successfully');
@@ -54,10 +53,7 @@ const graphqlRequest = async (query, variables = {}) => {
   const url = `https://${domain}/admin/api/2026-01/graphql.json`;
 
   try {
-    const response = await axios.post(url, {
-      query,
-      variables
-    }, {
+    const response = await axios.post(url, { query, variables }, {
       headers: {
         'Content-Type': 'application/json',
         'X-Shopify-Access-Token': token
@@ -67,6 +63,9 @@ const graphqlRequest = async (query, variables = {}) => {
     if (response.data.errors) {
       throw new Error(JSON.stringify(response.data.errors));
     }
+    if (response.data.data && response.data.data.userErrors && response.data.data.userErrors.length > 0) {
+      throw new Error(JSON.stringify(response.data.data.userErrors));
+    }
 
     return response.data.data;
   } catch (error) {
@@ -74,6 +73,107 @@ const graphqlRequest = async (query, variables = {}) => {
     throw error;
   }
 };
+
+// --- NEW SKU LOGIC ---
+
+const findMaxSku = async () => {
+  // Queries all products to find the highest numeric SKU.
+  // Optimized: Fetches only title/variants to scan SKUs.
+  console.log('[SKU] Scanning for highest SKU...');
+  const query = `
+      query ScanProducts($cursor: String) {
+        products(first: 250, after: $cursor, sortKey: CREATED_AT, reverse: true) {
+          pageInfo { hasNextPage, endCursor }
+          edges {
+            node {
+              variants(first: 10) {
+                edges { node { sku } }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+  let maxSku = 400; // Default start as per user request example
+  let hasNext = true;
+  let cursor = null;
+
+  // Safety limit to prevent infinite loops on huge stores, though 250 per page is fast.
+  let pages = 0;
+
+  while (hasNext && pages < 20) { // Scan up to 5000 products
+    const data = await graphqlRequest(query, { cursor });
+    const products = data.products.edges;
+
+    products.forEach(p => {
+      p.node.variants.edges.forEach(v => {
+        const sku = v.node.sku;
+        if (sku && /^\d+$/.test(sku)) {
+          const num = parseInt(sku, 10);
+          if (num > maxSku) maxSku = num;
+        }
+      });
+    });
+
+    hasNext = data.products.pageInfo.hasNextPage;
+    cursor = data.products.pageInfo.endCursor;
+    pages++;
+  }
+
+  console.log(`[SKU] Highest SKU found: ${maxSku}`);
+  return maxSku;
+};
+
+const assignSkuToProduct = async (productId) => {
+  // 1. Find the next SKU
+  const currentMax = await findMaxSku();
+  const newSku = (currentMax + 1).toString();
+  console.log(`[SKU] Assigning new SKU ${newSku} to Product ${productId}`);
+
+  // 2. Fetch Product Variants
+  const productQuery = `
+      query GetProductVariants($id: ID!) {
+        product(id: $id) {
+          variants(first: 100) {
+            edges { node { id } }
+          }
+        }
+      }
+    `;
+  const prodData = await graphqlRequest(productQuery, { id: productId });
+  const variants = prodData.product.variants.edges;
+
+  // 3. Update All Variants
+  // GraphQL Mutation to update variants
+  const mutation = `
+      mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+        productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+          product {
+            id
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+    `;
+
+  const variantInputs = variants.map(v => ({
+    id: v.node.id,
+    sku: newSku
+  }));
+
+  await graphqlRequest(mutation, {
+    productId: productId,
+    variants: variantInputs
+  });
+
+  return newSku;
+};
+
+// --- END SKU LOGIC ---
 
 const getUnfulfilledOrders = async (daysLookback = 3) => {
   const daysAgo = new Date();
@@ -91,7 +191,8 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
         }
         edges {
           node {
-            name
+            id   # Need Order ID for link
+            name # #1001
             createdAt
             displayFinancialStatus
             paymentGatewayNames
@@ -111,8 +212,10 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
                     value
                   }
                   variant {
+                    id # Variant ID
                     title
                     sku
+                    image { url } # Thumbnail
                     # Fetch "Custom Coded Handle" if it exists as a metafield
                     handle_metafield: metafield(namespace: "custom", key: "handle") {
                       value
@@ -132,6 +235,7 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
                     }
                   }
                   product {
+                    id # Product ID for SKU assignment
                     onlineStoreUrl
                     handle
                     productType
@@ -145,7 +249,6 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
     }
   `;
 
-  // Filter: Unfulfilled AND Created since X days ago AND Status is Open (not cancelled/archived)
   const queryFilter = `fulfillment_status:unfulfilled status:open created_at:>=${dateFilter}`;
 
   let allOrders = [];
@@ -170,5 +273,6 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
 };
 
 module.exports = {
-  getUnfulfilledOrders
+  getUnfulfilledOrders,
+  assignSkuToProduct
 };

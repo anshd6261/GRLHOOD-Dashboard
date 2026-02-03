@@ -137,6 +137,17 @@ const processOrders = (orders, gstRate = 18) => {
             const cogs = unitCost ? parseFloat(unitCost) : 0;
             const price = item.originalUnitPrice ? parseFloat(item.originalUnitPrice) : 0;
 
+            // 6. Metadata for UI (Thumbnail, Links)
+            const thumbnail = variant.image?.url || '';
+
+            // Extract numeric IDs from GIDs (gid://shopify/Product/12345)
+            const rawProductId = product.id || '';
+            const productId = rawProductId.split('/').pop();
+
+            const rawOrderId = order.id || '';
+            const orderAdminId = rawOrderId.split('/').pop();
+            const orderLink = `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/orders/${orderAdminId}`;
+
             // Expand Quantity -> Multiple Rows
             const quantity = item.quantity || 1;
             for (let i = 0; i < quantity; i++) {
@@ -145,11 +156,14 @@ const processOrders = (orders, gstRate = 18) => {
                     model,
                     sku,
                     customerName,
-                    orderId,
+                    orderId, // Display ID (#1001)
+                    orderLink,
+                    productId,
+                    thumbnail,
                     previewUrl,
                     payment,
                     cogs,
-                    price // Added for Revenue calculation
+                    price
                 });
             }
         }

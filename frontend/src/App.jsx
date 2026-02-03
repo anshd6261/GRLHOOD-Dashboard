@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, Search, Mail, UploadCloud, ChevronRight, Box, BarChart2, MessageSquare, Users, History, Plus, Trash2, Save, X, Grid } from 'lucide-react';
+import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, Search, Mail, UploadCloud, ChevronRight, Box, BarChart2, MessageSquare, Users, History, Plus, Trash2, Save, X, Grid, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const API_URL = 'http://localhost:3001/api';
@@ -60,6 +60,20 @@ function App() {
     await fetchHistory(); setEditingBatch(null);
   };
 
+  const handleCreateSku = async (productId) => {
+    if (!confirm('Generate and assign new SKU to this product?')) return;
+    setLoading(true);
+    try {
+      const res = await axios.post(`${API_URL}/products/${productId}/assign-sku`);
+      if (res.data.success) {
+        alert(`Assigned SKU: ${res.data.sku}`);
+        handleSync(); // Refresh to see changes
+      }
+    } catch (e) { alert('Failed: ' + (e.response?.data?.error || e.message)); }
+    finally { setLoading(false); }
+  };
+
+  // Re-use Logic
   const filteredOrders = data?.orders?.filter(r => !searchTerm || r.orderId.toString().includes(searchTerm) || r.customerName.toLowerCase().includes(searchTerm.toLowerCase())) || [];
 
   return (
@@ -72,7 +86,7 @@ function App() {
         <NavItem icon={<History size={22} />} active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
         <div className="flex-1"></div>
         <NavItem icon={<Settings size={22} />} />
-        <div className="mb-4 text-xs text-gray-600">v4.0</div>
+        <div className="mb-4 text-xs text-gray-600">v4.1</div>
       </nav>
 
       {/* MAIN CONTENT Area */}
@@ -182,25 +196,60 @@ function App() {
                         <tr>
                           <th className="table-header pl-4">Order ID</th>
                           <th className="table-header">Product Info</th>
-                          <th className="table-header">Customer</th>
-                          <th className="table-header text-right pr-4">Cost (COGS)</th>
+                          <th className="table-header">Details</th>
+                          <th className="table-header text-right pr-4">Link</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredOrders.map((row, i) => (
                           <tr key={i} className="table-row group border-b border-white/[0.02]">
-                            <td className="py-4 pl-4">
+                            {/* Order ID & Payment */}
+                            <td className="py-4 pl-4 align-top w-[140px]">
                               <div className="font-mono text-sm text-white font-bold mb-1">#{row.orderId}</div>
                               <div className={`text-[10px] font-bold px-2 py-0.5 rounded w-fit ${row.payment === 'Prepaid' ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'}`}>{row.payment}</div>
                             </td>
-                            <td className="py-4">
-                              <div className="flex flex-col gap-1 w-full max-w-md">
-                                <input className="bg-transparent outline-none text-gray-300 font-medium hover:text-white focus:text-cyan-400 transition-colors" value={row.category} onChange={(e) => { const n = [...data.orders]; n[i].category = e.target.value; setData({ ...data, orders: n }) }} />
-                                <input className="bg-transparent outline-none text-xs text-gray-500 hover:text-gray-300 focus:text-lime-400 transition-colors" value={row.model} onChange={(e) => { const n = [...data.orders]; n[i].model = e.target.value; setData({ ...data, orders: n }) }} />
+
+                            {/* Produc Info: Thumbnail + Inputs */}
+                            <td className="py-4 align-top">
+                              <div className="flex gap-4">
+                                {/* Thumbnail */}
+                                <div className="w-12 h-12 rounded-lg bg-white/5 border border-white/10 overflow-hidden flex-shrink-0">
+                                  {row.thumbnail ? (
+                                    <img src={row.thumbnail} className="w-full h-full object-cover" alt="Product" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-gray-700 bg-black"><Box size={14} /></div>
+                                  )}
+                                </div>
+
+                                {/* Inputs */}
+                                <div className="flex flex-col gap-1 w-full max-w-sm">
+                                  <input className="bg-transparent outline-none text-gray-300 font-medium hover:text-white focus:text-cyan-400 transition-colors w-full" value={row.category} onChange={(e) => { const n = [...data.orders]; n[i].category = e.target.value; setData({ ...data, orders: n }) }} />
+                                  <input className="bg-transparent outline-none text-xs text-gray-500 hover:text-gray-300 focus:text-lime-400 transition-colors w-full" value={row.model} onChange={(e) => { const n = [...data.orders]; n[i].model = e.target.value; setData({ ...data, orders: n }) }} placeholder="Model Name" />
+
+                                  {/* SKU Missing Warning & Button */}
+                                  {!row.sku && row.productId && (
+                                    <button onClick={() => handleCreateSku(row.productId)} className="mt-1 text-[11px] font-bold text-red-400 bg-red-500/10 px-2 py-1 rounded border border-red-500/20 hover:bg-red-500/20 flex items-center gap-1 w-fit transition-colors">
+                                      <Plus size={10} /> Create SKU
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             </td>
-                            <td className="py-4 font-medium text-gray-400">{row.customerName}</td>
-                            <td className="py-4 pr-4 text-right font-mono text-white">₹{row.cogs}</td>
+
+                            {/* Customer & COGS */}
+                            <td className="py-4 align-top">
+                              <div className="font-medium text-gray-300 text-sm">{row.customerName}</div>
+                              <div className="text-xs text-gray-500 mt-1">COGS: ₹{row.cogs}</div>
+                            </td>
+
+                            {/* External Link */}
+                            <td className="py-4 pr-4 text-right align-top">
+                              {row.orderLink && (
+                                <a href={row.orderLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors" title="Open Order in Shopify">
+                                  <ExternalLink size={14} />
+                                </a>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>

@@ -3,7 +3,7 @@ const cors = require('cors');
 const path = require('path');
 require('dotenv').config();
 
-const { getUnfulfilledOrders } = require('./shopify');
+const { getUnfulfilledOrders, assignSkuToProduct } = require('./shopify');
 const { processOrders } = require('./processor');
 const { generateCSV } = require('./csv');
 const { generateExcel } = require('./excel');
@@ -184,7 +184,19 @@ app.put('/api/history/:id', (req, res) => {
     }
 });
 
-// 7. Catch-All for Frontend
+// 8. Assign SKU Endpoint
+app.post('/api/products/:id/assign-sku', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const newSku = await assignSkuToProduct(id);
+        res.json({ success: true, sku: newSku });
+    } catch (error) {
+        console.error('[API] SKU Assignment Error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 9. Catch-All for Frontend
 app.get(/.*/, (req, res) => {
     res.sendFile(path.join(__dirname, '../frontend/dist', 'index.html'));
 });
