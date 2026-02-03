@@ -293,7 +293,8 @@ app.post('/api/shiprocket/generate-labels', async (req, res) => {
         const walletBalance = await shiprocket.getWalletBalance();
         const estimatedCost = safeOrdersObj.length * 100; // ₹100 est per order
 
-        if (walletBalance < estimatedCost) {
+        // Only block if we strictly know balance is less than cost (and not null)
+        if (walletBalance !== null && walletBalance < estimatedCost) {
             return res.json({
                 success: false,
                 requiresMoney: true,
@@ -308,7 +309,14 @@ app.post('/api/shiprocket/generate-labels', async (req, res) => {
 
         for (const order of safeOrdersObj) {
             // A. Create Order
-            const createRes = await shiprocket.createOrder(order);
+            let createRes = await shiprocket.createOrder(order);
+
+            // Handle Duplicate: Try to Update existing order with new dimensions
+            if (!createRes.success && createRes.error === 'DUPLICATE') {
+                console.log(`[SHIPROCKET] Order ${order.name} exists. Attempting update with new dimensions...`);
+                createRes = await shiprocket.updateOrder(order);
+            }
+
             if (!createRes.success) {
                 failedOrders.push({ orderId: order.name, error: createRes.error });
                 continue;

@@ -317,8 +317,14 @@ const getOrder = async (id) => {
               address2
               city
               zip
+              name
+              address1
+              address2
+              city
+              zip
               province
               country
+              phone
             }
             lineItems(first: 50) {
               edges {
