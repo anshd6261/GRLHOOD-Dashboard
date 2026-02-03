@@ -126,10 +126,15 @@ const findMaxSku = async () => {
 };
 
 const assignSkuToProduct = async (productId) => {
+  // Ensure ID is a GraphQL Global ID
+  const globalId = productId.toString().includes('gid://')
+    ? productId
+    : `gid://shopify/Product/${productId}`;
+
   // 1. Find the next SKU
   const currentMax = await findMaxSku();
   const newSku = (currentMax + 1).toString();
-  console.log(`[SKU] Assigning new SKU ${newSku} to Product ${productId}`);
+  console.log(`[SKU] Assigning new SKU ${newSku} to Product ${globalId}`);
 
   // 2. Fetch Product Variants
   const productQuery = `
@@ -141,7 +146,7 @@ const assignSkuToProduct = async (productId) => {
         }
       }
     `;
-  const prodData = await graphqlRequest(productQuery, { id: productId });
+  const prodData = await graphqlRequest(productQuery, { id: globalId });
   const variants = prodData.product.variants.edges;
 
   // 3. Update All Variants
@@ -166,7 +171,7 @@ const assignSkuToProduct = async (productId) => {
   }));
 
   await graphqlRequest(mutation, {
-    productId: productId,
+    productId: globalId,
     variants: variantInputs
   });
 
