@@ -7,6 +7,7 @@ const { getUnfulfilledOrders } = require('./shopify');
 const { processOrders } = require('./processor');
 const { generateCSV } = require('./csv');
 const { generateExcel } = require('./excel');
+const { getHistory, saveBatch, updateBatch } = require('./history');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -89,6 +90,13 @@ app.post('/api/download', async (req, res) => {
             return res.status(400).json({ error: 'Invalid data provided' });
         }
 
+        // Save to History (Async)
+        saveBatch({
+            type: 'DOWNLOAD',
+            count: rows.length,
+            rows: rows
+        });
+
         const buffer = await generateExcel(rows, gstRate);
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -158,6 +166,21 @@ app.post('/api/upload-portal', async (req, res) => {
     } catch (error) {
         console.error('[API] Upload Error:', error);
         res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 7. History Endpoints
+app.get('/api/history', (req, res) => {
+    res.json(getHistory());
+});
+
+app.put('/api/history/:id', (req, res) => {
+    const { rows } = req.body;
+    const updated = updateBatch(req.params.id, rows);
+    if (updated) {
+        res.json({ success: true, batch: updated });
+    } else {
+        res.status(404).json({ error: 'Batch not found' });
     }
 });
 
