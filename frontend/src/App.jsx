@@ -226,12 +226,20 @@ function App() {
                                   <input className="bg-transparent outline-none text-gray-300 font-medium hover:text-white focus:text-cyan-400 transition-colors w-full" value={row.category} onChange={(e) => { const n = [...data.orders]; n[i].category = e.target.value; setData({ ...data, orders: n }) }} />
                                   <input className="bg-transparent outline-none text-xs text-gray-500 hover:text-gray-300 focus:text-lime-400 transition-colors w-full" value={row.model} onChange={(e) => { const n = [...data.orders]; n[i].model = e.target.value; setData({ ...data, orders: n }) }} placeholder="Model Name" />
 
-                                  {/* SKU Missing Warning & Button */}
-                                  {!row.sku && row.productId && (
-                                    <button onClick={() => handleCreateSku(row.productId)} className="mt-1 text-[11px] font-bold text-red-400 bg-red-500/10 px-2 py-1 rounded border border-red-500/20 hover:bg-red-500/20 flex items-center gap-1 w-fit transition-colors">
-                                      <Plus size={10} /> Create SKU
-                                    </button>
-                                  )}
+                                  {/* SKU Display / Missing Warning */}
+                                  <div className="flex items-center gap-2 mt-1">
+                                    {row.sku ? (
+                                      <span className="text-[10px] font-mono bg-white/5 border border-white/10 px-1.5 py-0.5 rounded text-gray-400">
+                                        SKU: {row.sku}
+                                      </span>
+                                    ) : (
+                                      row.productId && (
+                                        <button onClick={() => handleCreateSku(row.productId)} className="text-[10px] font-bold text-red-400 bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20 hover:bg-red-500/20 flex items-center gap-1 w-fit transition-colors">
+                                          <Plus size={10} /> Create SKU
+                                        </button>
+                                      )
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </td>
