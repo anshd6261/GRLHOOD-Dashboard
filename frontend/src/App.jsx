@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, Search, Mail, UploadCloud, ChevronRight, Box, BarChart2, MessageSquare, Users, History, Plus, Trash2, Save, X, Grid } from 'lucide-react';
+import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, Search, Mail, UploadCloud, ChevronRight, Box, BarChart2, MessageSquare, Users, History, Plus, Trash2, Save, X, Grid, LayoutGrid } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const API_URL = 'http://localhost:3001/api';
@@ -30,8 +30,6 @@ function App() {
   };
 
   const executeDownload = async ({ rows, type = 'all' }) => {
-    // ... (logic remains same, abbreviated for style focus)
-    // Assuming CSV download logic from V4
     if (!rows || !rows.length) return;
     let target = rows;
     if (type === 'prepaid') target = rows.filter(r => r.payment === 'Prepaid');
@@ -47,12 +45,10 @@ function App() {
     } catch (e) { alert('Download failed'); }
   };
 
-  // Re-use Logic
   const handleDownloadDashboard = (t) => data?.orders && executeDownload({ rows: data.orders, type: t });
   const handleSendEmail = async () => { if (data?.orders) { setLoading(true); try { await axios.post(`${API_URL}/email-approval`, { rows: data.orders }); alert('Sent'); } catch (e) { } finally { setLoading(false) } } };
   const handleUploadPortal = async () => { if (data?.orders && confirm('Upload?')) { setLoading(true); try { await axios.post(`${API_URL}/upload-portal`, { rows: data.orders }); alert('Done'); } catch (e) { } finally { setLoading(false) } } };
 
-  // History
   const saveHistory = async () => {
     if (!editingBatch) return;
     await axios.put(`${API_URL}/history/${editingBatch.id}`, { rows: editingBatch.rows });
@@ -60,6 +56,40 @@ function App() {
     await fetchHistory(); setEditingBatch(null);
   };
 
+  // --- DASHBOARD CRUD ---
+  const addDashboardOrder = () => {
+    if (!data) return; // Only if synced or initialized
+    const newOrder = {
+      orderId: 'NEW',
+      customerName: '',
+      category: '',
+      model: '',
+      sku: '',
+      payment: 'Prepaid',
+      cogs: 0
+    };
+    setData({ ...data, orders: [newOrder, ...data.orders] });
+  };
+
+  const deleteDashboardOrder = (index) => {
+    if (!data?.orders) return;
+    if (!confirm("Delete this order?")) return;
+    const newOrders = [...data.orders];
+    newOrders.splice(index, 1);
+    setData({ ...data, orders: newOrders });
+  };
+
+  // Calculate Stats Dynamically for Dashboard edits
+  const getStats = () => {
+    if (!data?.orders) return data?.stats || {};
+    const totalOrders = data.orders.length;
+    const totalItems = data.orders.length; // 1 item per row logic
+    const subtotal = data.orders.reduce((acc, r) => acc + (parseFloat(r.cogs) || 0), 0);
+    const total = subtotal * 1.18;
+    return { totalOrders, totalItems, subtotal, total };
+  };
+
+  const currentStats = getStats();
   const filteredOrders = data?.orders?.filter(r => !searchTerm || r.orderId.toString().includes(searchTerm) || r.customerName.toLowerCase().includes(searchTerm.toLowerCase())) || [];
 
   return (
@@ -67,12 +97,12 @@ function App() {
 
       {/* SIDEBAR */}
       <nav className="sidebar">
-        <div className="mt-8"></div> {/* Spacer instead of logo */}
+        <div className="mt-8"></div>
         <NavItem icon={<Grid size={22} />} active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
         <NavItem icon={<History size={22} />} active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
         <div className="flex-1"></div>
         <NavItem icon={<Settings size={22} />} />
-        <div className="mb-4 text-xs text-gray-600">v4.0</div>
+        <div className="mb-4 text-xs text-gray-600">v4.1</div>
       </nav>
 
       {/* MAIN CONTENT Area */}
@@ -118,7 +148,7 @@ function App() {
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="text-sm text-cyan-200/80 font-medium mb-1">Total Orders</div>
-                      <div className="text-4xl font-bold text-white tracking-tight">{data?.stats?.totalOrders || 0}</div>
+                      <div className="text-4xl font-bold text-white tracking-tight">{currentStats.totalOrders || 0}</div>
                     </div>
                     <div className="icon-btn-filled bg-cyan-500/20 text-cyan-400"><Package size={20} /></div>
                   </div>
@@ -130,7 +160,7 @@ function App() {
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="text-sm text-lime-200/80 font-medium mb-1">Total Items</div>
-                      <div className="text-4xl font-bold text-white tracking-tight">{data?.stats?.totalItems || 0}</div>
+                      <div className="text-4xl font-bold text-white tracking-tight">{currentStats.totalItems || 0}</div>
                     </div>
                     <div className="icon-btn-filled bg-lime-500/20 text-lime-400"><Smartphone size={20} /></div>
                   </div>
@@ -142,7 +172,7 @@ function App() {
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="text-sm text-purple-200/80 font-medium mb-1">Revenue</div>
-                      <div className="text-4xl font-bold text-white tracking-tight">₹{data?.stats?.subtotal?.toFixed(0) || 0}</div>
+                      <div className="text-4xl font-bold text-white tracking-tight">₹{currentStats.subtotal?.toFixed(0) || 0}</div>
                     </div>
                     <div className="icon-btn-filled bg-purple-500/20 text-purple-400"><IndianRupee size={20} /></div>
                   </div>
@@ -151,7 +181,7 @@ function App() {
 
                 {/* Action Panel */}
                 <div className="panel-dark h-40 flex flex-col justify-center gap-3">
-                  {workflowStatus === 'review' ? (
+                  {workflowStatus === 'review' || data?.orders ? ( // Show actions if data exists
                     <>
                       <div className="grid grid-cols-2 gap-3">
                         <button onClick={() => handleDownloadDashboard('prepaid')} className="bg-[#1A1A1A] hover:bg-[#252525] p-3 rounded-xl border border-white/5 text-xs font-bold text-green-400 flex items-center justify-center gap-2 transition-colors">Prepaid CSV</button>
@@ -170,8 +200,13 @@ function App() {
 
               {/* TABLE SECTION */}
               <div className="panel-dark min-h-[500px]">
-                <div className="flex justify-between items-end mb-6 border-b border-white/5 pb-4">
-                  <h3 className="text-xl font-bold">Review Orders</h3>
+                <div className="flex justify-between items-center mb-6 border-b border-white/5 pb-4">
+                  <div className="flex items-center gap-4">
+                    <h3 className="text-xl font-bold">Review Orders</h3>
+                    <button onClick={addDashboardOrder} className="px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg text-xs font-bold flex items-center gap-2 transition-colors border border-white/5 text-accent-green">
+                      <Plus size={14} /> Add Order
+                    </button>
+                  </div>
                   <div className="text-sm text-gray-500">{filteredOrders.length} records</div>
                 </div>
 
@@ -185,27 +220,41 @@ function App() {
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr>
+                          <th className="table-header pl-4 w-12"></th>
                           <th className="table-header pl-4">Order ID</th>
-                          <th className="table-header">Product Info</th>
+                          <th className="table-header">SKU / Model</th>
+                          <th className="table-header">Category</th>
                           <th className="table-header">Customer</th>
-                          <th className="table-header text-right pr-4">Cost (COGS)</th>
+                          <th className="table-header text-right pr-4">COGS</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredOrders.map((row, i) => (
                           <tr key={i} className="table-row group border-b border-white/[0.02]">
+                            <td className="py-4 pl-4 text-center">
+                              <button onClick={() => deleteDashboardOrder(i)} className="text-red-900 group-hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
+                            </td>
                             <td className="py-4 pl-4">
-                              <div className="font-mono text-sm text-white font-bold mb-1">#{row.orderId}</div>
+                              <div className="font-mono text-sm text-cyan-200 font-bold mb-1">
+                                <input className="bg-transparent outline-none w-20" value={row.orderId} onChange={(e) => { const n = [...data.orders]; n[i].orderId = e.target.value; setData({ ...data, orders: n }) }} />
+                              </div>
                               <div className={`text-[10px] font-bold px-2 py-0.5 rounded w-fit ${row.payment === 'Prepaid' ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'}`}>{row.payment}</div>
                             </td>
                             <td className="py-4">
                               <div className="flex flex-col gap-1 w-full max-w-md">
-                                <input className="bg-transparent outline-none text-gray-300 font-medium hover:text-white focus:text-cyan-400 transition-colors" value={row.category} onChange={(e) => { const n = [...data.orders]; n[i].category = e.target.value; setData({ ...data, orders: n }) }} />
-                                <input className="bg-transparent outline-none text-xs text-gray-500 hover:text-gray-300 focus:text-lime-400 transition-colors" value={row.model} onChange={(e) => { const n = [...data.orders]; n[i].model = e.target.value; setData({ ...data, orders: n }) }} />
+                                <input className="bg-transparent outline-none text-white font-medium hover:text-cyan-200 transition-colors placeholder-gray-700" placeholder="SKU" value={row.sku || ''} onChange={(e) => { const n = [...data.orders]; n[i].sku = e.target.value; setData({ ...data, orders: n }) }} />
+                                <input className="bg-transparent outline-none text-xs text-gray-500 hover:text-gray-300 transition-colors placeholder-gray-800" placeholder="Model" value={row.model} onChange={(e) => { const n = [...data.orders]; n[i].model = e.target.value; setData({ ...data, orders: n }) }} />
                               </div>
                             </td>
-                            <td className="py-4 font-medium text-gray-400">{row.customerName}</td>
-                            <td className="py-4 pr-4 text-right font-mono text-white">₹{row.cogs}</td>
+                            <td className="py-4">
+                              <input className="bg-transparent outline-none text-gray-400 text-sm hover:text-white transition-colors" value={row.category} onChange={(e) => { const n = [...data.orders]; n[i].category = e.target.value; setData({ ...data, orders: n }) }} />
+                            </td>
+                            <td className="py-4 font-medium text-gray-400">
+                              <input className="bg-transparent outline-none w-full" value={row.customerName} onChange={(e) => { const n = [...data.orders]; n[i].customerName = e.target.value; setData({ ...data, orders: n }) }} />
+                            </td>
+                            <td className="py-4 pr-4 text-right font-mono text-white">
+                              <input type="number" className="bg-transparent outline-none w-20 text-right" value={row.cogs} onChange={(e) => { const n = [...data.orders]; n[i].cogs = e.target.value; setData({ ...data, orders: n }) }} />
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -216,6 +265,7 @@ function App() {
             </motion.div>
           )}
 
+          {/* ... History Logic (Abbreviated, sidebar layout keeps it simple) ... */}
           {activeTab === 'history' && (
             <motion.div key="history" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-8">
               <div className="panel-dark">
@@ -239,17 +289,20 @@ function App() {
               </div>
             </motion.div>
           )}
+
         </AnimatePresence>
       </main>
 
-      {/* MODAL */}
+      {/* MODAL (With SKU) */}
       <AnimatePresence>
         {editingBatch && (
           <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-xl flex items-center justify-center p-8">
-            <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-[#111111] w-full max-w-6xl h-[90vh] rounded-3xl border border-white/10 flex flex-col overflow-hidden shadow-2xl">
+            <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-[#111111] w-full max-w-7xl h-[90vh] rounded-3xl border border-white/10 flex flex-col overflow-hidden shadow-2xl">
               <div className="p-6 border-b border-white/5 flex justify-between items-center bg-[#151515]">
                 <h3 className="font-bold text-lg">Editing Batch {editingBatch.id}</h3>
                 <div className="flex gap-3">
+                  <button onClick={() => { const n = [...editingBatch.rows]; n.unshift({ orderId: 'NEW', sku: '', model: '', category: '', customerName: '', cogs: 0, payment: 'Prepaid' }); setEditingBatch({ ...editingBatch, rows: n }) }} className="px-4 py-2 bg-white/5 rounded-lg text-sm font-bold flex items-center gap-2"><Plus size={16} /> Row</button>
+                  <div className="w-[1px] h-8 bg-white/10 mx-2"></div>
                   <button onClick={() => setEditingBatch(null)} className="px-4 py-2 hover:bg-white/5 rounded-lg text-gray-400">Cancel</button>
                   <button onClick={saveHistory} className="px-6 py-2 bg-white text-black font-bold rounded-lg flex items-center gap-2 hover:bg-gray-200"><Save size={16} /> Save & Download</button>
                 </div>
@@ -257,15 +310,17 @@ function App() {
               <div className="flex-1 overflow-auto p-0">
                 <table className="w-full text-left">
                   <thead className="sticky top-0 bg-[#0F0F0F] z-10 text-xs text-gray-500 uppercase font-bold">
-                    <tr><th className="p-4">Action</th><th className="p-4">ID</th><th className="p-4">Category</th><th className="p-4">Model</th><th className="p-4 text-right">COGS</th></tr>
+                    <tr><th className="p-4 w-12"></th><th className="p-4">ID</th><th className="p-4">SKU</th><th className="p-4">Model</th><th className="p-4">Category</th><th className="p-4">Customer</th><th className="p-4 text-right">COGS</th></tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
                     {editingBatch.rows.map((r, i) => (
                       <tr key={i} className="hover:bg-white/5">
                         <td className="p-4"><button onClick={() => { const n = [...editingBatch.rows]; n.splice(i, 1); setEditingBatch({ ...editingBatch, rows: n }) }} className="text-red-500 opacity-50 hover:opacity-100"><Trash2 size={16} /></button></td>
                         <td className="p-4"><input value={r.orderId} onChange={(e) => { const n = [...editingBatch.rows]; n[i].orderId = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-20 text-cyan-400 font-mono" /></td>
-                        <td className="p-4"><input value={r.category} onChange={(e) => { const n = [...editingBatch.rows]; n[i].category = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-white" /></td>
+                        <td className="p-4"><input value={r.sku || ''} onChange={(e) => { const n = [...editingBatch.rows]; n[i].sku = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-white placeholder-gray-800" placeholder="SKU" /></td>
                         <td className="p-4"><input value={r.model} onChange={(e) => { const n = [...editingBatch.rows]; n[i].model = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-gray-400 focus:text-lime-400" /></td>
+                        <td className="p-4"><input value={r.category} onChange={(e) => { const n = [...editingBatch.rows]; n[i].category = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-gray-400 focus:text-white" /></td>
+                        <td className="p-4"><input value={r.customerName} onChange={(e) => { const n = [...editingBatch.rows]; n[i].customerName = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-gray-400" /></td>
                         <td className="p-4 text-right"><input value={r.cogs} type="number" onChange={(e) => { const n = [...editingBatch.rows]; n[i].cogs = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-20 text-right text-gray-300" /></td>
                       </tr>
                     ))}
