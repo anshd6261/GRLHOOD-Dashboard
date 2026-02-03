@@ -150,32 +150,28 @@ const assignSkuToProduct = async (productId) => {
   const variants = prodData.product.variants.edges;
 
   // 3. Update All Variants
-  // Use productUpdate (simpler, more stable)
-  const mutation = `
-      mutation productUpdate($input: ProductInput!) {
-        productUpdate(input: $input) {
-          product {
-            id
-          }
-          userErrors {
-            field
-            message
-          }
-        }
+  // Iterate and update each variant individually to avoid bulk mutation schema issues
+  console.log(`[SKU] Updating ${variants.length} variants...`);
+
+  const updatePromises = variants.map(async (v) => {
+    const mutation = `
+            mutation productVariantUpdate($input: ProductVariantInput!) {
+                productVariantUpdate(input: $input) {
+                    productVariant { id sku }
+                    userErrors { field message }
+                }
+            }
+        `;
+
+    return graphqlRequest(mutation, {
+      input: {
+        id: v.node.id,
+        sku: newSku
       }
-    `;
-
-  const variantInputs = variants.map(v => ({
-    id: v.node.id,
-    sku: newSku
-  }));
-
-  await graphqlRequest(mutation, {
-    input: {
-      id: globalId,
-      variants: variantInputs
-    }
+    });
   });
+
+  await Promise.all(updatePromises);
 
   return newSku;
 };
