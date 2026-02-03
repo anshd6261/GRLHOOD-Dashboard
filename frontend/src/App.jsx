@@ -191,8 +191,29 @@ function App() {
               {/* TABLE SECTION */}
               <div className="panel-dark min-h-[500px]">
                 <div className="flex justify-between items-end mb-6 border-b border-white/5 pb-4">
-                  <h3 className="text-xl font-bold">Review Orders</h3>
-                  <div className="text-sm text-gray-500">{filteredOrders.length} records</div>
+                  <div className="flex items-center gap-4">
+                    <h3 className="text-xl font-bold">Review Orders</h3>
+                    <div className="text-sm text-gray-500">{filteredOrders.length} records</div>
+                  </div>
+                  <button onClick={() => {
+                    // Add Manual Order Logic
+                    if (!data) setData({ orders: [] }); // Initialize if null
+                    const newRow = {
+                      orderId: 'MANUAL',
+                      category: '',
+                      model: '',
+                      customerName: '',
+                      cogs: 0,
+                      sku: '',
+                      payment: 'Prepaid',
+                      productId: null,
+                      thumbnail: null
+                    };
+                    const currentOrders = data?.orders || [];
+                    setData({ ...data, orders: [newRow, ...currentOrders] });
+                  }} className="px-3 py-1.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-lg hover:bg-blue-500/20 font-bold text-xs flex items-center gap-2 transition-colors">
+                    <Plus size={14} /> Add Order
+                  </button>
                 </div>
 
                 {!data ? (
@@ -205,10 +226,11 @@ function App() {
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr>
-                          <th className="table-header pl-4">Order ID</th>
+                          <th className="table-header pl-4">ID</th>
                           <th className="table-header">Product Info</th>
                           <th className="table-header">Customer</th>
                           <th className="table-header text-right pr-4">Cost (COGS)</th>
+                          <th className="table-header w-10"></th>
                         </tr>
                       </thead>
                       <tbody>
@@ -216,8 +238,19 @@ function App() {
                           <tr key={i} className="table-row group border-b border-white/[0.02]">
                             {/* Order ID & Payment */}
                             <td className="py-4 pl-4 align-top w-[140px]">
-                              <div className="font-mono text-sm text-white font-bold mb-1">#{row.orderId}</div>
-                              <div className={`text-[10px] font-bold px-2 py-0.5 rounded w-fit ${row.payment === 'Prepaid' ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'}`}>{row.payment}</div>
+                              <input
+                                className="bg-transparent outline-none font-mono text-sm text-white font-bold mb-1 w-full"
+                                value={row.orderId}
+                                onChange={(e) => { const n = [...data.orders]; n[i].orderId = e.target.value; setData({ ...data, orders: n }) }}
+                              />
+                              <select
+                                value={row.payment}
+                                onChange={(e) => { const n = [...data.orders]; n[i].payment = e.target.value; setData({ ...data, orders: n }) }}
+                                className={`text-[10px] font-bold px-1 py-0.5 rounded w-fit outline-none border-none cursor-pointer ${row.payment === 'Prepaid' ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'}`}
+                              >
+                                <option value="Prepaid" className="bg-black text-white">Prepaid</option>
+                                <option value="Cash on Delivery" className="bg-black text-white">COD</option>
+                              </select>
                             </td>
 
                             {/* Produc Info: Thumbnail + Inputs */}
@@ -263,11 +296,24 @@ function App() {
 
                             {/* External Link */}
                             <td className="py-4 pr-4 text-right align-top">
-                              {row.orderLink && (
-                                <a href={row.orderLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors" title="Open Order in Shopify">
-                                  <ExternalLink size={14} />
-                                </a>
-                              )}
+                              <div className="flex flex-col items-end gap-2">
+                                {row.orderLink && (
+                                  <a href={row.orderLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors" title="Open Order in Shopify">
+                                    <ExternalLink size={14} />
+                                  </a>
+                                )}
+                              </div>
+                            </td>
+
+                            {/* Delete Row */}
+                            <td className="py-4 align-top w-10">
+                              <button onClick={() => {
+                                const n = [...data.orders];
+                                n.splice(i, 1);
+                                setData({ ...data, orders: n });
+                              }} className="w-8 h-8 flex items-center justify-center rounded-lg text-red-500/50 hover:text-red-500 hover:bg-red-500/10 transition-colors">
+                                <Trash2 size={16} />
+                              </button>
                             </td>
                           </tr>
                         ))}
