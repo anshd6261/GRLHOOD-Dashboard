@@ -13,9 +13,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-app.use(cors({
-    exposedHeaders: ['Content-Disposition', 'X-Filename']
-}));
+app.use(cors());
 app.use(express.json());
 
 // Serve Static Frontend (Production)

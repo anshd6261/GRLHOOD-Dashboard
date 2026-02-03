@@ -96,7 +96,7 @@ function App() {
         <NavItem icon={<History size={22} />} active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
         <div className="flex-1"></div>
         <NavItem icon={<Settings size={22} />} />
-        <div className="mb-4 text-xs text-gray-600">v4.1</div>
+        <div className="mb-4 text-xs text-gray-600">v5.0</div>
       </nav>
 
       {/* MAIN CONTENT Area */}
