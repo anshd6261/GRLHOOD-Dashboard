@@ -80,31 +80,35 @@ function App() {
     if (!data?.orders) return;
 
     let rowsToDownload = data.orders;
-    let filenameParams = 'Full';
+    let orderType = 'MIXED';
 
     if (type === 'prepaid') {
       rowsToDownload = data.orders.filter(r => r.payment === 'Prepaid');
-      filenameParams = 'PREPAID';
+      orderType = 'PREPAID';
     } else if (type === 'cod') {
       rowsToDownload = data.orders.filter(r => r.payment === 'Cash on Delivery');
-      filenameParams = 'COD';
+      orderType = 'COD';
     }
 
     if (rowsToDownload.length === 0) {
-      alert(`No ${filenameParams} orders found to download.`);
+      alert(`No ${orderType} orders found to download.`);
       return;
     }
 
     try {
       const res = await axios.post(`${API_URL}/download`, { rows: rowsToDownload }, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data]));
+
+      const date = new Date().toISOString().split('T')[0];
+      const batchId = Math.floor(100 + Math.random() * 900);
+      const filename = `${date}_NLG_POD_${orderType}_BATCH-${batchId}.csv`;
+
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `ORDERS-${filenameParams}-${new Date().toLocaleDateString()}.csv`);
+      link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
-      document.body.appendChild(link);
-      link.click();
+      setTimeout(() => document.body.removeChild(link), 100);
     } catch (err) {
       setError('Download unable to start');
     }
