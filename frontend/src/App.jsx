@@ -1,0 +1,358 @@
+import React, { useState, useEffect } from 'react';
+import axios from 'axios';
+import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, CheckCircle, AlertCircle, ShoppingBag, Mail, UploadCloud, Calendar } from 'lucide-react';
+import { motion } from 'framer-motion';
+
+const API_URL = 'http://localhost:3001/api';
+
+function App() {
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [status, setStatus] = useState({ connected: false });
+  const [showSettings, setShowSettings] = useState(false);
+  const [workflowStatus, setWorkflowStatus] = useState('idle'); // idle, processing, review, approved
+
+  // Filters
+  const [lookback, setLookback] = useState(3);
+
+  useEffect(() => {
+    checkStatus();
+  }, []);
+
+  const checkStatus = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/v2/status`);
+      setStatus(res.data);
+      if (res.data.lookback) setLookback(res.data.lookback);
+    } catch (err) {
+      console.error('API Error:', err);
+    }
+  };
+
+  const handleSync = async () => {
+    setLoading(true);
+    setError(null);
+    setWorkflowStatus('processing');
+    try {
+      const res = await axios.get(`${API_URL}/orders?days=${lookback}`);
+      setData(res.data);
+      setWorkflowStatus('review');
+    } catch (err) {
+      setError(err.response?.data?.error || err.message);
+      setWorkflowStatus('idle');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendEmail = async () => {
+    if (!data?.orders) return;
+    setLoading(true);
+    try {
+      await axios.post(`${API_URL}/email-approval`, { rows: data.orders });
+      alert('Email sent to ' + (status.gmail ? 'Warpcreatives@gmail.com' : 'User'));
+    } catch (err) {
+      setError('Failed to send email: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleUploadPortal = async () => {
+    if (!data?.orders) return;
+    const confirmed = window.confirm("Are you sure you want to upload this to the Portal?");
+    if (!confirmed) return;
+
+    setLoading(true);
+    try {
+      await axios.post(`${API_URL}/upload-portal`, { rows: data.orders });
+      alert('Successfully uploaded to Manufacturer Portal!');
+      setWorkflowStatus('approved');
+    } catch (err) {
+      setError('Portal Upload Failed: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!data?.orders) return;
+    try {
+      const res = await axios.post(`${API_URL}/download`, { rows: data.orders }, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `ORDERS-${new Date().toLocaleDateString()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+    } catch (err) {
+      setError('Download unable to start');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-dark-950 text-white font-sans p-8 selection:bg-accent-purple/30">
+
+      {/* HEADER */}
+      <header className="max-w-[1600px] mx-auto flex flex-col items-center justify-center py-12 mb-8">
+        <div className="relative group">
+          <img src="/logo.png" alt="Logo" className="h-56 object-contain filter drop-shadow-[0_0_20px_rgba(255,255,255,0.05)] transition-all duration-500 group-hover:drop-shadow-[0_0_40px_rgba(203,166,247,0.3)]" />
+        </div>
+
+        <div className="mt-8 flex gap-3">
+          <StatusBadge label="Shopify" active={true} />
+          <StatusBadge label="Gmail" active={status.gmail} />
+          <StatusBadge label="Portal" active={status.portal} />
+        </div>
+      </header>
+
+      <main className="max-w-[1600px] mx-auto space-y-8">
+
+        {/* STATS ROW */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <StatCard
+            icon={<ShoppingBag />}
+            label="Total Orders"
+            value={data?.stats?.totalOrders ?? '-'}
+            subtext="Pending Fulfillment"
+            color="text-accent-pink"
+            bg="bg-accent-pink/10"
+          />
+          <StatCard
+            icon={<Smartphone />}
+            label="Total Items"
+            value={data?.stats?.totalItems ?? '-'}
+            subtext="Individual SKUs"
+            color="text-accent-blue"
+            bg="bg-accent-blue/10"
+          />
+          <StatCard
+            icon={<IndianRupee />}
+            label="Revenue (COGS)"
+            value={data?.stats?.subtotal ? `₹${data.stats.subtotal.toFixed(0)}` : '-'}
+            subtext="Cost of Goods"
+            color="text-accent-peach"
+            bg="bg-accent-peach/10"
+          />
+          <StatCard
+            icon={<IndianRupee />}
+            label="Grand Total"
+            value={data?.stats?.total ? `₹${data.stats.total.toFixed(0)}` : '-'}
+            subtext="Incl. GST (18%)"
+            color="text-accent-purple"
+            bg="bg-accent-purple/10"
+          />
+        </div>
+
+        {/* WORKFLOW BAR */}
+        <div className="glass-card flex justify-between items-center bg-[#1E1E1E]">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3 bg-black/40 px-5 py-3 rounded-2xl border border-white/5">
+              <span className="text-sm text-gray-400 font-medium">Synced Range</span>
+              <div className="h-4 w-[1px] bg-white/10"></div>
+              <input
+                type="number"
+                value={lookback}
+                onChange={(e) => setLookback(e.target.value)}
+                className="w-8 bg-transparent text-center font-bold outline-none text-white"
+              />
+              <span className="text-sm text-gray-500">Days</span>
+            </div>
+
+            <div>
+              <h2 className="text-2xl font-bold text-white tracking-tight">
+                {workflowStatus === 'idle' ? 'Dashboard' :
+                  workflowStatus === 'review' ? 'Review Orders' : 'Processing...'}
+              </h2>
+              <p className="text-sm text-gray-500">Manage and fulfill your pending orders</p>
+            </div>
+          </div>
+
+          <div className="flex gap-4">
+            <button
+              onClick={handleSync}
+              disabled={loading}
+              className="px-8 py-4 bg-white text-black rounded-full font-bold hover:bg-gray-200 disabled:opacity-50 transition-all flex items-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.1)]"
+            >
+              <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
+              {loading ? 'Syncing...' : 'Sync Orders'}
+            </button>
+
+            {workflowStatus === 'review' && (
+              <>
+                <button
+                  onClick={handleSendEmail}
+                  disabled={loading}
+                  className="px-6 py-4 bg-accent-blue/10 text-accent-blue border border-accent-blue/20 rounded-full font-bold hover:bg-accent-blue/20 transition-all flex items-center gap-2"
+                >
+                  <Mail size={20} />
+                  Email CSV
+                </button>
+
+                <button
+                  onClick={handleUploadPortal}
+                  disabled={loading}
+                  className="px-8 py-4 bg-accent-purple text-black rounded-full font-bold shadow-[0_0_20px_rgba(203,166,247,0.3)] hover:shadow-[0_0_30px_rgba(203,166,247,0.5)] transition-all flex items-center gap-2"
+                >
+                  <UploadCloud size={20} />
+                  Upload
+                </button>
+              </>
+            )}
+
+            <div className="w-[1px] h-12 bg-white/10 mx-2"></div>
+
+            <button onClick={handleDownload} className="p-4 bg-dark-800 rounded-full text-gray-400 hover:text-white hover:bg-dark-700 transition-all">
+              <Download size={20} />
+            </button>
+
+            <button onClick={() => setShowSettings(!showSettings)} className="p-4 bg-dark-800 rounded-full text-gray-400 hover:text-white hover:bg-dark-700 transition-all">
+              <Settings size={20} />
+            </button>
+          </div>
+        </div>
+
+        {/* EDITOR / DATA TABLE */}
+        <div className="glass-card min-h-[500px] flex flex-col p-0 overflow-hidden">
+          <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+            <h3 className="font-bold text-xl flex items-center gap-3">
+              <div className="w-2 h-8 rounded-full bg-accent-pink"></div>
+              Order Details
+            </h3>
+            <span className="px-3 py-1 bg-white/5 rounded-full text-xs text-gray-400 font-mono">
+              READ-WRITE
+            </span>
+          </div>
+
+          {!data ? (
+            <div className="h-full flex flex-col items-center justify-center p-20 text-dark-700">
+              <Package size={64} className="mb-6 opacity-20" />
+              <p className="text-xl font-medium">Sync orders to view data</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto flex-1">
+              <table className="w-full text-left border-collapse">
+                <thead className="bg-[#151515] text-gray-500 text-xs font-bold uppercase tracking-widest sticky top-0 z-10">
+                  <tr>
+                    <th className="px-8 py-6">Order ID</th>
+                    <th className="px-8 py-6">Customer</th>
+                    <th className="px-8 py-6">Category</th>
+                    <th className="px-8 py-6">Model / Item</th>
+                    <th className="px-8 py-6 text-right">COGS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 text-sm">
+                  {data.orders.map((row, i) => (
+                    <tr key={i} className="hover:bg-white/5 transition-colors group">
+                      <td className="px-8 py-5">
+                        <span className="font-mono text-accent-purple bg-accent-purple/10 px-2 py-1 rounded">#{row.orderId}</span>
+                      </td>
+                      <td className="px-8 py-5 text-gray-300 font-medium">
+                        {row.customerName}
+                      </td>
+
+                      {/* EDITABLE FIELDS */}
+                      <td className="px-8 py-5">
+                        <input
+                          type="text"
+                          value={row.category}
+                          onChange={(e) => {
+                            const newOrders = [...data.orders];
+                            newOrders[i].category = e.target.value;
+                            setData({ ...data, orders: newOrders });
+                          }}
+                          className="bg-transparent border-b border-transparent focus:border-accent-pink outline-none text-gray-300 w-full transition-colors pb-1"
+                        />
+                      </td>
+                      <td className="px-8 py-5">
+                        <input
+                          type="text"
+                          value={row.model}
+                          onChange={(e) => {
+                            const newOrders = [...data.orders];
+                            newOrders[i].model = e.target.value;
+                            setData({ ...data, orders: newOrders });
+                          }}
+                          className="bg-transparent border-b border-transparent focus:border-accent-blue outline-none text-white font-medium w-full transition-colors pb-1"
+                        />
+                      </td>
+
+                      <td className="px-8 py-5 text-right font-mono text-gray-400">
+                        ₹{row.cogs}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+      </main>
+
+      {/* SETTINGS MODAL */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1E1E1E] border border-white/10 rounded-[32px] p-8 max-w-md w-full shadow-2xl">
+            <h2 className="text-2xl font-bold mb-8 text-white">Settings</h2>
+
+            <div className="space-y-4">
+              <div className="bg-black/20 p-4 rounded-2xl flex items-center justify-between border border-white/5">
+                <div>
+                  <div className="font-bold text-white">Auto-Automation</div>
+                  <div className="text-xs text-gray-500">Run without manual approval</div>
+                </div>
+                <div className={`w-3 h-3 rounded-full ${data?.settings?.automationEnabled ? 'bg-accent-pink shadow-[0_0_10px_#F4B8E4]' : 'bg-dark-700'}`}></div>
+              </div>
+
+              <div className="bg-black/20 p-4 rounded-2xl border border-white/5">
+                <div className="text-xs text-gray-500 mb-1">Current Schedule</div>
+                <div className="font-mono text-accent-blue">Every 3 Days @ 9:00 AM</div>
+              </div>
+            </div>
+
+            <div className="mt-8 flex justify-end">
+              <button onClick={() => setShowSettings(false)} className="px-6 py-3 bg-white text-black font-bold rounded-full hover:bg-gray-200 transition-colors">
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+const StatCard = ({ icon, label, value, subtext, color, bg }) => (
+  <motion.div
+    whileHover={{ y: -5 }}
+    className="glass-card flex flex-col justify-between h-48 relative overflow-hidden group"
+  >
+    <div className={`absolute -right-4 -top-4 w-24 h-24 rounded-full ${bg} blur-2xl opacity-50`}></div>
+
+    <div className="flex justify-between items-start">
+      <div className={`p-3 rounded-2xl ${bg} ${color}`}>
+        {React.cloneElement(icon, { size: 24 })}
+      </div>
+      <div className="text-right">
+        <div className={`text-4xl font-bold text-white mb-1`}>{value}</div>
+      </div>
+    </div>
+
+    <div>
+      <div className="text-lg font-bold text-white">{label}</div>
+      <div className={`text-sm font-medium opacity-60 ${color}`}>{subtext}</div>
+    </div>
+  </motion.div>
+);
+
+const StatusBadge = ({ label, active }) => (
+  <div className={`px-5 py-2 rounded-full border text-xs font-bold tracking-widest uppercase transition-all flex items-center gap-2 ${active ? 'border-white/40 text-white' : 'border-white/5 text-gray-600'}`}>
+    <div className={`w-1.5 h-1.5 rounded-full ${active ? 'bg-accent-pink shadow-[0_0_8px_#F4B8E4]' : 'bg-gray-700'}`} />
+    {label}
+  </div>
+);
+
+export default App;

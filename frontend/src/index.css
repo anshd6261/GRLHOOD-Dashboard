@@ -1,0 +1,31 @@
+@import "tailwindcss";
+
+@theme {
+  --color-dark-950: #050505;
+  --color-dark-900: #0A0A0A;
+  --color-dark-800: #121212;
+  /* Card Surface */
+
+  /* Exact Pastel Accents from Inspo */
+  --color-accent-pink: #E7A1D3;
+  --color-accent-blue: #B4A1E4;
+  --color-accent-purple: #CBA6F7;
+  --color-accent-peach: #E8A886;
+
+  --animate-spin-slow: spin 3s linear infinite;
+  --font-sans: 'Inter', system-ui, sans-serif;
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-[#121212]/60 backdrop-blur-2xl border border-white/5 shadow-2xl;
+  }
+
+  .glass-card {
+    @apply bg-[#121212] rounded-[32px] p-6 border border-white/5;
+  }
+
+  .btn-primary {
+    @apply bg-white text-black font-bold hover:bg-white/90 transition-all rounded-full;
+  }
+}

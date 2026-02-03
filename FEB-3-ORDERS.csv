@@ -1,0 +1,23 @@
+﻿Category,Model,SKU,Customer Name,Order ID,Preview Product URL,Payment,COGS
+Premium Tough Case,iPhone 14 Pro Max,397,Shagun Khurana,1421,https://example.com/products/case,Cash on Delivery,150.00
+Hard Case,Samsung S23 Ultra,SAMS-S23U-HC,Shagun Khurana,1421,https://undefined/products/samsung-case,Cash on Delivery,200.00
+Hard Case,Samsung S23 Ultra,SAMS-S23U-HC,Shagun Khurana,1421,https://undefined/products/samsung-case,Cash on Delivery,200.00
+Slim Case,iPhone 13,APP-IP13,Steve Jobs,1422,https://undefined/products/iphone-13,Prepaid,100.00
+
+════════════════════════,ORDER SUMMARY,════════════════════════
+
+VARIANT CATEGORY,QUANTITY
+Hard Case,2
+Premium Tough Case,1
+Slim Case,1
+
+TOTAL ITEMS,4
+TOTAL ORDERS,2
+
+════════════════════════,INVOICE,════════════════════════
+
+Subtotal (COGS),₹650.00
+GST (18%),₹117.00
+GRAND TOTAL,₹767.00
+
+Generated On,"2/3/2026, 4:25:17 AM"

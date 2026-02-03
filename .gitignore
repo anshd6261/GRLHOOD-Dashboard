@@ -1,0 +1,7 @@
+node_modules/
+.env
+.DS_Store
+*.log
+debug_*.png
+error_state_*.html
+error_state_*.png
