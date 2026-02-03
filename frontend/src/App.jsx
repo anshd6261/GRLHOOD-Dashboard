@@ -127,7 +127,7 @@ function App() {
         <NavItem icon={<History size={22} />} active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
         <div className="flex-1"></div>
         <NavItem icon={<Settings size={22} />} />
-        <div className="mb-4 text-xs text-gray-600">v4.3</div>
+        <div className="mb-4 text-xs text-gray-600">v4.4</div>
       </nav>
 
       {/* MAIN CONTENT Area */}
@@ -177,7 +177,7 @@ function App() {
                     </div>
                     <div className="icon-btn-filled bg-cyan-500/20 text-cyan-400"><Package size={20} /></div>
                   </div>
-                  <div className="text-xs text-cyan-200/40">Unique Order IDs</div>
+                  <div className="text-xs text-cyan-200/40">Unfulfilled Orders</div>
                 </div>
 
                 {/* Lime Card - Items */}
@@ -189,19 +189,31 @@ function App() {
                     </div>
                     <div className="icon-btn-filled bg-lime-500/20 text-lime-400"><Smartphone size={20} /></div>
                   </div>
-                  <div className="text-xs text-lime-200/40">Pending Fulfillment</div>
+                  <div className="text-xs text-lime-200/40">Total SKU Units</div>
                 </div>
 
-                {/* Purple Card - Revenue */}
-                <div className="card-gradient grad-purple h-40">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="text-sm text-purple-200/80 font-medium mb-1">Revenue</div>
-                      <div className="text-4xl font-bold text-white tracking-tight">₹{currentStats.revenue?.toLocaleString('en-IN') || 0}</div>
+                {/* Purple Card - Cost Breakdown */}
+                <div className="card-gradient grad-purple h-auto col-span-2">
+                  <div className="flex flex-col h-full justify-between">
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <div className="text-sm text-purple-200/80 font-medium mb-1">Total Cost (COGS + GST)</div>
+                        <div className="text-4xl font-bold text-white tracking-tight">₹{currentStats.grandTotal?.toLocaleString('en-IN', { maximumFractionDigits: 0 }) || 0}</div>
+                      </div>
+                      <div className="icon-btn-filled bg-purple-500/20 text-purple-400"><IndianRupee size={20} /></div>
                     </div>
-                    <div className="icon-btn-filled bg-purple-500/20 text-purple-400"><IndianRupee size={20} /></div>
+
+                    <div className="grid grid-cols-2 gap-4 border-t border-white/10 pt-4 mt-2">
+                      <div>
+                        <div className="text-xs text-purple-200/60 uppercase tracking-wider font-bold">COGS</div>
+                        <div className="text-lg font-semibold text-white">₹{currentStats.subtotalCogs?.toLocaleString('en-IN', { maximumFractionDigits: 0 }) || 0}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs text-purple-200/60 uppercase tracking-wider font-bold">GST (18%)</div>
+                        <div className="text-lg font-semibold text-white">₹{currentStats.gstAmount?.toLocaleString('en-IN', { maximumFractionDigits: 0 }) || 0}</div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="text-xs text-purple-200/40">Total Sales Value</div>
                 </div>
 
                 {/* Action Panel */}
