@@ -109,29 +109,29 @@ function App() {
       <main className="flex-1 ml-[80px] p-8 max-w-[1920px]">
 
         {/* CENTERED LOGO */}
-        <div className="flex justify-center py-10 mb-6">
-          <img src="/logo.png" className="h-28 object-contain drop-shadow-2xl" alt="Girlhood Logo" />
+        <div className="flex justify-center py-8 mb-4">
+          <img src="/logo.png" className="h-40 object-contain drop-shadow-2xl" alt="Girlhood Logo" />
         </div>
 
         {/* TOP BAR */}
-        <div className="flex justify-between items-center mb-10">
-          <div className="flex items-center gap-4 bg-[#1A1A1A] px-4 py-3 rounded-2xl w-[400px] border border-white/5 focus-within:border-white/10 transition-colors">
-            <Search size={18} className="text-gray-500" />
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center gap-4 bg-[#111111] px-4 py-3 rounded-lg w-[400px] border border-white/5 focus-within:border-white/10 transition-colors">
+            <Search size={18} className="text-gray-600" />
             <input
               type="text"
               placeholder="Search orders, customers..."
-              className="bg-transparent outline-none text-sm w-full placeholder-gray-600"
+              className="bg-transparent outline-none text-sm w-full placeholder-gray-700 text-gray-300"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 bg-[#1A1A1A] px-4 py-2 rounded-xl border border-white/5">
-              <span className="text-xs text-gray-500 font-bold uppercase">Sync Days</span>
-              <input type="number" value={lookback} onChange={e => setLookback(e.target.value)} className="w-8 bg-transparent text-center font-bold text-white outline-none" />
+            <div className="flex items-center gap-2 bg-[#1A1A1A] px-4 py-2.5 rounded-lg border border-white/5">
+              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Sync Days</span>
+              <input type="number" value={lookback} onChange={e => setLookback(e.target.value)} className="w-6 bg-transparent text-center font-bold text-white outline-none text-sm" />
             </div>
-            <button onClick={handleSync} disabled={loading} className="bg-white text-black px-6 py-3 rounded-xl font-bold text-sm hover:bg-gray-200 transition-colors flex items-center gap-2">
+            <button onClick={handleSync} disabled={loading} className="bg-white text-black px-6 py-2.5 rounded-lg font-bold text-sm hover:bg-gray-200 transition-colors flex items-center gap-2">
               <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> {loading ? 'Syncing...' : 'Sync Data'}
             </button>
           </div>
