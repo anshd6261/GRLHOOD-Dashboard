@@ -51,7 +51,9 @@ const getAccessToken = async () => {
 const graphqlRequest = async (query, variables = {}) => {
   const token = await getAccessToken();
   const domain = getCleanDomain();
-  const url = `https://${domain}/admin/api/2026-01/graphql.json`;
+  const url = `https://${domain}/admin/api/2024-01/graphql.json`;
+
+  console.log(`[GRAPHQL] Requesting ${url}`);
 
   try {
     const response = await axios.post(url, {
@@ -251,34 +253,39 @@ const updateProductSku = async (productId, newSku) => {
 
   if (variants.length === 0) throw new Error('No variants found for product');
 
-  // 2. Update each variant
-  // We can use bulk mutation or just loop. Loop is safer for small count.
+  // 2. Update each variant using REST API (More robust for permissions debugging)
+  const token = await getAccessToken();
+  const domain = getCleanDomain();
 
-  const mutation = `
-        mutation productVariantUpdate($input: ProductVariantInput!) {
-            productVariantUpdate(input: $input) {
-                userErrors {
-                    field
-                    message
-                }
-                productVariant {
-                    id
-                    sku
-                }
-            }
+  // Use legacy API version for safety
+  const apiVersion = '2024-01';
+
+  for (const variantGid of variants) {
+    // Convert GID (gid://shopify/ProductVariant/12345) to Numeric ID (12345)
+    const variantId = variantGid.split('/').pop();
+    const url = `https://${domain}/admin/api/${apiVersion}/variants/${variantId}.json`;
+
+    console.log(`[REST] PUT ${url}`, { sku: newSku });
+
+    try {
+      await axios.put(url, {
+        variant: {
+          id: variantId,
+          sku: newSku.toString()
         }
-    `;
-
-  for (const variantId of variants) {
-    const variables = {
-      input: {
-        id: variantId,
-        sku: newSku.toString()
+      }, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Shopify-Access-Token': token
+        }
+      });
+    } catch (error) {
+      console.error(`[REST] Failed to update variant ${variantId}:`, error.response?.data || error.message);
+      // If it's a permission error, throw a clear message
+      if (error.response?.status === 403 || error.response?.status === 401) {
+        throw new Error("Permission Denied: App likely lacks 'write_products' scope.");
       }
-    };
-    const res = await graphqlRequest(mutation, variables);
-    if (res.productVariantUpdate.userErrors.length > 0) {
-      console.error('Error updating variant:', res.productVariantUpdate.userErrors);
+      throw new Error(`Failed to update SKU: ${JSON.stringify(error.response?.data?.errors || error.message)}`);
     }
   }
 
