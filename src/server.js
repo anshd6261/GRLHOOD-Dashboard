@@ -97,14 +97,14 @@ app.post('/api/download', async (req, res) => {
             rows: rows
         });
 
-        const buffer = await generateExcel(rows, gstRate);
+        const csvContent = generateCSV(rows, gstRate);
 
-        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-        res.setHeader('Content-Disposition', 'attachment; filename="orders.xlsx"');
-        res.send(buffer);
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename="orders.csv"');
+        res.send(csvContent);
 
     } catch (error) {
-        console.error('[API] Error generating Excel:', error.message);
+        console.error('[API] Error generating CSV:', error.message);
         res.status(500).json({ error: error.message });
     }
 });

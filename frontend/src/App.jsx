@@ -98,11 +98,11 @@ function App() {
       // Current backend saves on every /download call. That's fine for now, or we can add a flag.
 
       const res = await axios.post(`${API_URL}/download`, { rows: rowsToDownload }, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }));
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
 
       const date = new Date().toISOString().split('T')[0];
       const batchId = Math.floor(100 + Math.random() * 900);
-      const filename = `${date}_NLG_POD_${orderType}_BATCH-${batchId}.xlsx`;
+      const filename = `${date}_NLG_POD_${orderType}_BATCH-${batchId}.csv`;
 
       const link = document.createElement('a');
       link.href = url;
