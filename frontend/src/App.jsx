@@ -67,7 +67,7 @@ function App() {
 
       {/* SIDEBAR */}
       <nav className="sidebar">
-        <div className="mb-8"><img src="/logo.png" className="w-10 h-10 object-contain" /></div>
+        <div className="mt-8"></div> {/* Spacer instead of logo */}
         <NavItem icon={<Grid size={22} />} active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
         <NavItem icon={<History size={22} />} active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
         <div className="flex-1"></div>
@@ -77,6 +77,11 @@ function App() {
 
       {/* MAIN CONTENT Area */}
       <main className="flex-1 ml-[80px] p-8 max-w-[1920px]">
+
+        {/* CENTERED LOGO */}
+        <div className="flex justify-center py-10 mb-6">
+          <img src="/logo.png" className="h-28 object-contain drop-shadow-2xl" alt="Girlhood Logo" />
+        </div>
 
         {/* TOP BAR */}
         <div className="flex justify-between items-center mb-10">
