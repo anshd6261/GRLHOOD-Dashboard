@@ -215,24 +215,39 @@ function App() {
                     </div>
                   </div>
                 </div>
+              </div>
 
-                {/* Action Panel */}
-                <div className="panel-dark h-40 flex flex-col justify-center gap-3">
-                  {workflowStatus === 'review' || data?.orders ? ( // Show actions if data exists
-                    <>
-                      <div className="grid grid-cols-2 gap-3">
-                        <button onClick={() => handleDownloadDashboard('prepaid')} className="bg-[#1A1A1A] hover:bg-[#252525] p-3 rounded-xl border border-white/5 text-xs font-bold text-green-400 flex items-center justify-center gap-2 transition-colors">Prepaid CSV</button>
-                        <button onClick={() => handleDownloadDashboard('cod')} className="bg-[#1A1A1A] hover:bg-[#252525] p-3 rounded-xl border border-white/5 text-xs font-bold text-orange-400 flex items-center justify-center gap-2 transition-colors">COD CSV</button>
+              {/* Action Panel */}
+              <div className="panel-dark h-auto flex flex-col justify-center gap-3 p-4">
+                {data?.orders ? (
+                  <>
+                    {/* Actions */}
+                    <div className="grid grid-cols-1 gap-4">
+                      <button onClick={handleDownload} className="bg-white text-black py-4 rounded-xl font-bold hover:bg-gray-200 transition-colors flex items-center justify-center gap-2">
+                        <Download size={20} /> Download CSV
+                      </button>
+                    </div>
+
+                    {/* DEBUG OVERLAY (Temporary) */}
+                    <div className="bg-red-900/20 border border-red-500/50 p-4 rounded-xl text-xs font-mono text-red-200 overflow-auto max-h-48 mt-4">
+                      <div className="font-bold mb-2 border-b border-red-500/30 pb-1">DEBUG INFO (v4.5.0)</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>API Rows: <span className="text-white">{data?.orders?.length}</span></div>
+                        <div>Stats.Orders: <span className="text-white">{currentStats.totalOrders}</span></div>
+                        <div>Stats.COGS: <span className="text-white">{currentStats.subtotalCogs}</span></div>
                       </div>
-                      <div className="flex gap-3">
-                        <button onClick={handleSendEmail} className="flex-1 bg-[#1A1A1A] hover:bg-[#252525] p-3 rounded-xl border border-white/5 text-xs font-bold text-blue-400 flex items-center justify-center gap-2 transition-colors"><Mail size={16} /> Email</button>
-                        <button onClick={handleUploadPortal} className="flex-1 bg-white text-black p-3 rounded-xl font-bold text-xs hover:bg-gray-200 flex items-center justify-center gap-2 transition-colors"><UploadCloud size={16} /> Upload</button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-center text-gray-500 text-sm">Sync to enable actions</div>
-                  )}
-                </div>
+                      <div className="mt-2 text-gray-400 font-bold">First Row Raw:</div>
+                      <pre className="text-[10px] leading-3 mt-1 opacity-80">{JSON.stringify(data?.orders?.[0] ? {
+                        orderId: data.orders[0].orderId,
+                        cogs: data.orders[0].cogs,
+                        price: data.orders[0].price,
+                        item: data.orders[0].model
+                      } : 'No Data', null, 2)}</pre>
+                    </div>
+                  </>
+                ) : (
+                  <div className="text-center text-gray-500 text-sm py-8">Sync to enable actions</div>
+                )}
               </div>
 
               {/* TABLE SECTION */}

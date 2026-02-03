@@ -171,6 +171,11 @@ const processOrders = (orders, gstRate = 18) => {
                     productId,
                     variantId
                 });
+
+                // DEBUG LOG: Check first 5 rows to debug user issue
+                if (processedRows.length <= 5) {
+                    console.log(`[PROCESSOR DEBUG] Row ${processedRows.length}: OrderID="${orderId}", COGS=${cogs}, Price=${price}`);
+                }
             }
         }
     }

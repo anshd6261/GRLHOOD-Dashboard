@@ -51,6 +51,9 @@ app.get('/api/orders', async (req, res) => {
         // Unique Orders count
         const uniqueOrders = new Set(processedRows.map(r => r.orderId)).size;
 
+        console.log(`[API STATS] Rows: ${processedRows.length}, Unique Orders: ${uniqueOrders}`);
+        console.log(`[API STATS] Total COGS: ${totalCOGS}, Total Revenue: ${totalRevenue}`);
+
         // Read Settings (mocked or from file)
         let settings = { automationEnabled: false, schedule: '0 9 */3 * *' };
         try {
