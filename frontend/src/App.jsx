@@ -89,31 +89,6 @@ function App() {
     return { totalOrders, totalItems, subtotal, total };
   };
 
-  // --- SKU & IMAGE LOGIC ---
-  const handleCreateSku = async (index, productId) => {
-    if (!productId) return alert("Product ID missing");
-    if (!confirm("Generate and assign next sequential SKU to all variants?")) return;
-
-    const newOrders = [...data.orders];
-    // Optimistic Update (shows loading state practically)
-    // Actually let's just wait for API
-
-    try {
-      const res = await axios.post(`${API_URL}/generate-sku`, { productId });
-      if (res.data.success) {
-        alert(`Generated SKU: ${res.data.newSku}`);
-        // Manually update all rows with this productId
-        const skuStr = res.data.newSku.toString();
-        newOrders.forEach(row => {
-          if (row.productId === productId) row.sku = skuStr;
-        });
-        setData({ ...data, orders: newOrders });
-      }
-    } catch (e) {
-      alert('Error generating SKU: ' + (e.response?.data?.error || e.message));
-    }
-  };
-
   const currentStats = getStats();
   const filteredOrders = data?.orders?.filter(r => !searchTerm || r.orderId.toString().includes(searchTerm) || r.customerName.toLowerCase().includes(searchTerm.toLowerCase())) || [];
 
@@ -127,7 +102,7 @@ function App() {
         <NavItem icon={<History size={22} />} active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
         <div className="flex-1"></div>
         <NavItem icon={<Settings size={22} />} />
-        <div className="mb-4 text-xs text-gray-600">v4.4</div>
+        <div className="mb-4 text-xs text-gray-600">v4.1</div>
       </nav>
 
       {/* MAIN CONTENT Area */}
@@ -177,7 +152,7 @@ function App() {
                     </div>
                     <div className="icon-btn-filled bg-cyan-500/20 text-cyan-400"><Package size={20} /></div>
                   </div>
-                  <div className="text-xs text-cyan-200/40">Unfulfilled Orders</div>
+                  <div className="text-xs text-cyan-200/40">Pending Fulfillment</div>
                 </div>
 
                 {/* Lime Card - Items */}
@@ -189,65 +164,38 @@ function App() {
                     </div>
                     <div className="icon-btn-filled bg-lime-500/20 text-lime-400"><Smartphone size={20} /></div>
                   </div>
-                  <div className="text-xs text-lime-200/40">Total SKU Units</div>
+                  <div className="text-xs text-lime-200/40">Individual SKUs</div>
                 </div>
 
-                {/* Purple Card - Cost Breakdown */}
-                <div className="card-gradient grad-purple h-auto col-span-2">
-                  <div className="flex flex-col h-full justify-between">
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <div className="text-sm text-purple-200/80 font-medium mb-1">Total Cost (COGS + GST)</div>
-                        <div className="text-4xl font-bold text-white tracking-tight">₹{currentStats.grandTotal?.toLocaleString('en-IN', { maximumFractionDigits: 0 }) || 0}</div>
-                      </div>
-                      <div className="icon-btn-filled bg-purple-500/20 text-purple-400"><IndianRupee size={20} /></div>
+                {/* Purple Card - Revenue */}
+                <div className="card-gradient grad-purple h-40">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="text-sm text-purple-200/80 font-medium mb-1">Revenue</div>
+                      <div className="text-4xl font-bold text-white tracking-tight">₹{currentStats.subtotal?.toFixed(0) || 0}</div>
                     </div>
-
-                    <div className="grid grid-cols-2 gap-4 border-t border-white/10 pt-4 mt-2">
-                      <div>
-                        <div className="text-xs text-purple-200/60 uppercase tracking-wider font-bold">COGS</div>
-                        <div className="text-lg font-semibold text-white">₹{currentStats.subtotalCogs?.toLocaleString('en-IN', { maximumFractionDigits: 0 }) || 0}</div>
-                      </div>
-                      <div>
-                        <div className="text-xs text-purple-200/60 uppercase tracking-wider font-bold">GST (18%)</div>
-                        <div className="text-lg font-semibold text-white">₹{currentStats.gstAmount?.toLocaleString('en-IN', { maximumFractionDigits: 0 }) || 0}</div>
-                      </div>
-                    </div>
+                    <div className="icon-btn-filled bg-purple-500/20 text-purple-400"><IndianRupee size={20} /></div>
                   </div>
+                  <div className="text-xs text-purple-200/40">Subtotal COGS</div>
                 </div>
-              </div>
 
-              {/* Action Panel */}
-              <div className="panel-dark h-auto flex flex-col justify-center gap-3 p-4">
-                {data?.orders ? (
-                  <>
-                    {/* Actions */}
-                    <div className="grid grid-cols-1 gap-4">
-                      <button onClick={handleDownload} className="bg-white text-black py-4 rounded-xl font-bold hover:bg-gray-200 transition-colors flex items-center justify-center gap-2">
-                        <Download size={20} /> Download CSV
-                      </button>
-                    </div>
-
-                    {/* DEBUG OVERLAY (Temporary) */}
-                    <div className="bg-red-900/20 border border-red-500/50 p-4 rounded-xl text-xs font-mono text-red-200 overflow-auto max-h-48 mt-4">
-                      <div className="font-bold mb-2 border-b border-red-500/30 pb-1">DEBUG INFO (v4.5.0)</div>
-                      <div className="grid grid-cols-2 gap-2">
-                        <div>API Rows: <span className="text-white">{data?.orders?.length}</span></div>
-                        <div>Stats.Orders: <span className="text-white">{currentStats.totalOrders}</span></div>
-                        <div>Stats.COGS: <span className="text-white">{currentStats.subtotalCogs}</span></div>
+                {/* Action Panel */}
+                <div className="panel-dark h-40 flex flex-col justify-center gap-3">
+                  {workflowStatus === 'review' || data?.orders ? ( // Show actions if data exists
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <button onClick={() => handleDownloadDashboard('prepaid')} className="bg-[#1A1A1A] hover:bg-[#252525] p-3 rounded-xl border border-white/5 text-xs font-bold text-green-400 flex items-center justify-center gap-2 transition-colors">Prepaid CSV</button>
+                        <button onClick={() => handleDownloadDashboard('cod')} className="bg-[#1A1A1A] hover:bg-[#252525] p-3 rounded-xl border border-white/5 text-xs font-bold text-orange-400 flex items-center justify-center gap-2 transition-colors">COD CSV</button>
                       </div>
-                      <div className="mt-2 text-gray-400 font-bold">First Row Raw:</div>
-                      <pre className="text-[10px] leading-3 mt-1 opacity-80">{JSON.stringify(data?.orders?.[0] ? {
-                        orderId: data.orders[0].orderId,
-                        cogs: data.orders[0].cogs,
-                        price: data.orders[0].price,
-                        item: data.orders[0].model
-                      } : 'No Data', null, 2)}</pre>
-                    </div>
-                  </>
-                ) : (
-                  <div className="text-center text-gray-500 text-sm py-8">Sync to enable actions</div>
-                )}
+                      <div className="flex gap-3">
+                        <button onClick={handleSendEmail} className="flex-1 bg-[#1A1A1A] hover:bg-[#252525] p-3 rounded-xl border border-white/5 text-xs font-bold text-blue-400 flex items-center justify-center gap-2 transition-colors"><Mail size={16} /> Email</button>
+                        <button onClick={handleUploadPortal} className="flex-1 bg-white text-black p-3 rounded-xl font-bold text-xs hover:bg-gray-200 flex items-center justify-center gap-2 transition-colors"><UploadCloud size={16} /> Upload</button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center text-gray-500 text-sm">Sync to enable actions</div>
+                  )}
+                </div>
               </div>
 
               {/* TABLE SECTION */}
@@ -273,9 +221,10 @@ function App() {
                       <thead>
                         <tr>
                           <th className="table-header pl-4 w-12"></th>
-                          <th className="table-header pl-4">Order / Product</th>
+                          <th className="table-header pl-4 w-20">Order</th>
+                          <th className="table-header">Product</th>
                           <th className="table-header">SKU / Model</th>
-                          <th className="table-header">Category</th>
+                          <th className="table-header w-48">Attributes</th>
                           <th className="table-header">Customer</th>
                           <th className="table-header text-right pr-4">COGS</th>
                         </tr>
@@ -286,52 +235,67 @@ function App() {
                             <td className="py-4 pl-4 text-center">
                               <button onClick={() => deleteDashboardOrder(i)} className="text-red-900 group-hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={16} /></button>
                             </td>
-                            <td className="py-4 pl-4">
-                              <div className="flex items-center gap-3">
-                                {/* PRODUCT THUMBNAIL */}
-                                <div className="w-10 h-10 rounded-lg bg-white/5 overflow-hidden border border-white/10 flex-shrink-0">
-                                  {row.imageUrl ? (
-                                    <img src={row.imageUrl} className="w-full h-full object-cover" />
-                                  ) : (<div className="w-full h-full flex items-center justify-center text-gray-600"><Box size={14} /></div>)}
+                            <td className="py-4 pl-4 align-top">
+                              <div className="flex flex-col gap-1">
+                                <div className="font-mono text-sm text-cyan-200 font-bold">
+                                  <input className="bg-transparent outline-none w-16" value={row.orderId} onChange={(e) => { const n = [...data.orders]; n[i].orderId = e.target.value; setData({ ...data, orders: n }) }} />
                                 </div>
-
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <div className="font-mono text-sm text-cyan-200 font-bold">
-                                      #{row.orderId}
-                                    </div>
-                                    {/* LINK TO SHOPIFY ADMIN */}
-                                    {row.adminOrderLink && (
-                                      <a href={row.adminOrderLink} target="_blank" rel="noopener noreferrer" className="text-gray-500 hover:text-white transition-colors">
-                                        <LayoutGrid size={14} />
-                                      </a>
-                                    )}
-                                  </div>
-                                  <div className={`text-[10px] font-bold px-2 py-0.5 rounded w-fit mt-1 ${row.payment === 'Prepaid' ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'}`}>{row.payment}</div>
+                                <div className={`text-[10px] font-bold px-2 py-0.5 rounded w-fit ${row.payment === 'Prepaid' ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'}`}>{row.payment}</div>
+                                {row.adminLink && (
+                                  <a href={row.adminLink} target="_blank" rel="noopener noreferrer" className="text-gray-600 hover:text-white transition-colors mt-1" title="Open in Shopify Admin">
+                                    <div className="flex items-center gap-1 text-[10px] uppercase font-bold"><Settings size={10} /> Admin</div>
+                                  </a>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-4 align-top">
+                              <div className="flex gap-4">
+                                {row.thumbnail ? (
+                                  <img src={row.thumbnail} className="w-12 h-12 rounded-lg border border-white/10 object-cover" alt="Product" />
+                                ) : (
+                                  <div className="w-12 h-12 rounded-lg border border-white/10 bg-white/5 flex items-center justify-center text-gray-600"><Box size={20} /></div>
+                                )}
+                                <div className="flex flex-col justify-center">
+                                  <input className="bg-transparent outline-none text-white font-medium hover:text-cyan-200 transition-colors placeholder-gray-700 w-full" value={row.category} onChange={(e) => { const n = [...data.orders]; n[i].category = e.target.value; setData({ ...data, orders: n }) }} />
                                 </div>
                               </div>
                             </td>
-                            <td className="py-4">
-                              <div className="flex flex-col gap-1 w-full max-w-md">
+                            <td className="py-4 align-top">
+                              <div className="flex flex-col gap-2 w-full max-w-md">
                                 <div className="flex items-center gap-2">
-                                  <input className="bg-transparent outline-none text-white font-medium hover:text-cyan-200 transition-colors placeholder-gray-700" placeholder="SKU" value={row.sku || ''} onChange={(e) => { const n = [...data.orders]; n[i].sku = e.target.value; setData({ ...data, orders: n }) }} />
-                                  {/* GENERATE SKU BUTTON */}
-                                  {(!row.sku && row.productId) && (
-                                    <button onClick={() => handleCreateSku(i, row.productId)} className="text-[10px] bg-accent-purple/20 text-accent-purple px-2 py-0.5 rounded-full hover:bg-accent-purple/40 transition-colors font-bold whitespace-nowrap">
-                                      + SKU
-                                    </button>
+                                  {row.sku ? (
+                                    <input className="bg-transparent outline-none text-white font-mono text-sm hover:text-cyan-200 transition-colors placeholder-gray-700" placeholder="SKU" value={row.sku} onChange={(e) => { const n = [...data.orders]; n[i].sku = e.target.value; setData({ ...data, orders: n }) }} />
+                                  ) : (
+                                    row.productId ? (
+                                      <button onClick={async () => {
+                                        if (confirm('Generate new SKU for this product? This will update all variants.')) {
+                                          try {
+                                            const r = await axios.post(`${API_URL}/create-sku`, { productId: row.productId });
+                                            if (r.data.success) {
+                                              alert(`Generated SKU: ${r.data.sku}`);
+                                              handleSync(); // Refresh to get updates
+                                            }
+                                          } catch (err) { alert(err.response?.data?.error || err.message); }
+                                        }
+                                      }} className="bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-500 text-[10px] px-2 py-1 rounded border border-yellow-500/30 font-bold flex items-center gap-1 transition-colors">
+                                        <RefreshCw size={10} /> Create SKU
+                                      </button>
+                                    ) : <span className="text-gray-600 text-xs italic">No ID</span>
                                   )}
                                 </div>
-                                <input className="bg-transparent outline-none text-xs text-gray-500 hover:text-gray-300 transition-colors placeholder-gray-800" placeholder="Model" value={row.model} onChange={(e) => { const n = [...data.orders]; n[i].model = e.target.value; setData({ ...data, orders: n }) }} />
+                                <input className="bg-transparent outline-none text-xs text-lime-400 hover:text-lime-300 transition-colors placeholder-gray-800" placeholder="Model" value={row.model} onChange={(e) => { const n = [...data.orders]; n[i].model = e.target.value; setData({ ...data, orders: n }) }} />
                               </div>
                             </td>
-                            <td className="py-4">
-                              <input className="bg-transparent outline-none text-gray-400 text-sm hover:text-white transition-colors" value={row.category} onChange={(e) => { const n = [...data.orders]; n[i].category = e.target.value; setData({ ...data, orders: n }) }} />
+                            <td className="py-4 align-top">
+                              {/* Attributes Column placeholder if needed or additional inputs */}
+                              <div className="text-xs text-gray-500">
+                                {row.variantId && <div title="Variant ID">{row.variantId.split('/').pop()}</div>}
+                              </div>
                             </td>
-                            <td className="py-4 font-medium text-gray-400">
+                            <td className="py-4 font-medium text-gray-400 align-top">
                               <input className="bg-transparent outline-none w-full" value={row.customerName} onChange={(e) => { const n = [...data.orders]; n[i].customerName = e.target.value; setData({ ...data, orders: n }) }} />
                             </td>
-                            <td className="py-4 pr-4 text-right font-mono text-white">
+                            <td className="py-4 pr-4 text-right font-mono text-white align-top">
                               <input type="number" className="bg-transparent outline-none w-20 text-right" value={row.cogs} onChange={(e) => { const n = [...data.orders]; n[i].cogs = e.target.value; setData({ ...data, orders: n }) }} />
                             </td>
                           </tr>

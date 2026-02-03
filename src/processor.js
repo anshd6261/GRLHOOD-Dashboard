@@ -122,30 +122,31 @@ const processOrders = (orders, gstRate = 18) => {
             // 3. SKU
             const sku = item.sku || variant.sku || '';
 
-            // 4. Preview URL & Visuals
+            // 4. Preview URL & Admin Link
             // Sometimes in properties, sometimes construct from handle
             let previewUrl = '';
             if (product.onlineStoreUrl) {
                 previewUrl = product.onlineStoreUrl;
             } else if (product.handle) {
-                // Fallback to constructing URL
                 previewUrl = `https://${process.env.SHOPIFY_STORE_DOMAIN}/products/${product.handle}`;
             }
 
-            // Image URL
-            // Prioritize Variant Image -> Product Featured Image
-            const imageUrl = variant.image?.url || product.featuredImage?.url || '';
+            // Admin Link (for "Link Icon")
+            // Ideally extract store name from domain or just use domain if it redirects correctly
+            // e.g. admin.shopify.com/store/xyz/orders/123
+            const storeName = process.env.SHOPIFY_STORE_DOMAIN.replace('.myshopify.com', '');
+            const adminLink = order.legacyResourceId
+                ? `https://admin.shopify.com/store/${storeName}/orders/${order.legacyResourceId}`
+                : '';
 
-            // Shopify Admin Order Link (User Request: "Link Icon to Open Specific Order")
-            // legacyResourceId is the numeric ID e.g. 5626242631234
-            // URL: https://admin.shopify.com/store/{store}/orders/{id}
-            // If store domain is "foo.myshopify.com", the admin store part is "foo".
-            const shopName = process.env.SHOPIFY_STORE_DOMAIN ? process.env.SHOPIFY_STORE_DOMAIN.split('.')[0] : '';
-            const adminOrderLink = order.legacyResourceId ? `https://admin.shopify.com/store/${shopName}/orders/${order.legacyResourceId}` : '';
+            // Product Image (Thumbnail) - Try Variant Image -> Product Image -> Placeholder
+            const variantImage = variant.image?.url;
+            const productImage = product.images?.edges?.[0]?.node?.url;
+            const thumbnail = variantImage || productImage || '';
 
-            // Product & Variant IDs for SKU Generation
-            const productId = product.id; // GID
-            const variantId = variant.id; // GID
+            // IDs for SKU Generation
+            const productId = product.id;
+            const variantId = variant.id;
 
             // 5. COGS & PRICE
             const unitCost = variant.inventoryItem?.unitCost?.amount;
@@ -162,20 +163,14 @@ const processOrders = (orders, gstRate = 18) => {
                     customerName,
                     orderId,
                     previewUrl,
+                    adminLink,
+                    thumbnail,
+                    productId,
+                    variantId,
                     payment,
                     cogs,
-                    price, // Added for Revenue calculation
-                    // New Fields
-                    imageUrl,
-                    adminOrderLink,
-                    productId,
-                    variantId
+                    price // Added for Revenue calculation
                 });
-
-                // DEBUG LOG: Check first 5 rows to debug user issue
-                if (processedRows.length <= 5) {
-                    console.log(`[PROCESSOR DEBUG] Row ${processedRows.length}: OrderID="${orderId}", COGS=${cogs}, Price=${price}`);
-                }
             }
         }
     }

@@ -51,9 +51,6 @@ app.get('/api/orders', async (req, res) => {
         // Unique Orders count
         const uniqueOrders = new Set(processedRows.map(r => r.orderId)).size;
 
-        console.log(`[API STATS] Rows: ${processedRows.length}, Unique Orders: ${uniqueOrders}`);
-        console.log(`[API STATS] Total COGS: ${totalCOGS}, Total Revenue: ${totalRevenue}`);
-
         // Read Settings (mocked or from file)
         let settings = { automationEnabled: false, schedule: '0 9 */3 * *' };
         try {
@@ -109,6 +106,20 @@ app.post('/api/download', async (req, res) => {
     } catch (error) {
         console.error('[API] Error generating CSV:', error.message);
         res.status(500).json({ error: error.message });
+    }
+});
+
+// 3.1 Create SKU Endpoint
+app.post('/api/create-sku', async (req, res) => {
+    try {
+        const { productId } = req.body;
+        if (!productId) return res.status(400).json({ error: 'Product ID required' });
+
+        const newSku = await require('./shopify').assignSkuToProduct(productId);
+        res.json({ success: true, sku: newSku });
+    } catch (error) {
+        console.error('[API] SKU Creation Error:', error.message);
+        res.status(500).json({ success: false, error: error.message });
     }
 });
 
@@ -187,27 +198,7 @@ app.put('/api/history/:id', (req, res) => {
     }
 });
 
-// 8. Generate SKU Endpoint (User Request)
-const { calculateNextSku, updateProductSku } = require('./shopify');
-
-app.post('/api/generate-sku', async (req, res) => {
-    const { productId } = req.body;
-    if (!productId) return res.status(400).json({ error: 'Product ID required' });
-
-    try {
-        const nextSku = await calculateNextSku();
-        console.log(`[SKU] Generated Next SKU: ${nextSku}`);
-
-        await updateProductSku(productId, nextSku);
-
-        res.json({ success: true, newSku: nextSku });
-    } catch (error) {
-        console.error('[SKU] Generation Error:', error);
-        res.status(500).json({ error: error.message });
-    }
-});
-
-// 9. Catch-All for Frontend
+// 7. Catch-All for Frontend
 app.get(/.*/, (req, res) => {
     res.sendFile(path.join(__dirname, '../frontend/dist', 'index.html'));
 });

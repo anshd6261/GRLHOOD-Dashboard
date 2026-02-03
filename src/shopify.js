@@ -51,9 +51,7 @@ const getAccessToken = async () => {
 const graphqlRequest = async (query, variables = {}) => {
   const token = await getAccessToken();
   const domain = getCleanDomain();
-  const url = `https://${domain}/admin/api/2024-01/graphql.json`;
-
-  console.log(`[GRAPHQL] Requesting ${url}`);
+  const url = `https://${domain}/admin/api/2026-01/graphql.json`;
 
   try {
     const response = await axios.post(url, {
@@ -87,21 +85,15 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
   const query = `
     query GetUnfulfilledOrders($cursor: String, $query: String!) {
       orders(first: 50, after: $cursor, query: $query, sortKey: CREATED_AT, reverse: true) {
-        pageInfo {
-          hasNextPage
-          endCursor
-        }
+        pageInfo { hasNextPage endCursor }
         edges {
           node {
-            id
-            legacyResourceId
             name
+            legacyResourceId
             createdAt
             displayFinancialStatus
             paymentGatewayNames
-            shippingAddress {
-              name
-            }
+            shippingAddress { name }
             lineItems(first: 100) {
               edges {
                 node {
@@ -110,43 +102,30 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
                   sku
                   quantity
                   originalUnitPrice
-                  customAttributes {
-                    key
-                    value
-                  }
+                  customAttributes { key value }
                   variant {
                     id
                     title
                     sku
-                    image {
-                        url
+                    image { url }
+                    product {
+                        id
+                        legacyResourceId
                     }
                     # Fetch "Custom Coded Handle" if it exists as a metafield
-                    handle_metafield: metafield(namespace: "custom", key: "handle") {
-                      value
-                    }
+                    handle_metafield: metafield(namespace: "custom", key: "handle") { value }
                     # Fallback: maybe they meant a color handle?
-                    color_handle: metafield(namespace: "custom", key: "color_handle") {
-                       value
-                    }
-                    selectedOptions {
-                      name
-                      value
-                    }
-                    inventoryItem {
-                      unitCost {
-                        amount
-                      }
-                    }
+                    color_handle: metafield(namespace: "custom", key: "color_handle") { value }
+                    selectedOptions { name value }
+                    inventoryItem { unitCost { amount } }
                   }
                   product {
                     id
-                    featuredImage {
-                        url
-                    }
                     onlineStoreUrl
                     handle
                     productType
+                    legacyResourceId
+                    images(first: 1) { edges { node { url } } }
                   }
                 }
               }
@@ -165,14 +144,9 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
   let cursor = null;
 
   while (hasNextPage) {
-    const data = await graphqlRequest(query, {
-      cursor,
-      query: queryFilter
-    });
-
+    const data = await graphqlRequest(query, { cursor, query: queryFilter });
     const ordersData = data.orders;
     allOrders.push(...ordersData.edges.map(e => e.node));
-
     hasNextPage = ordersData.pageInfo.hasNextPage;
     cursor = ordersData.pageInfo.endCursor;
   }
@@ -183,117 +157,100 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
 
 // --- SKU GENERATION LOGIC ---
 
-const calculateNextSku = async () => {
-  // 1. Fetch recent products (last 250) to find the current highest numeric SKU
-  // Assumption: SKUs are essentially numeric like "100", "101". 
-  // We ignore non-numeric SKUs.
+const getNextSku = async () => {
+  // Strategy: Fetch recent 250 products, extract numeric SKUs, find Max.
+  // This assumes the "highest" SKU is likely on a reasonably recent product.
   const query = `
-      query GetRecentProducts {
-        products(first: 250, sortKey: CREATED_AT, reverse: true) {
-          edges {
-            node {
-              variants(first: 20) {
+        query {
+            products(first: 250, sortKey: CREATED_AT, reverse: true) {
                 edges {
-                  node {
-                    sku
-                  }
+                    node {
+                        variants(first: 10) {
+                            edges { node { sku } }
+                        }
+                    }
                 }
-              }
             }
-          }
         }
-      }
     `;
+  const data = await graphqlRequest(query);
+  let max = 0;
 
-  try {
-    const data = await graphqlRequest(query);
-    let maxSku = 0;
-
-    data.products.edges.forEach(p => {
-      p.node.variants.edges.forEach(v => {
-        const sku = v.node.sku;
-        if (sku && /^\d+$/.test(sku)) {
-          const val = parseInt(sku, 10);
-          if (val > maxSku) maxSku = val;
-        }
-      });
+  data.products.edges.forEach(p => {
+    p.node.variants.edges.forEach(v => {
+      const sku = v.node.sku;
+      if (sku && /^\d+$/.test(sku)) { // Check if SKU is purely numeric
+        const num = parseInt(sku, 10);
+        if (num > max) max = num;
+      }
     });
+  });
 
-    // If no numeric SKUs found, maybe start at 100?
-    if (maxSku === 0) return 100;
-
-    return maxSku + 1;
-  } catch (error) {
-    console.error('Error finding max SKU:', error);
-    throw error;
-  }
+  // Default to 100 if no numeric SKUs found
+  return max === 0 ? 100 : max + 1;
 };
 
-const updateProductSku = async (productId, newSku) => {
-  // 1. Get all variants of the product
-  console.log(`[SKU] Updating product ${productId} to SKU ${newSku}...`);
+const assignSkuToProduct = async (productId) => {
+  console.log(`[SKU] Assigning new SKU to Product ID: ${productId}`);
 
-  // We need to fetch variants first to get their IDs
-  const fetchVariantsQuery = `
-      query GetProductVariants($id: ID!) {
-        product(id: $id) {
-          variants(first: 100) {
-            edges {
-              node {
-                id
-              }
+  // 1. Get Next SKU
+  const nextSku = await getNextSku();
+  const nextSkuStr = nextSku.toString();
+  console.log(`[SKU] Generated SKU: ${nextSkuStr}`);
+
+  // 2. Update all variants of this product
+  // First, we need the ProductVariant IDs. GraphQL mutation requires them.
+  // We can fetch them or just assume the productId passed is the GID.
+
+  // Fetch variants of the target product
+  const productQuery = `
+        query($id: ID!) {
+            product(id: $id) {
+                variants(first: 100) {
+                   edges { node { id } }
+                }
             }
-          }
         }
-      }
+    `;
+  const prodData = await graphqlRequest(productQuery, { id: productId });
+  const variants = prodData.product.variants.edges.map(e => e.node.id);
+
+  if (variants.length === 0) throw new Error('Product has no variants');
+
+  // 3. Bulk Update Mutation
+  const mutation = `
+        mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+            productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+                product {
+                    id
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
     `;
 
-  const productData = await graphqlRequest(fetchVariantsQuery, { id: productId });
-  const variants = productData.product.variants.edges.map(e => e.node.id);
+  const variantInputs = variants.map(id => ({
+    id: id,
+    sku: nextSkuStr
+  }));
 
-  if (variants.length === 0) throw new Error('No variants found for product');
+  const result = await graphqlRequest(mutation, {
+    productId: productId,
+    variants: variantInputs
+  });
 
-  // 2. Update each variant using REST API (More robust for permissions debugging)
-  const token = await getAccessToken();
-  const domain = getCleanDomain();
-
-  // Use legacy API version for safety
-  const apiVersion = '2024-01';
-
-  for (const variantGid of variants) {
-    // Convert GID (gid://shopify/ProductVariant/12345) to Numeric ID (12345)
-    const variantId = variantGid.split('/').pop();
-    const url = `https://${domain}/admin/api/${apiVersion}/variants/${variantId}.json`;
-
-    console.log(`[REST] PUT ${url}`, { sku: newSku });
-
-    try {
-      await axios.put(url, {
-        variant: {
-          id: variantId,
-          sku: newSku.toString()
-        }
-      }, {
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Shopify-Access-Token': token
-        }
-      });
-    } catch (error) {
-      console.error(`[REST] Failed to update variant ${variantId}:`, error.response?.data || error.message);
-      // If it's a permission error, throw a clear message
-      if (error.response?.status === 403 || error.response?.status === 401) {
-        throw new Error("Permission Denied: App likely lacks 'write_products' scope.");
-      }
-      throw new Error(`Failed to update SKU: ${JSON.stringify(error.response?.data?.errors || error.message)}`);
-    }
+  if (result.productVariantsBulkUpdate.userErrors.length > 0) {
+    throw new Error(JSON.stringify(result.productVariantsBulkUpdate.userErrors));
   }
 
-  return true;
+  console.log(`[SKU] Successfully updated ${variants.length} variants to SKU ${nextSkuStr}`);
+  return nextSkuStr;
 };
 
 module.exports = {
   getUnfulfilledOrders,
-  calculateNextSku,
-  updateProductSku
+  assignSkuToProduct
 };
