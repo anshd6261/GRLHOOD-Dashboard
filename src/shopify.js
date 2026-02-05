@@ -197,12 +197,37 @@ const assignSkuToProduct = async (productId) => {
 
 // --- END SKU LOGIC ---
 
-const getUnfulfilledOrders = async (daysLookback = 3) => {
-  const daysAgo = new Date();
-  daysAgo.setDate(daysAgo.getDate() - daysLookback);
-  const dateFilter = daysAgo.toISOString();
+const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate = null) => {
+  let dateFilter = '';
 
-  console.log(`[ORDERS] Fetching unfulfilled orders since ${dateFilter}...`);
+  if (startDate && endDate) {
+    // ISO String for Start and End
+    // Start: 00:00:00
+    const start = new Date(startDate);
+    start.setHours(0, 0, 0, 0);
+
+    // End: 23:59:59
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+
+    // Format: YYYY-MM-DDTHH:mm:ss (Local Time, No Z)
+    // This ensures we search in the Store's timezone which aligns with setHours(0,0,0,0) locally.
+    const formatLocalISO = (d) => {
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    };
+
+    dateFilter = `created_at:>=${formatLocalISO(start)} created_at:<=${formatLocalISO(end)}`;
+    console.log(`[ORDERS] Fetching orders from ${formatLocalISO(start)} to ${formatLocalISO(end)}...`);
+  } else {
+    const daysAgo = new Date();
+    daysAgo.setDate(daysAgo.getDate() - daysLookback);
+    // Strip millis, use proper ISO for fallback or simpler format
+    // For "days ago", we just want "since that time".
+    const formatISO = (d) => d.toISOString().split('.')[0] + 'Z';
+    dateFilter = `created_at:>=${formatISO(daysAgo)}`;
+    console.log(`[ORDERS] Fetching unfulfilled orders since ${formatISO(daysAgo)}...`);
+  }
 
   const query = `
     query GetUnfulfilledOrders($cursor: String, $query: String!) {
@@ -221,6 +246,7 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
             paymentGatewayNames
             shippingAddress {
               name
+              phone
             }
             lineItems(first: 100) {
               edges {
@@ -252,9 +278,10 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
                       value
                     }
                     inventoryItem {
-                      unitCost {
-                        amount
-                      }
+                        id
+                        unitCost {
+                            amount
+                        }
                     }
                   }
                   product {
@@ -272,7 +299,7 @@ const getUnfulfilledOrders = async (daysLookback = 3) => {
     }
   `;
 
-  const queryFilter = `fulfillment_status:unfulfilled status:open created_at:>=${dateFilter}`;
+  const queryFilter = `fulfillment_status:unfulfilled status:open ${dateFilter}`;
 
   let allOrders = [];
   let hasNextPage = true;
@@ -350,5 +377,6 @@ const getOrder = async (id) => {
 module.exports = {
   getUnfulfilledOrders,
   assignSkuToProduct,
-  getOrder
+  getOrder,
+  graphqlRequest
 };

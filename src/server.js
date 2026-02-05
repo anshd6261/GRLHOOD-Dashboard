@@ -1,10 +1,14 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 require('dotenv').config();
 
 const { getUnfulfilledOrders, assignSkuToProduct, getOrder } = require('./shopify');
 const { processOrders } = require('./processor');
+const shiprocket = require('./shiprocket');
+const riskValidator = require('./riskValidator'); // Fixed Import
+const { v4: uuidv4 } = require('uuid');
 const { generateCSV } = require('./csv');
 const { generateExcel } = require('./excel');
 const { getHistory, saveBatch, updateBatch } = require('./history');
@@ -14,7 +18,8 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Serve Static Frontend (Production)
 app.use(express.static(path.join(__dirname, '../frontend/dist')));
@@ -32,12 +37,14 @@ app.get('/api/status', (req, res) => {
 app.get('/api/orders', async (req, res) => {
     try {
         const daysLookback = parseInt(req.query.days || process.env.DETAILS_LOOKBACK_DAYS || 3);
+        const startDate = req.query.startDate || null;
+        const endDate = req.query.endDate || null;
         const gstRate = parseFloat(process.env.GST_RATE || 18);
 
-        console.log(`[API] Fetching orders (lookback: ${daysLookback} days)...`);
+        console.log(`[API] Fetching orders... Options:`, { daysLookback, startDate, endDate });
 
         // Fetch
-        const rawOrders = await getUnfulfilledOrders(daysLookback);
+        const rawOrders = await getUnfulfilledOrders(daysLookback, startDate, endDate);
 
         // Process
         const processedRows = processOrders(rawOrders, gstRate);
@@ -100,7 +107,6 @@ app.post('/api/download', async (req, res) => {
         const csvContent = generateCSV(rows, gstRate);
 
         // Determine File Name Based on Content
-        // YYYY-MM-DD_NLG_POD_{TYPE}_BATCH-{ID}.csv
         const today = new Date().toISOString().split('T')[0];
         const hasPrepaid = rows.some(r => r.payment === 'Prepaid');
         const hasCOD = rows.some(r => r.payment === 'Cash on Delivery');
@@ -109,10 +115,6 @@ app.post('/api/download', async (req, res) => {
         if (hasPrepaid && !hasCOD) type = 'PREPAID';
         if (!hasPrepaid && hasCOD) type = 'COD';
 
-        // Pad batch ID to 3 digits (e.g., 004)
-        // Since 'saveBatch' returns ID like date-random, we might want a simpler ID or just use what we have.
-        // User requested BATCH-004. We'll simplify the ID logic in history.js later or just use the last 3 chars of ID for now.
-        // For strict compliance, we'd need a counter. Let's use the batch.id directly if short, or suffix.
         const batchId = batch.id.slice(-3);
         const filename = `${today}_NLG_POD_${type}_BATCH-${batchId}.csv`;
 
@@ -131,7 +133,7 @@ app.post('/api/download', async (req, res) => {
 
 const { sendApprovalEmail } = require('./email');
 const { uploadToPortal } = require('./uploader');
-const fs = require('fs');
+// fs already required at top
 
 // 4. V2 Status Check
 app.get('/api/v2/status', (req, res) => {
@@ -168,7 +170,6 @@ app.post('/api/email-approval', async (req, res) => {
 app.post('/api/upload-portal', async (req, res) => {
     try {
         const { rows } = req.body;
-        // Generate temporary file for Puppeteer to grab
         const gstRate = parseFloat(process.env.GST_RATE || 18);
         const csvContent = generateCSV(rows, gstRate);
 
@@ -177,7 +178,6 @@ app.post('/api/upload-portal', async (req, res) => {
 
         await uploadToPortal(tempPath);
 
-        // Cleanup
         if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
 
         res.json({ success: true, message: 'Upload complete' });
@@ -214,185 +214,342 @@ app.post('/api/products/:id/assign-sku', async (req, res) => {
     }
 });
 
-// 9. Shiprocket Label Generation
-const shiprocket = require('./shiprocket');
+// 9. Shiprocket Label Generation - ASYNC JOB SYSTEM
+const jobQueue = {}; // In-memory Job Store
 
 app.post('/api/shiprocket/generate-labels', async (req, res) => {
     try {
-        // 1. Get user confirmed IP? Middleware handles access.
+        const jobId = 'JOB-' + Date.now();
+        // Return Immediately
+        res.json({ success: true, jobId, message: 'Processing started in background' });
 
-        // 2. Get Last Batch from History
+        // Start processing background
+        processLabelGenerationJob(jobId);
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+app.get('/api/shiprocket/job/:id', (req, res) => {
+    const job = jobQueue[req.params.id];
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    res.json(job);
+});
+
+// Helper to serve temp files
+app.get('/api/download-file/:filename', (req, res) => {
+    const filename = req.params.filename;
+    // Security check: simple alphanumeric + underscore/dash/dot
+    if (!/^[a-zA-Z0-9_\-\.]+$/.test(filename)) {
+        return res.status(400).send('Invalid filename');
+    }
+    const filepath = path.join(__dirname, '..', filename);
+    if (fs.existsSync(filepath)) {
+        res.download(filepath);
+    } else {
+        res.status(404).send('File not found');
+    }
+});
+
+async function processLabelGenerationJob(jobId) {
+    jobQueue[jobId] = { status: 'STARTING', logs: [] };
+
+    try {
         const history = getHistory();
-        if (history.length === 0) return res.status(400).json({ error: 'No CSV history found to process.' });
+        if (history.length === 0) {
+            jobQueue[jobId] = { status: 'FAILED', error: 'No CSV history found.' };
+            return;
+        }
 
         const lastBatch = history[0]; // Most recent
         const ordersToProcess = lastBatch.rows;
 
-        console.log(`[SHIPROCKET] Processing Batch ${lastBatch.id} with ${ordersToProcess.length} orders...`);
+        console.log(`[JOB ${jobId}] Processing Batch ${lastBatch.id} with ${ordersToProcess.length} orders...`);
 
-        // 3. Filter Risk - Fetch fresh details from Shopify for Risk Status
-        // NOTE: We need to re-fetch these orders or assume 'riskLevel' is in the batch data if we synced recently.
-        // But the batch history might NOT have riskLevel if it was saved before this update. 
-        // Ideally we should rely on the Order ID.
-        // Optimization: Let's assume user just synced. But to be safe, we check if 'riskLevel' exists in row. 
-        // If not, we might process anyway or warn. 
+        jobQueue[jobId].status = 'FETCHING_DETAILS';
+        jobQueue[jobId].totalInfo = ordersToProcess.length;
 
-        // BETTER: We just iterate. If riskLevel is HIGH, we skip.
-        // Since we just added 'riskLevel' to `shopify.js`, new synced orders have it. Old ones don't.
-        // We will default to 'LOW' if missing to avoid blocking, or 'HIGH' if paranoid. 
-        // Let's default to LOW but log.
-
-        const safeOrdersObj = [];
-        const highRiskOrders = [];
+        let safeOrders = []; // Full Shopify Objects
+        const highRiskOrders = []; // Rows + Data
         const failedOrders = [];
-        const successfulShipmentIds = [];
 
-        // 3. Process Orders Serially (Fetch Details -> Risk Check)
+        // 1. Wallet Check (Check BEFORE Fetching Info)
+        jobQueue[jobId].status = 'CHECKING_WALLET';
+
+        // Estimate Cost: ₹100 per order (Safe Estimate)
+        const EST_COST_PER_ORDER = 120;
+        const totalEstimatedCost = ordersToProcess.length * EST_COST_PER_ORDER;
+
+        await shiprocket.authenticate();
+        const walletBalance = await shiprocket.getWalletBalance();
+
+        if (walletBalance !== null && walletBalance < totalEstimatedCost) {
+            console.warn(`[WALLET] Insufficient Funds. Need ~₹${totalEstimatedCost}, Have ₹${walletBalance}`);
+            jobQueue[jobId] = {
+                status: 'REQUIRES_MONEY',
+                estimatedCost: totalEstimatedCost,
+                currentBalance: walletBalance,
+                shortfall: totalEstimatedCost - walletBalance
+            };
+            return;
+        }
+
+        // 2. Fetch & Filter Risk
+        jobQueue[jobId].status = 'FETCHING_DETAILS';
+        let processedCount = 0;
+
         for (const row of ordersToProcess) {
-            let orderId = row.id;
+            processedCount++;
+            if (processedCount % 5 === 0) jobQueue[jobId].progress = `Reviewing Order ${processedCount}/${ordersToProcess.length}`;
 
-            // Fallback for old batches without 'id'
-            if (!orderId && row.orderLink) {
-                orderId = row.orderLink.split('/').pop();
-            }
+            let orderId = row.id || row.orderId;
+            // Clean up if it's a URL or GID
+            if (orderId && orderId.includes('/')) orderId = orderId.split('/').pop();
 
             if (!orderId) {
-                console.warn(`[SHIPROCKET] Skipping row ${row.orderId}, no numeric ID found.`);
                 failedOrders.push({ ...row, error: 'No ID found' });
                 continue;
             }
 
             try {
-                // Fetch Full Details
+                // Fetch full details to check risk
                 const fullOrder = await getOrder(orderId);
 
-                // Risk Check
                 if (fullOrder.riskLevel === 'HIGH') {
-                    console.warn(`[SHIPROCKET] Order ${fullOrder.name} is HIGH RISK. Skipping.`);
-                    highRiskOrders.push(row);
+                    console.log(`[RISK] Order ${orderId} is HIGH RISK. Skipping.`);
+                    highRiskOrders.push({ ...row, riskLevel: 'HIGH', riskAnalysis: 'Shopify marked HIGH' });
                     continue;
                 }
 
-                // Add to safe list with full details for creation
-                safeOrdersObj.push(fullOrder);
+                safeOrders.push(fullOrder); // Use full object for further processing if needed
             } catch (e) {
-                console.error(`[SHIPROCKET] Failed to fetch order ${row.orderId}:`, e.message);
                 failedOrders.push({ ...row, error: 'Fetch Failed: ' + e.message });
             }
         }
 
-        if (safeOrdersObj.length === 0) {
-            return res.status(400).json({
-                error: 'No eligible orders found. check High Risk report.',
+        // --- V8: RISK VALIDATION ---
+        console.log(`[JOB ${jobId}] Validating ${safeOrders.length} potential orders...`);
+        const validatedSafeOrders = [];
+
+        // 1. Check Address & Phone
+        for (const order of safeOrders) {
+            const addrVal = riskValidator.validateAddress(order);
+            if (!addrVal.valid) {
+                console.log(`⚠️ Risk Check Failed (Address): ${order.name} - ${addrVal.reason}`);
+                highRiskOrders.push({
+                    'Order ID': order.name,
+                    'Customer': order.shippingAddress?.name || "Unknown",
+                    'Risk': 'HIGH (Validator)',
+                    'Reason': addrVal.reason
+                });
+                continue;
+            }
+
+            const phoneVal = riskValidator.validatePhone(order.phone || order.shippingAddress?.phone);
+            if (!phoneVal.valid) {
+                console.log(`⚠️ Risk Check Failed (Phone): ${order.name} - ${phoneVal.reason}`);
+                highRiskOrders.push({
+                    'Order ID': order.name,
+                    'Customer': order.shippingAddress?.name || "Unknown",
+                    'Risk': 'HIGH (Validator)',
+                    'Reason': phoneVal.reason
+                });
+                continue;
+            }
+            validatedSafeOrders.push(order);
+        }
+
+        // 2. Check Duplicates (Same Address, Diff Name)
+        const duplicateMap = riskValidator.findDuplicates(validatedSafeOrders);
+        const finalSafeOrders = [];
+
+        for (const order of validatedSafeOrders) {
+            if (duplicateMap.has(order.id)) {
+                const reason = duplicateMap.get(order.id);
+                console.log(`⚠️ Risk Check Failed (Duplicate): ${order.name}`);
+                highRiskOrders.push({
+                    'Order ID': order.name,
+                    'Customer': order.shippingAddress?.name || "Unknown",
+                    'Risk': 'HIGH (Duplicate)',
+                    'Reason': reason
+                });
+            } else {
+                finalSafeOrders.push(order);
+            }
+        }
+
+        safeOrders = finalSafeOrders; // Update main list
+        console.log(`[JOB ${jobId}] Validation Complete. Safe Orders: ${safeOrders.length}`);
+
+
+        if (safeOrders.length === 0) {
+            // Generate High Risk Report if needed
+            let highRiskUrl = null;
+            if (highRiskOrders.length > 0) {
+                // Use Dynamic CSV for Risk Report
+                const { generateDynamicCSV } = require('./csv');
+                const csv = generateDynamicCSV(highRiskOrders);
+                const p = path.join(__dirname, '..', `HIGH_RISK_${jobId}.csv`);
+
+                // Ensure unique name or overwrite?
+                // Using jobId makes it unique per run
+                fs.writeFileSync(p, csv);
+                highRiskUrl = `/api/download-file/HIGH_RISK_${jobId}.csv`;
+            }
+
+            jobQueue[jobId] = {
+                status: 'COMPLETED',
+                labelUrl: null,
+                highRiskUrl,
+                highRiskUrl,
+                message: 'No safe orders to process.',
                 highRiskCount: highRiskOrders.length
-            });
+            };
+
+            if (failedOrders.length > 0) {
+                console.log('[DEBUG] Failed Orders:', JSON.stringify(failedOrders, null, 2));
+            }
+            return;
         }
 
-        // 4. Authenticate & Check Wallet
-        await shiprocket.authenticate();
-        const walletBalance = await shiprocket.getWalletBalance();
-        const estimatedCost = safeOrdersObj.length * 100; // ₹100 est per order
+        // 3. Process Safe Orders (Find -> Assign -> Label)
+        jobQueue[jobId].status = 'PROCESSING_SHIPROCKET';
 
-        // Only block if we strictly know balance is less than cost (and not null)
-        if (walletBalance !== null && walletBalance < estimatedCost) {
-            return res.json({
-                success: false,
-                requiresMoney: true,
-                currentBalance: walletBalance,
-                estimatedCost: estimatedCost,
-                message: `Low Wallet Balance`
-            });
-        }
+        const validShipmentIds = [];
+        const shipmentToOrderMap = {}; // To trace back failed IDs
 
-        // 5. Process Safe Orders (Create -> Assign -> Pickup)
-        console.log(`[SHIPROCKET] Processing ${safeOrdersObj.length} Safe Orders...`);
+        let procWithSR = 0;
+        console.log(`[JOB ${jobId}] Starting Shiprocket ID Lookup for ${safeOrders.length} orders...`);
 
-        for (const order of safeOrdersObj) {
-            // A. Create Order
-            let createRes = await shiprocket.createOrder(order);
+        // A. Bulk Identify
+        for (const order of safeOrders) {
+            procWithSR++;
+            if (procWithSR % 5 === 0) jobQueue[jobId].progress = `Identifying Orders ${procWithSR}/${safeOrders.length}`;
 
-            // Handle Duplicate: Try to Update existing order with new dimensions
-            if (!createRes.success && createRes.error === 'DUPLICATE') {
-                console.log(`[SHIPROCKET] Order ${order.name} exists. Attempting update with new dimensions...`);
-                createRes = await shiprocket.updateOrder(order);
-            }
+            // FIX: Shiprocket stores 'channel_order_id' as the Order Name (e.g. "1573"), not the GID.
+            // We search by Name.
+            const searchKey = order.name.replace('#', '');
 
-            if (!createRes.success) {
-                failedOrders.push({ orderId: order.name, error: createRes.error });
-                continue;
-            }
+            try {
+                let search = await shiprocket.findOrderByShopifyId(searchKey);
 
-            const shipmentId = createRes.shipment_id;
-
-            // B. Assign Courier (Auto)
-            const assignRes = await shiprocket.assignCourier(shipmentId);
-            if (!assignRes.success) {
-                // If Low Wallet here (unlikely if check passed, but possible)
-                if (assignRes.error === 'LOW_WALLET') {
-                    return res.json({
-                        success: false,
-                        requiresMoney: true,
-                        currentBalance: await shiprocket.getWalletBalance(),
-                        estimatedCost: estimatedCost, // Rough msg
-                        message: "Insufficient funds during assignment."
-                    });
+                // Fallback: Try with Hash if undefined (just in case)
+                if (!search.found) {
+                    search = await shiprocket.findOrderByShopifyId(order.name);
                 }
-                failedOrders.push({ orderId: order.name, error: 'Assign Failed: ' + assignRes.error });
-                continue;
+
+                // Fallback 2: Try with Shopify Long ID (GID or numeric)
+                if (!search.found && order.id) {
+                    // order.id might be "gid://..." or "630..."
+                    const numericId = order.id.split('/').pop();
+                    search = await shiprocket.findOrderByShopifyId(numericId);
+                }
+
+                if (search.found) {
+                    let finalShipmentId = search.shipment_id;
+
+                    // FIX v2: Use Replacement Order Strategy (Force Dimensions)
+                    // "Address Update" ignores dims, so we MUST create a Replacement Order to get a valid shipment.
+                    try {
+                        console.log(`[SR] Attempting Replacement Order Creation for ${order.name}...`);
+                        const repRes = await shiprocket.ensureReplacementOrder(order);
+                        if (repRes && repRes.shipment_id) {
+                            finalShipmentId = repRes.shipment_id;
+                            // Note: We use the *Replacement* Shipment ID for label generation
+                        }
+                    } catch (updErr) {
+                        console.warn(`[SR] Replacement Order Logic Failed for ${order.name}:`, updErr.message);
+                    }
+
+                    if (finalShipmentId) {
+                        validShipmentIds.push({
+                            shipmentId: finalShipmentId,
+                            orderId: search.order_id,
+                            shopifyOrder: order
+                        });
+                        shipmentToOrderMap[finalShipmentId] = order.name;
+                    } else {
+                        console.warn(`[SR] Order ${order.name} found but NO Shipment ID available.`);
+                        failedOrders.push({ orderId: order.name, error: 'Shipment Creation Failed' });
+                    }
+                } else {
+                    console.warn(`[SR] Order ${order.name} not found in Shiprocket.`);
+                    failedOrders.push({ orderId: order.name, error: 'Not found in Shiprocket (Sync Issue)' });
+                }
+            } catch (e) {
+                failedOrders.push({ orderId: order.name, error: 'Lookup Failed: ' + e.message });
             }
-
-            // C. Schedule Pickup (Next Day)
-            await shiprocket.schedulePickup(shipmentId);
-
-            successfulShipmentIds.push(shipmentId);
         }
 
-        // 6. Generate Labels
-        let labelUrl = null;
-        if (successfulShipmentIds.length > 0) {
-            labelUrl = await shiprocket.generateLabel(successfulShipmentIds);
+        if (validShipmentIds.length === 0) {
+            jobQueue[jobId].status = 'COMPLETED';
+            jobQueue[jobId].message = 'No valid Shiprocket orders found.';
+            jobQueue[jobId].failedCount = failedOrders.length;
+            return;
         }
 
-        // 7. Generate Reports
-        // High Risk Report
-        let highRiskUrl = null;
-        if (highRiskOrders.length > 0) {
-            const gstRate = parseFloat(process.env.GST_RATE || 18);
-            const csv = generateCSV(highRiskOrders, gstRate); // Reuse logic
-            const filename = `HIGH_RISK_ORDERS_${Date.now()}.csv`;
-            // We can serve this directly or save and link?
-            // Since we return JSON, better to save to temp or return Content in JSON?
-            // Or better: Return a separate download endpoint?
-            // For simplicity, we can't return multiple files easily in one HTTP response unless ZIP.
-            // We will save to a public/temp folder and return URL?
-            // Static serve is set to frontend/dist. 
-            // Let's create a temp file and serve via a specific route or data URI?
-            // Data URI is safest.
-            highRiskUrl = `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`;
-        }
+        // B. Bulk Assign Couriers
+        jobQueue[jobId].progress = `Bulk Assigning Couriers for ${validShipmentIds.length} shipments...`;
+        console.log(`[JOB ${jobId}] Bulk Assigning ${validShipmentIds.length} shipments...`);
 
-        // Failed Process Report
-        let failedUrl = null;
-        if (failedOrders.length > 0) {
-            const csv = ['Order ID,Error'].concat(failedOrders.map(f => `${f.orderId},${f.error}`)).join('\n');
-            failedUrl = `data:text/csv;charset=utf-8,${encodeURIComponent(csv)}`;
-        }
+        const assignmentRes = await shiprocket.bulkAssignCouriers(validShipmentIds);
 
-        res.json({
-            success: true,
-            processedCount: successfulShipmentIds.length,
-            labelUrl: labelUrl,
-            highRiskUrl: highRiskUrl,
-            highRiskCount: highRiskOrders.length,
-            failedUrl: failedUrl,
-            failedCount: failedOrders.length
+        // Track Failures
+        assignmentRes.failed.forEach(f => {
+            const oid = shipmentToOrderMap[f.id] || f.id;
+            failedOrders.push({ orderId: oid, error: 'Assign Failed: ' + f.error });
         });
 
-    } catch (error) {
-        console.error('[SHIPROCKET] API Error:', error);
-        res.status(500).json({ error: error.message });
+        const readyToShipIds = assignmentRes.successful;
+
+        // C. Bulk Generate Label
+        let finalLabelUrl = null;
+
+        if (readyToShipIds.length > 0) {
+            jobQueue[jobId].progress = `Generating Bulk Label for ${readyToShipIds.length} shipments...`;
+            console.log(`[JOB ${jobId}] Generating Bulk Label for ${readyToShipIds.length} assignments...`);
+
+            const labelRes = await shiprocket.bulkGenerateLabel(readyToShipIds);
+
+            if (labelRes.success) {
+                finalLabelUrl = labelRes.url;
+            } else {
+                // If bulk label fails, mark all as failed? Or just generic error?
+                console.error(`[JOB ${jobId}] Bulk Label Failed: ${labelRes.error}`);
+                // Add a generic error to the job?
+                readyToShipIds.forEach(sid => {
+                    const oid = shipmentToOrderMap[sid] || sid;
+                    failedOrders.push({ orderId: oid, error: 'Label Gen Failed: ' + labelRes.error });
+                });
+            }
+        } else {
+            console.warn(`[JOB ${jobId}] No orders were successfully assigned.`);
+        }
+
+        // 4. Finalize
+        jobQueue[jobId].status = 'COMPLETED';
+        const fs = require('fs'); // Ensure requires are available if not global
+
+        // Generate High Risk Report if exists
+        let highRiskUrl = null;
+        if (highRiskOrders.length > 0) {
+            const csv = generateCSV(highRiskOrders, 18);
+            const p = path.join(__dirname, '..', `HIGH_RISK_${jobId}.csv`);
+            fs.writeFileSync(p, csv);
+            highRiskUrl = `/api/download-file/HIGH_RISK_${jobId}.csv`;
+        }
+
+        jobQueue[jobId].labelUrl = finalLabelUrl;
+        jobQueue[jobId].highRiskUrl = highRiskUrl;
+        jobQueue[jobId].failedCount = failedOrders.length;
+        jobQueue[jobId].successCount = finalLabelUrl ? readyToShipIds.length : 0;
+
+    } catch (e) {
+        console.error(`[JOB ${jobId}] Critical Error:`, e);
+        jobQueue[jobId] = { status: 'FAILED', error: e.message };
     }
-});
+}
+
 
 // 10. Catch-All for Frontend
 app.get(/.*/, (req, res) => {

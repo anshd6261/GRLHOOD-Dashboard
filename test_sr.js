@@ -1,38 +1,18 @@
-const axios = require('axios');
+const shiprocket = require('./src/shiprocket');
 
-const email = 'Cloutcases.in@gmail.com';
-const password = 'OWpfoV@DNS23LXVdpG%DgUqsO!$Pr0ki';
-
-async function test() {
+const run = async () => {
     try {
-        console.log('Authenticating...');
-        const login = await axios.post('https://apiv2.shiprocket.in/v1/external/auth/login', { email, password });
-        console.log('Login Response Keys:', Object.keys(login.data));
-        console.log('Login Data:', JSON.stringify(login.data, null, 2));
-        const token = login.data.token;
-        console.log('Token obtained.');
+        await shiprocket.authenticate();
 
-        const headers = { 'Authorization': `Bearer ${token}` };
+        const SEARCH_ID = '1561';
+        console.log(`Searching for Order: ${SEARCH_ID}`);
 
-        console.log('Fetching Account Details...');
-        try {
-            const res = await axios.get('https://apiv2.shiprocket.in/v1/external/account/details', { headers });
-            console.log('Response /account/details:', JSON.stringify(res.data, null, 2));
-        } catch (e) {
-            console.log('Error /account/details:', e.response?.status, e.response?.data);
-        }
-
-        console.log('Fetching Users...');
-        try {
-            const res = await axios.get('https://apiv2.shiprocket.in/v1/external/users', { headers });
-            console.log('Response /users:', JSON.stringify(res.data, null, 2));
-        } catch (e) {
-            console.log('Error /users:', e.response?.status, e.response?.data);
-        }
+        const result = await shiprocket.findOrderByShopifyId(SEARCH_ID);
+        console.log('Result:', JSON.stringify(result, null, 2));
 
     } catch (e) {
-        console.error('Auth Error:', e.response?.data || e.message);
+        console.error('Error:', e);
     }
-}
+};
 
-test();
+run();
