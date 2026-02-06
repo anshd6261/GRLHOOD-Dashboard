@@ -2,20 +2,25 @@ const stringify = require('csv-stringify/sync').stringify;
 const fs = require('fs');
 const path = require('path');
 
-const generateCSV = (rows, gstRate = 18) => {
+console.log('[CSV Module] Loaded Version 1.1');
+
+const generateCSV = (inputRows, gstRate = 18) => {
+    // Deep copy to ensure we can modify COGS safely
+    const rows = JSON.parse(JSON.stringify(inputRows));
+
     // 1. Calculate Summary
     const categoryCounts = {};
     let totalCOGS = 0;
 
     rows.forEach(row => {
-        // Count categories
-        if (!categoryCounts[row.category]) {
-            categoryCounts[row.category] = 0;
-        }
-        categoryCounts[row.category]++;
+        if (!row) return; // Skip null/undefined rows
 
-        // DEBUG LOG
-        // console.log(`[CSV] Row ${row.orderId} COGS:`, row.cogs, typeof row.cogs);
+        // Count categories
+        const cat = row.category || 'Unknown';
+        if (!categoryCounts[cat]) {
+            categoryCounts[cat] = 0;
+        }
+        categoryCounts[cat]++;
 
         // Sum COGS - Ensure it's a number
         const cogsVal = parseFloat(row.cogs);
@@ -35,15 +40,20 @@ const generateCSV = (rows, gstRate = 18) => {
 
     // Data Rows
     rows.forEach(row => {
+        if (!row) return; // Skip null rows
+
+        const cogsNum = parseFloat(row.cogs);
+        const finalCogs = isNaN(cogsNum) ? 0 : cogsNum;
+
         csvRows.push([
-            row.category,
-            row.model,
-            row.sku,
-            row.customerName,
-            row.orderId,
-            row.previewUrl,
-            row.payment,
-            row.cogs > 0 ? row.cogs.toFixed(2) : ''
+            row.category || '',
+            row.model || '',
+            row.sku || '',
+            row.customerName || '',
+            row.orderId || '',
+            row.previewUrl || '',
+            row.payment || '',
+            finalCogs > 0 ? finalCogs.toFixed(2) : ''
         ]);
     });
 

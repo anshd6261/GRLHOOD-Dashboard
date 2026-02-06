@@ -9,7 +9,7 @@ const { processOrders } = require('./processor');
 const shiprocket = require('./shiprocket');
 const riskValidator = require('./riskValidator'); // Fixed Import
 const { v4: uuidv4 } = require('uuid');
-const { generateCSV } = require('./csv');
+const { generateCSV } = require('./csv_generator');
 const { generateExcel } = require('./excel');
 const { getHistory, saveBatch, updateBatch } = require('./history');
 
@@ -128,6 +128,7 @@ app.post('/api/download', async (req, res) => {
 
     } catch (error) {
         console.error('[API] Error generating CSV:', error.message);
+        console.error(error.stack);
         res.status(500).json({ error: error.message });
     }
 });
