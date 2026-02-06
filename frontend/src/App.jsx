@@ -578,32 +578,70 @@ function App() {
       <AnimatePresence>
         {walletPopup && (
           <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-8">
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-[#1A1A1A] w-full max-w-md rounded-3xl border border-white/10 p-8 flex flex-col items-center text-center shadow-2xl">
+            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-[#1A1A1A] w-full max-w-md rounded-3xl border border-white/10 p-8 flex flex-col items-center text-center shadow-2xl relative">
+              {/* Close Button */}
+              <button
+                onClick={() => setWalletPopup(null)}
+                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-gray-400 hover:text-white transition-all"
+              >
+                <X size={16} />
+              </button>
+
               <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center text-red-500 mb-6">
                 <IndianRupee size={32} />
               </div>
               <h3 className="text-2xl font-bold text-white mb-2">Insufficient Funds</h3>
               <p className="text-gray-400 text-sm mb-6">
-                Your Shiprocket wallet balance is low.
-                <br />We estimate you need <b>₹{walletPopup.estimatedCost}</b> to process these orders.
+                Your Shiprocket wallet doesn't have enough balance to process{' '}
+                <b className="text-white">{walletPopup.orderCount || 0} orders</b>.
               </p>
 
-              <div className="bg-black/40 rounded-xl p-4 w-full mb-6 border border-white/5">
+              {/* Balance Breakdown */}
+              <div className="bg-black/40 rounded-xl p-4 w-full mb-4 border border-white/5">
                 <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-500">Current Balance</span>
                   <span className="text-white font-mono">₹{walletPopup.currentBalance}</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between text-sm mb-2">
                   <span className="text-gray-500">Required (Est.)</span>
-                  <span className="text-red-400 font-mono">₹{walletPopup.estimatedCost}</span>
+                  <span className="text-orange-400 font-mono">₹{walletPopup.estimatedCost}</span>
+                </div>
+                <div className="h-px bg-white/10 my-2"></div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-400 font-semibold">You Need to Add</span>
+                  <span className="text-red-400 font-mono font-bold">₹{walletPopup.shortfall || (walletPopup.estimatedCost - walletPopup.currentBalance)}</span>
                 </div>
               </div>
 
+              {/* Cost Breakdown */}
+              {walletPopup.avgCostPerOrder && (
+                <div className="bg-blue-500/10 rounded-lg p-3 w-full mb-6 border border-blue-500/20">
+                  <div className="text-xs text-blue-300 mb-1">Estimate Breakdown</div>
+                  <div className="text-sm text-white">
+                    {walletPopup.orderCount} orders × ₹{walletPopup.avgCostPerOrder} avg. = ₹{walletPopup.estimatedCost}
+                  </div>
+                  <div className="text-xs text-gray-400 mt-1">
+                    Based on your historical shipping costs + 10% safety margin
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-3 w-full">
-                <button onClick={() => setWalletPopup(null)} className="flex-1 bg-white text-black py-3 rounded-xl font-bold hover:bg-gray-200 transition-colors">I've Added Funds</button>
+                <button
+                  onClick={() => setWalletPopup(null)}
+                  className="flex-1 bg-gray-800 text-white py-3 rounded-xl font-bold hover:bg-gray-700 transition-colors border border-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => setWalletPopup(null)}
+                  className="flex-1 bg-white text-black py-3 rounded-xl font-bold hover:bg-gray-200 transition-colors"
+                >
+                  I've Added Funds
+                </button>
               </div>
               <div className="mt-4 text-xs text-gray-600">
-                Add funds in Shiprocket panel and try again.
+                Add ₹{walletPopup.shortfall || 0}+ to your Shiprocket wallet and try again.
               </div>
             </motion.div>
           </div>

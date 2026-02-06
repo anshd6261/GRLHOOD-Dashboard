@@ -276,20 +276,62 @@ async function processLabelGenerationJob(jobId) {
         // 1. Wallet Check (Check BEFORE Fetching Info)
         jobQueue[jobId].status = 'CHECKING_WALLET';
 
-        // Estimate Cost: ₹100 per order (Safe Estimate)
-        const EST_COST_PER_ORDER = 120;
-        const totalEstimatedCost = ordersToProcess.length * EST_COST_PER_ORDER;
+        // Count UNIQUE Orders (not CSV rows/line items)
+        const uniqueOrderIds = new Set();
+        ordersToProcess.forEach(row => {
+            let orderId = row.id || row.orderId;
+            if (orderId && orderId.includes('/')) orderId = orderId.split('/').pop();
+            if (orderId) uniqueOrderIds.add(orderId);
+        });
+        const uniqueOrderCount = uniqueOrderIds.size;
+
+        console.log(`[WALLET] Processing ${ordersToProcess.length} line items for ${uniqueOrderCount} unique orders`);
+
+        // Calculate Average Shipping Cost from History
+        let avgShippingCost = 95; // Default fallback
+        try {
+            const historyPath = path.join(__dirname, '..', 'data', 'history.json');
+            if (fs.existsSync(historyPath)) {
+                const historyData = JSON.parse(fs.readFileSync(historyPath, 'utf-8'));
+                const allShippingCosts = [];
+
+                historyData.forEach(batch => {
+                    if (batch.rows && Array.isArray(batch.rows)) {
+                        batch.rows.forEach(row => {
+                            if (row.shippingCost && !isNaN(parseFloat(row.shippingCost))) {
+                                allShippingCosts.push(parseFloat(row.shippingCost));
+                            }
+                        });
+                    }
+                });
+
+                if (allShippingCosts.length > 0) {
+                    avgShippingCost = Math.ceil(allShippingCosts.reduce((a, b) => a + b, 0) / allShippingCosts.length);
+                    console.log(`[WALLET] Calculated average shipping cost: ₹${avgShippingCost} (from ${allShippingCosts.length} samples)`);
+                }
+            }
+        } catch (e) {
+            console.warn('[WALLET] Could not calculate average shipping cost:', e.message);
+        }
+
+        // Add safety margin (10%)
+        const EST_COST_PER_ORDER = Math.ceil(avgShippingCost * 1.1);
+        const totalEstimatedCost = uniqueOrderCount * EST_COST_PER_ORDER;
 
         await shiprocket.authenticate();
         const walletBalance = await shiprocket.getWalletBalance();
 
         if (walletBalance !== null && walletBalance < totalEstimatedCost) {
-            console.warn(`[WALLET] Insufficient Funds. Need ~₹${totalEstimatedCost}, Have ₹${walletBalance}`);
+            const shortfall = Math.ceil(totalEstimatedCost - walletBalance);
+            console.warn(`[WALLET] Insufficient Funds. Need ~₹${totalEstimatedCost}, Have ₹${walletBalance}, Shortfall: ₹${shortfall}`);
             jobQueue[jobId] = {
                 status: 'REQUIRES_MONEY',
                 estimatedCost: totalEstimatedCost,
                 currentBalance: walletBalance,
-                shortfall: totalEstimatedCost - walletBalance
+                shortfall: shortfall,
+                orderCount: uniqueOrderCount,
+                lineItemCount: ordersToProcess.length,
+                avgCostPerOrder: EST_COST_PER_ORDER
             };
             return;
         }
