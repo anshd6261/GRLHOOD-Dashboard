@@ -14,7 +14,13 @@ const generateCSV = (rows, gstRate = 18) => {
         }
         categoryCounts[row.category]++;
 
-        // Sum COGS
+        // DEBUG LOG
+        // console.log(`[CSV] Row ${row.orderId} COGS:`, row.cogs, typeof row.cogs);
+
+        // Sum COGS - Ensure it's a number
+        const cogsVal = parseFloat(row.cogs);
+        row.cogs = isNaN(cogsVal) ? 0 : cogsVal;
+
         totalCOGS += row.cogs;
     });
 
