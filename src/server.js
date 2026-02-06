@@ -97,12 +97,15 @@ app.post('/api/download', async (req, res) => {
             return res.status(400).json({ error: 'Invalid data provided' });
         }
 
-        // Save to History (Async)
-        const batch = saveBatch({
-            type: 'DOWNLOAD',
-            count: rows.length,
-            rows: rows
-        });
+        // Save to History (Async) ONLY if not skipping (e.g. Save & Download)
+        let batch = { id: '000' }; // Dummy ID if skipped
+        if (!req.body.skipHistory) {
+            batch = saveBatch({
+                type: 'DOWNLOAD',
+                count: rows.length,
+                rows: rows
+            });
+        }
 
         const csvContent = generateCSV(rows, gstRate);
 

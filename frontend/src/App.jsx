@@ -158,14 +158,14 @@ function App() {
     finally { setLoading(false); }
   };
 
-  const executeDownload = async ({ rows, type = 'all' }) => {
+  const executeDownload = async ({ rows, type = 'all', skipHistory = false }) => {
     if (!rows || !rows.length) return;
     let target = rows;
     if (type === 'prepaid') target = rows.filter(r => r.payment === 'Prepaid');
     if (type === 'cod') target = rows.filter(r => r.payment === 'Cash on Delivery');
 
     try {
-      const res = await axios.post(`${API_URL}/download`, { rows: target }, { responseType: 'blob' });
+      const res = await axios.post(`${API_URL}/download`, { rows: target, skipHistory }, { responseType: 'blob' });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
       const a = document.createElement('a');
       a.href = url;
@@ -190,7 +190,7 @@ function App() {
   const saveHistory = async () => {
     if (!editingBatch) return;
     await axios.put(`${API_URL}/history/${editingBatch.id}`, { rows: editingBatch.rows });
-    await executeDownload({ rows: editingBatch.rows });
+    await executeDownload({ rows: editingBatch.rows, skipHistory: true });
     await fetchHistory(); setEditingBatch(null);
   };
 
