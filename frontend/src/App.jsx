@@ -323,15 +323,17 @@ function App() {
                   <div className="text-xs text-lime-200/40">Individual SKUs</div>
                 </div>
 
-                <div className="card-gradient grad-purple h-40">
+                <div className="card-gradient grad-purple h-40 flex flex-col justify-between">
                   <div className="flex justify-between items-start">
                     <div>
                       <div className="text-sm text-purple-200/80 font-medium mb-1">Total COGS</div>
-                      <div className="text-4xl font-bold text-white tracking-tight">₹{data?.stats?.subtotal?.toFixed(0) || 0}</div>
+                      <div className="text-3xl font-bold text-white tracking-tight">₹{data?.stats?.total?.toFixed(0) || 0}</div>
                     </div>
                     <div className="icon-btn-filled bg-purple-500/20 text-purple-400"><IndianRupee size={20} /></div>
                   </div>
-                  <div className="text-xs text-purple-200/40">Tax 18% GST INCLUDED</div>
+                  <div className="text-xs text-purple-200/60 font-medium bg-black/20 rounded px-2 py-1.5 inline-block w-max mt-2">
+                    ₹{data?.stats?.subtotal?.toFixed(0) || 0} Base + ₹{data?.stats?.gst?.toFixed(0) || 0} (18% GST)
+                  </div>
                 </div>
 
                 <div className="panel-dark h-40 flex flex-col justify-center gap-3">
