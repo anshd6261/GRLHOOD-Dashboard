@@ -18,11 +18,11 @@ module.exports = {
             autorestart: true
         },
         {
-            name: "cf-tunnel",
-            script: "./cloudflared",
-            args: "tunnel --url http://localhost:3001",
-            interpreter: "none", // Binary, not node script
-            restart_delay: 5000 // Wait 5s before restart if it crashes
+            name: "localtunnel",
+            script: "npx",
+            args: "localtunnel --port 3001 --subdomain grlhood-backend",
+            interpreter: "none",
+            restart_delay: 5000
         }
     ]
 };
