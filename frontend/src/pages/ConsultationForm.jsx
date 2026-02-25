@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { Save, Send, FileText, CheckSquare, HelpCircle, TrendingUp, AlertTriangle, Loader } from 'lucide-react';
 
+const API_BASE = import.meta.env.VITE_API_URL || 'https://disabled-injection-investing-attempts.trycloudflare.com';
+
 export default function ConsultationForm() {
     const [loading, setLoading] = useState(false);
     const [submitted, setSubmitted] = useState(false);
@@ -61,7 +63,7 @@ export default function ConsultationForm() {
         e.preventDefault();
         setLoading(true);
         try {
-            const res = await axios.post('/api/consultation/submit', formData);
+            const res = await axios.post(`${API_BASE}/api/consultation/submit`, formData);
             if (res.data.success) {
                 setSubmitted(true);
                 window.scrollTo(0, 0);

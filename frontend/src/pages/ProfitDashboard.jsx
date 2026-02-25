@@ -5,7 +5,7 @@ import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { TrendingUp, DollarSign, Package, AlertTriangle, Plus, Calendar, Search, ArrowUpRight, ArrowDownRight, Filter } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+const API_BASE = import.meta.env.VITE_API_URL || 'https://disabled-injection-investing-attempts.trycloudflare.com';
 
 // Colors for Charts
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042'];
@@ -317,8 +317,8 @@ export default function ProfitDashboard() {
                                     <td className="p-4 text-gray-400">{order.date}</td>
                                     <td className="p-4">
                                         <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase border ${order.isRto ? 'border-red-500/20 text-red-400 bg-red-500/10' :
-                                                order.status.includes('delivered') ? 'border-green-500/20 text-green-400 bg-green-500/10' :
-                                                    'border-gray-500/20 text-gray-400 bg-gray-500/10'
+                                            order.status.includes('delivered') ? 'border-green-500/20 text-green-400 bg-green-500/10' :
+                                                'border-gray-500/20 text-gray-400 bg-gray-500/10'
                                             }`}>
                                             {order.status || 'UNKNOWN'}
                                         </span>
