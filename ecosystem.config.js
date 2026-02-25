@@ -18,9 +18,9 @@ module.exports = {
             autorestart: true
         },
         {
-            name: "localtunnel",
-            script: "npx",
-            args: "localtunnel --port 3001 --subdomain grlhood-dash-api",
+            name: "cf-tunnel",
+            script: "./cloudflared",
+            args: "tunnel --url http://localhost:3001",
             interpreter: "none",
             restart_delay: 5000
         }

@@ -5,7 +5,7 @@ import "react-datepicker/dist/react-datepicker.css";
 import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, Search, Mail, UploadCloud, ChevronRight, Box, BarChart2, MessageSquare, Users, History, Plus, Trash2, Save, X, Grid, ExternalLink, Truck, Calendar, CheckSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://grlhood-dash-api.loca.lt/api';
+const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
