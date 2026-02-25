@@ -4,6 +4,7 @@ import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, Search, Mail, UploadCloud, ChevronRight, Box, BarChart2, MessageSquare, Users, History, Plus, Trash2, Save, X, Grid, ExternalLink, Truck, Calendar, CheckSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import SupplierDashboard from './pages/SupplierDashboard';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
@@ -259,9 +260,10 @@ function App() {
         <div className="mb-8"><img src="/logo.png" className="w-10 h-10 object-contain" /></div>
         <NavItem icon={<Grid size={22} />} active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
         <NavItem icon={<History size={22} />} active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
+        <NavItem icon={<IndianRupee size={22} />} active={activeTab === 'supplier'} onClick={() => setActiveTab('supplier')} />
         <div className="flex-1"></div>
         <NavItem icon={<Settings size={22} />} />
-        <div className="mb-4 text-xs text-gray-600">v7.1</div>
+        <div className="mb-4 text-xs text-gray-600">v7.2</div>
       </nav>
 
       <main className="flex-1 ml-[80px] p-8 max-w-[1920px]">
@@ -527,6 +529,13 @@ function App() {
               </div>
             </motion.div>
           )}
+
+          {activeTab === 'supplier' && (
+            <motion.div key="supplier" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <SupplierDashboard />
+            </motion.div>
+          )}
+
         </AnimatePresence>
       </main>
 
