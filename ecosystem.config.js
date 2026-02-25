@@ -20,7 +20,7 @@ module.exports = {
         {
             name: "localtunnel",
             script: "npx",
-            args: "localtunnel --port 3001 --subdomain grlhood-backend",
+            args: "localtunnel --port 3001 --subdomain grlhood-dash-api",
             interpreter: "none",
             restart_delay: 5000
         }
