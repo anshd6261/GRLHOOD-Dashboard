@@ -5,7 +5,8 @@ import "react-datepicker/dist/react-datepicker.css";
 import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, Search, Mail, UploadCloud, ChevronRight, Box, BarChart2, MessageSquare, Users, History, Plus, Trash2, Save, X, Grid, ExternalLink, Truck, Calendar, CheckSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_BASE = import.meta.env.VITE_API_URL || '';
+const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
