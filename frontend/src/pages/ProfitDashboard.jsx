@@ -5,7 +5,7 @@ import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
 import { TrendingUp, DollarSign, Package, AlertTriangle, Plus, Calendar, Search, ArrowUpRight, ArrowDownRight, Filter } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+const API_BASE = import.meta.env.VITE_API_URL || 'https://analytical-air-share-blades.trycloudflare.com';
 
 // Colors for Charts
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff8042'];

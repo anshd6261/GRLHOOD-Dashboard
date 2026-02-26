@@ -6,7 +6,7 @@ import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, Search
 import { motion, AnimatePresence } from 'framer-motion';
 import SupplierDashboard from './pages/SupplierDashboard';
 
-const API_BASE = import.meta.env.VITE_API_URL || '';
+const API_BASE = import.meta.env.VITE_API_URL || 'https://analytical-air-share-blades.trycloudflare.com';
 const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
 
 class ErrorBoundary extends React.Component {
