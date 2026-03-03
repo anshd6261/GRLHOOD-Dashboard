@@ -197,7 +197,7 @@ const assignSkuToProduct = async (productId) => {
 
 // --- END SKU LOGIC ---
 
-const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate = null) => {
+const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate = null, statusMode = 'unfulfilled') => {
   let dateFilter = '';
 
   if (startDate && endDate) {
@@ -218,7 +218,7 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
     };
 
     dateFilter = `created_at:>=${formatLocalISO(start)} created_at:<=${formatLocalISO(end)}`;
-    console.log(`[ORDERS] Fetching orders from ${formatLocalISO(start)} to ${formatLocalISO(end)}...`);
+    console.log(`[ORDERS] Fetching orders from ${formatLocalISO(start)} to ${formatLocalISO(end)} [Mode: ${statusMode}]...`);
   } else {
     const daysAgo = new Date();
     daysAgo.setDate(daysAgo.getDate() - daysLookback);
@@ -226,7 +226,7 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
     // For "days ago", we just want "since that time".
     const formatISO = (d) => d.toISOString().split('.')[0] + 'Z';
     dateFilter = `created_at:>=${formatISO(daysAgo)}`;
-    console.log(`[ORDERS] Fetching unfulfilled orders since ${formatISO(daysAgo)}...`);
+    console.log(`[ORDERS] Fetching orders since ${formatISO(daysAgo)} [Mode: ${statusMode}]...`);
   }
 
   const query = `
@@ -299,7 +299,14 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
     }
   `;
 
-  const queryFilter = `fulfillment_status:unfulfilled status:open ${dateFilter}`;
+  let statusQuery = '';
+  if (statusMode === 'unfulfilled') {
+    statusQuery = 'fulfillment_status:unfulfilled status:open';
+  } else if (statusMode === 'all') {
+    statusQuery = 'status:any';
+  }
+
+  const queryFilter = `${statusQuery} ${dateFilter}`.trim();
 
   let allOrders = [];
   let hasNextPage = true;

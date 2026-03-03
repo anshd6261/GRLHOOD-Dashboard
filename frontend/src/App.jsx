@@ -55,6 +55,7 @@ function App() {
 
   const [workflowStatus, setWorkflowStatus] = useState('idle');
   const [walletPopup, setWalletPopup] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('unfulfilled');
 
   // Selection State
   const [selectedOrders, setSelectedOrders] = useState(new Set());
@@ -135,9 +136,9 @@ function App() {
         endStr = endDate.toISOString();
       }
 
-      console.log('Syncing with:', { startStr, endStr });
+      console.log('Syncing with:', { startStr, endStr, statusFilter });
 
-      const res = await axios.get(`${API_URL}/orders?startDate=${startStr}&endDate=${endStr}`);
+      const res = await axios.get(`${API_URL}/orders?startDate=${startStr}&endDate=${endStr}&status=${statusFilter}`);
 
       if (res.headers['content-type']?.includes('text/html')) {
         throw new Error('Server returned HTML (500/404). Check Server Logs.');
@@ -285,6 +286,17 @@ function App() {
           </div>
 
           <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 bg-[#1A1A1A] px-4 py-2 rounded-xl border border-white/5">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="bg-transparent text-sm font-bold text-white outline-none cursor-pointer"
+              >
+                <option value="unfulfilled" className="bg-gray-800">Unfulfilled Only</option>
+                <option value="all" className="bg-gray-800">All Orders (Historical)</option>
+              </select>
+            </div>
+
             <div className="flex items-center gap-2 bg-[#1A1A1A] px-4 py-2 rounded-xl border border-white/5 z-50">
               <Calendar size={16} className="text-gray-500" />
               <DatePicker

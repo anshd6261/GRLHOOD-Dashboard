@@ -43,12 +43,13 @@ app.get('/api/orders', async (req, res) => {
         const daysLookback = parseInt(req.query.days || process.env.DETAILS_LOOKBACK_DAYS || 3);
         const startDate = req.query.startDate || null;
         const endDate = req.query.endDate || null;
+        const statusMode = req.query.status || 'unfulfilled';
         const gstRate = parseFloat(process.env.GST_RATE || 18);
 
-        console.log(`[API] Fetching orders... Options:`, { daysLookback, startDate, endDate });
+        console.log(`[API] Fetching orders... Options:`, { daysLookback, startDate, endDate, statusMode });
 
         // Fetch
-        const rawOrders = await getUnfulfilledOrders(daysLookback, startDate, endDate);
+        const rawOrders = await getUnfulfilledOrders(daysLookback, startDate, endDate, statusMode);
 
         // Process
         const processedRows = processOrders(rawOrders, gstRate);
