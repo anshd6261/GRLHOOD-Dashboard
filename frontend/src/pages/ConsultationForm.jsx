@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import axios from 'axios';
 import { Save, Send, FileText, CheckSquare, HelpCircle, TrendingUp, AlertTriangle, Loader } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'https://analytical-air-share-blades.trycloudflare.com';
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 export default function ConsultationForm() {
     const [loading, setLoading] = useState(false);

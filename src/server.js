@@ -12,6 +12,10 @@ const { v4: uuidv4 } = require('uuid');
 const { generateCSV } = require('./csv_generator');
 const { generateExcel } = require('./excel');
 const { getHistory, saveBatch, updateBatch } = require('./history');
+const emailService = require('./email');
+const { getAggregatedPandL, getDailyPandL, getCashPosition } = require('./calculations');
+const { getAllAlerts } = require('./alerts');
+const { syncPayUApi } = require('./sync_payu');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -124,6 +128,7 @@ app.post('/api/download', async (req, res) => {
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
         res.setHeader('X-Filename', filename); // Custom header for frontend to read
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, X-Filename');
         res.send(csvContent);
 
     } catch (error) {
@@ -177,7 +182,7 @@ app.post('/api/upload-portal', async (req, res) => {
         const gstRate = parseFloat(process.env.GST_RATE || 18);
         const csvContent = generateCSV(rows, gstRate);
 
-        const tempPath = path.join(__dirname, '..', 'temp_upload.csv');
+        const tempPath = process.env.VERCEL ? path.join('/tmp', 'temp_upload.csv') : path.join(__dirname, '..', 'temp_upload.csv');
         fs.writeFileSync(tempPath, csvContent);
 
         await uploadToPortal(tempPath);
@@ -202,9 +207,66 @@ app.put('/api/history/:id', (req, res) => {
     if (updated) {
         res.json({ success: true, batch: updated });
     } else {
-        res.status(404).json({ error: 'Batch not found' });
+        res.status(500).json({ error: 'Failed to fetch settings' });
     }
 });
+
+// ==========================================
+// NEW FINANCIAL DASHBOARD ENDPOINTS
+// ==========================================
+
+// 1. Get Summary metrics (Today vs MTD)
+app.get('/api/financials/summary', async (req, res) => {
+    try {
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        // MTD Dates
+        const date = new Date();
+        const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
+        const firstDayStr = firstDay.toISOString().split('T')[0];
+
+        const todayData = getDailyPandL(todayStr);
+        const mtdData = getAggregatedPandL(firstDayStr, todayStr);
+        const cashPos = getCashPosition();
+        const alerts = getAllAlerts();
+
+        res.json({
+            today: todayData.metrics,
+            mtd: mtdData.totals,
+            cashPosition: cashPos,
+            alerts: alerts
+        });
+    } catch (error) {
+        console.error('[Financial Error]', error);
+        res.status(500).json({ error: 'Failed to fetch financial summary' });
+    }
+});
+
+// 2. Get full Daily Breakdown for a period
+app.get('/api/financials/breakdown', async (req, res) => {
+    try {
+        const { start, end } = req.query;
+        if (!start || !end) return res.status(400).json({ error: 'Missing start or end date' });
+
+        const data = getAggregatedPandL(start, end);
+        res.json(data);
+    } catch (error) {
+        console.error('[Financial Error]', error);
+        res.status(500).json({ error: 'Failed to fetch breakdown' });
+    }
+});
+
+// 3. Trigger manual PayU sync
+app.post('/api/financials/sync-payu', async (req, res) => {
+    try {
+        const dateStr = req.body.date || new Date().toISOString().split('T')[0];
+        const result = await syncPayUApi(dateStr);
+        res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: 'Sync failed' });
+    }
+});
+
 
 // 8. Assign SKU Endpoint
 app.post('/api/products/:id/assign-sku', async (req, res) => {
@@ -247,7 +309,7 @@ app.get('/api/download-file/:filename', (req, res) => {
     if (!/^[a-zA-Z0-9_\-\.]+$/.test(filename)) {
         return res.status(400).send('Invalid filename');
     }
-    const filepath = path.join(__dirname, '..', filename);
+    const filepath = process.env.VERCEL ? path.join('/tmp', filename) : path.join(__dirname, '..', filename);
     if (fs.existsSync(filepath)) {
         res.download(filepath);
     } else {
@@ -435,7 +497,7 @@ async function processLabelGenerationJob(jobId) {
                 // Use Dynamic CSV for Risk Report
                 const { generateDynamicCSV } = require('./csv');
                 const csv = generateDynamicCSV(highRiskOrders);
-                const p = path.join(__dirname, '..', `HIGH_RISK_${jobId}.csv`);
+                const p = process.env.VERCEL ? path.join('/tmp', `HIGH_RISK_${jobId}.csv`) : path.join(__dirname, '..', `HIGH_RISK_${jobId}.csv`);
 
                 // Ensure unique name or overwrite?
                 // Using jobId makes it unique per run
@@ -580,7 +642,7 @@ async function processLabelGenerationJob(jobId) {
         let highRiskUrl = null;
         if (highRiskOrders.length > 0) {
             const csv = generateCSV(highRiskOrders, 18);
-            const p = path.join(__dirname, '..', `HIGH_RISK_${jobId}.csv`);
+            const p = process.env.VERCEL ? path.join('/tmp', `HIGH_RISK_${jobId}.csv`) : path.join(__dirname, '..', `HIGH_RISK_${jobId}.csv`);
             fs.writeFileSync(p, csv);
             highRiskUrl = `/api/download-file/HIGH_RISK_${jobId}.csv`;
         }
@@ -603,6 +665,10 @@ app.get(/.*/, (req, res) => {
 });
 
 // Start Server
-app.listen(PORT, () => {
-    console.log(`\n📦 Fulfillment V2 API running on http://localhost:${PORT}`);
-});
+if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
+    app.listen(PORT, () => {
+        console.log(`\n📦 Fulfillment V2 API running on http://localhost:${PORT}`);
+    });
+}
+
+module.exports = app;

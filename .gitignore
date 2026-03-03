@@ -5,3 +5,5 @@ node_modules/
 debug_*.png
 error_state_*.html
 error_state_*.png
+.vercel
+.cursor/

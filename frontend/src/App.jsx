@@ -5,8 +5,9 @@ import "react-datepicker/dist/react-datepicker.css";
 import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, Search, Mail, UploadCloud, ChevronRight, Box, BarChart2, MessageSquare, Users, History, Plus, Trash2, Save, X, Grid, ExternalLink, Truck, Calendar, CheckSquare } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SupplierDashboard from './pages/SupplierDashboard';
+import FinancialDashboard from './pages/FinancialDashboard';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'https://analytical-air-share-blades.trycloudflare.com';
+const API_BASE = import.meta.env.VITE_API_URL || '';
 const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
 
 class ErrorBoundary extends React.Component {
@@ -182,7 +183,10 @@ function App() {
 
       a.download = filename;
       a.click();
-    } catch (e) { alert('Download failed'); }
+    } catch (e) {
+      console.error('Download execution failed:', e);
+      alert('Download failed: ' + (e.message || 'Unknown error'));
+    }
   };
 
   const handleDownloadDashboard = (t) => data?.orders && executeDownload({ rows: data.orders, type: t });
@@ -261,6 +265,7 @@ function App() {
         <NavItem icon={<Grid size={22} />} active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
         <NavItem icon={<History size={22} />} active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
         <NavItem icon={<IndianRupee size={22} />} active={activeTab === 'supplier'} onClick={() => setActiveTab('supplier')} />
+        <NavItem icon={<BarChart2 size={22} />} active={activeTab === 'financials'} onClick={() => setActiveTab('financials')} />
         <div className="flex-1"></div>
         <NavItem icon={<Settings size={22} />} />
         <div className="mb-4 text-xs text-gray-600">v7.2</div>
@@ -533,6 +538,12 @@ function App() {
           {activeTab === 'supplier' && (
             <motion.div key="supplier" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
               <SupplierDashboard />
+            </motion.div>
+          )}
+
+          {activeTab === 'financials' && (
+            <motion.div key="financials" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
+              <FinancialDashboard />
             </motion.div>
           )}
 
