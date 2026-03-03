@@ -44,8 +44,8 @@ app.get('/api/orders', async (req, res) => {
         const startDate = req.query.startDate || null;
         const endDate = req.query.endDate || null;
 
-        // If a specific date range is requested, assume they want historical data (all statuses)
-        const statusMode = (startDate && endDate) ? 'all' : 'unfulfilled';
+        // Always fetch unfulfilled orders only, as requested by the user
+        const statusMode = 'unfulfilled';
         const gstRate = parseFloat(process.env.GST_RATE || 18);
 
         console.log(`[API] Fetching orders... Options:`, { daysLookback, startDate, endDate, statusMode });
