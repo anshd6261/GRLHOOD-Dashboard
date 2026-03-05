@@ -459,13 +459,23 @@ function App() {
                                     {row?.previewUrl && <a href={row.previewUrl} target="_blank" className="text-gray-600 hover:text-white"><ExternalLink size={12} /></a>}
                                   </div>
                                   <div className="text-sm text-gray-400 mb-1">{row?.model || 'Unknown Model'}</div>
-                                  {row?.sku ? (
-                                    <div className="text-[10px] font-mono text-gray-600 bg-white/5 px-1.5 py-0.5 rounded w-fit">{row.sku}</div>
-                                  ) : (
-                                    <button onClick={() => row?.productId && handleCreateSku(row.productId)} className="text-[10px] text-blue-400 bg-blue-500/10 px-2 py-1 rounded hover:bg-blue-500/20 transition-colors">
-                                      Assign SKU
-                                    </button>
-                                  )}
+                                  <div className="flex gap-2 items-center mt-1">
+                                    <input
+                                      value={row?.sku || ''}
+                                      onChange={(e) => {
+                                        const n = [...data.orders];
+                                        n[i].sku = e.target.value;
+                                        setData({ ...data, orders: n });
+                                      }}
+                                      className="text-[11px] font-mono text-white bg-white/10 px-2 py-1 rounded w-32 border border-white/20 outline-none focus:border-cyan-500 transition-colors"
+                                      placeholder="Enter SKU"
+                                    />
+                                    {(!row?.sku && row?.productId) && (
+                                      <button onClick={() => handleCreateSku(row.productId)} className="text-[10px] text-blue-400 bg-blue-500/10 px-2 py-1.5 rounded hover:bg-blue-500/20 transition-colors whitespace-nowrap">
+                                        Assign SKU
+                                      </button>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                             </td>
