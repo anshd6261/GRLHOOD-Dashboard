@@ -59,7 +59,34 @@ function App() {
   // Selection State
   const [selectedOrders, setSelectedOrders] = useState(new Set());
 
+  // RTO and COD Tracking State
+  const [rtoData, setRtoData] = useState(null);
+  const [rtoLoading, setRtoLoading] = useState(false);
+  const [rtoDates, setRtoDates] = useState([new Date(new Date().setDate(new Date().getDate() - 30)), new Date()]);
+  const [rtoStartDate, rtoEndDate] = rtoDates;
+
   useEffect(() => { if (activeTab === 'history') fetchHistory(); }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'dashboard' && rtoStartDate && rtoEndDate) {
+      fetchShiprocketStats();
+    }
+  }, [rtoStartDate, rtoEndDate, activeTab]);
+
+  const fetchShiprocketStats = async () => {
+    if (!rtoStartDate || !rtoEndDate) return;
+    setRtoLoading(true);
+    try {
+      const sStr = rtoStartDate.toISOString();
+      const eStr = rtoEndDate.toISOString();
+      const res = await axios.get(`${API_URL}/shiprocket/stats?startDate=${sStr}&endDate=${eStr}`);
+      setRtoData(res.data);
+    } catch (e) {
+      console.error("RTO Fetch Error:", e);
+    } finally {
+      setRtoLoading(false);
+    }
+  };
 
   /* --- NEW TOAST & UI STATE --- */
   const [toast, setToast] = useState(null); // { message, type: 'success'|'error'|'info' }
@@ -375,6 +402,75 @@ function App() {
                     </>
                   ) : (
                     <div className="text-center text-gray-500 text-sm">Sync to enable actions</div>
+                  )}
+                </div>
+              </div>
+
+              {/* RTO and COD Tracking Section */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
+                <div className="panel-dark p-6 relative">
+                  <div className="flex justify-between items-start mb-6 w-full">
+                    <div>
+                      <h3 className="text-xl font-bold flex items-center gap-2"><Truck size={20} className="text-red-400" /> RTO Loss Tracker</h3>
+                      <div className="text-sm text-gray-400 mt-1">Shiprocket Delivery Exceptions</div>
+                    </div>
+                    <div className="bg-[#1A1A1A] px-2 py-1 rounded-lg border border-white/10 z-10 w-fit">
+                      <DatePicker
+                        selectsRange={true}
+                        startDate={rtoStartDate}
+                        endDate={rtoEndDate}
+                        onChange={(update) => setRtoDates(update)}
+                        className="bg-transparent text-xs font-bold text-white outline-none w-36 text-center cursor-pointer"
+                        placeholderText="Date Range"
+                        maxDate={new Date()}
+                      />
+                    </div>
+                  </div>
+
+                  {rtoLoading ? (
+                    <div className="h-28 flex items-center justify-center"><RefreshCw size={24} className="animate-spin text-gray-500" /></div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4">
+                        <div className="text-red-400 text-sm font-medium mb-1">RTO Percentage</div>
+                        <div className="text-3xl font-bold text-red-300">{rtoData?.rtoStats?.percentage || 0}%</div>
+                        <div className="text-xs text-red-400/60 mt-2">{rtoData?.rtoStats?.ordersCount || 0} Orders Returned</div>
+                      </div>
+                      <div className="bg-[#1A1A1A] border border-white/5 rounded-xl p-4">
+                        <div className="text-gray-400 text-sm font-medium mb-1">Total Loss Value</div>
+                        <div className="text-3xl font-bold text-white">₹{rtoData?.rtoStats?.lossValue?.toLocaleString() || 0}</div>
+                        <div className="text-xs text-gray-500 mt-2">Value of returning inventory</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="panel-dark p-6 relative">
+                  <div className="flex justify-between items-start mb-6">
+                    <div>
+                      <h3 className="text-xl font-bold flex items-center gap-2"><IndianRupee size={20} className="text-emerald-400" /> COD Expectations</h3>
+                      <div className="text-sm text-gray-400 mt-1">Pending payments in-transit</div>
+                    </div>
+                    <div className="bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full text-xs font-bold border border-emerald-500/20 flex items-center gap-1">
+                      <RefreshCw size={12} className={rtoLoading ? "animate-spin" : ""} /> Live
+                    </div>
+                  </div>
+
+                  {rtoLoading ? (
+                    <div className="h-28 flex items-center justify-center"><RefreshCw size={24} className="animate-spin text-gray-500" /></div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4">
+                        <div className="text-emerald-400 text-sm font-medium mb-1">Expected Amount</div>
+                        <div className="text-3xl font-bold text-emerald-300">₹{rtoData?.codStats?.expectedValue?.toLocaleString() || 0}</div>
+                        <div className="text-xs text-emerald-400/60 mt-2">Total COD Pipeline</div>
+                      </div>
+                      <div className="bg-[#1A1A1A] border border-white/5 rounded-xl p-4">
+                        <div className="text-gray-400 text-sm font-medium mb-1">Pending Shipments</div>
+                        <div className="text-3xl font-bold text-white">{rtoData?.codStats?.pendingCount || 0}</div>
+                        <div className="text-xs text-gray-500 mt-2">Orders awaiting delivery</div>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>

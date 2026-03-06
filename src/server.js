@@ -215,6 +215,81 @@ app.put('/api/history/:id', (req, res) => {
 });
 
 // ==========================================
+// SHIPROCKET STATS ENDPOINT (COD & RTO Tracking)
+// ==========================================
+app.get('/api/shiprocket/stats', async (req, res) => {
+    try {
+        const { startDate, endDate } = req.query;
+        if (!startDate || !endDate) return res.status(400).json({ error: 'Missing start or end date' });
+
+        const rs = await shiprocket.fetchOrdersByDate(startDate, endDate);
+        if (!rs.success) {
+            return res.status(500).json({ error: 'Failed to fetch tracking stats.' });
+        }
+
+        const orders = rs.data || [];
+
+        let totalOrders = orders.length;
+        let rtoOrdersCount = 0;
+        let rtoLossValue = 0;
+        let rtoProductsCount = 0;
+        let codExpectedValue = 0;
+        let validOrdersCount = 0;
+        let pendingCodCount = 0;
+
+        const RTO_CODES = [12, 13, 14, 15, 16, 55]; // RTO statuses
+        const CANCELED_CODES = [5];
+        const DELIVERED_CODES = [7];
+
+        orders.forEach(o => {
+            const status = parseInt(o.status_code);
+            const total = parseFloat(o.total) || 0;
+            const pm = (o.payment_method || '').toLowerCase();
+            const isRTO = RTO_CODES.includes(status);
+            const isCanceled = CANCELED_CODES.includes(status);
+            const isDelivered = DELIVERED_CODES.includes(status);
+
+            if (!isCanceled) validOrdersCount++;
+
+            // RTO Tracking
+            if (isRTO) {
+                rtoOrdersCount++;
+                rtoLossValue += total;
+                if (o.products && Array.isArray(o.products)) {
+                    rtoProductsCount += o.products.reduce((acc, p) => acc + (parseInt(p.quantity) || 1), 0);
+                }
+            }
+
+            // Expected COD Pipeline (Active, COD, Not RTO, Not Canceled, Not Delivered)
+            // It could be NEW (1), READY TO SHIP (3), IN TRANSIT (20), OUT FOR DELIVERY (19), UNDELIVERED (36) etc.
+            if (pm === 'cod' && !isRTO && !isCanceled && !isDelivered) {
+                codExpectedValue += total;
+                pendingCodCount++;
+            }
+        });
+
+        const rtoPercentage = validOrdersCount > 0 ? ((rtoOrdersCount / validOrdersCount) * 100).toFixed(1) : 0;
+
+        res.json({
+            success: true,
+            rtoStats: {
+                percentage: parseFloat(rtoPercentage),
+                lossValue: rtoLossValue,
+                ordersCount: rtoOrdersCount,
+                itemsCount: rtoProductsCount
+            },
+            codStats: {
+                expectedValue: codExpectedValue,
+                pendingCount: pendingCodCount
+            }
+        });
+    } catch (e) {
+        console.error('[API] Shiprocket Stats Error:', e);
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ==========================================
 // NEW FINANCIAL DASHBOARD ENDPOINTS
 // ==========================================
 

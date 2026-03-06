@@ -343,6 +343,38 @@ const bulkGenerateLabel = async (shipmentIds) => {
     }
 };
 
+const fetchOrdersByDate = async (startDate, endDate) => {
+    try {
+        const headers = await getHeaders();
+        const startStr = startDate.split('T')[0];
+        const endStr = endDate.split('T')[0];
+
+        console.log(`[SHIPROCKET] Fetching orders from ${startStr} to ${endStr}...`);
+
+        let allOrders = [];
+        let page = 1;
+        let hasMore = true;
+
+        while (hasMore) {
+            const url = `https://apiv2.shiprocket.in/v1/external/orders?filter_by=date&from=${startStr}&to=${endStr}&per_page=100&page=${page}`;
+            const response = await axios.get(url, { headers });
+
+            if (response.data && response.data.data && response.data.data.length > 0) {
+                allOrders = allOrders.concat(response.data.data);
+                page++;
+            } else {
+                hasMore = false;
+            }
+        }
+
+        console.log(`[SHIPROCKET] Fetched ${allOrders.length} orders in range.`);
+        return { success: true, data: allOrders };
+    } catch (error) {
+        console.error('[SHIPROCKET] fetchOrdersByDate Error:', error.message);
+        return { success: false, error: error.message };
+    }
+};
+
 module.exports = {
     authenticate,
     assignCourier,
@@ -354,5 +386,6 @@ module.exports = {
     findOrderByShopifyId,
     getWalletBalance,
     createOrder,
-    ensureReplacementOrder
+    ensureReplacementOrder,
+    fetchOrdersByDate
 };
