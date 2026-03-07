@@ -248,6 +248,10 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
               name
               phone
             }
+            customer {
+              id
+              numberOfOrders
+            }
             lineItems(first: 100) {
               edges {
                 node {

@@ -582,7 +582,16 @@ function App() {
                                 onChange={(e) => { const n = [...data.orders]; n[i].customerName = e.target.value; setData({ ...data, orders: n }) }}
                                 className="bg-transparent outline-none font-bold text-gray-300 w-full mb-1"
                               />
-                              <div className="text-xs text-gray-600">{row?.orderLink ? <a href={row.orderLink || '#'} target="_blank" className="hover:text-blue-400">View in Shopify</a> : 'Manual Entry'}</div>
+                              <div className="text-xs text-gray-600">
+                                {row?.orderLink ? <a href={row.orderLink || '#'} target="_blank" rel="noreferrer" className="hover:text-blue-400">View in Shopify</a> : 'Manual Entry'}
+                              </div>
+                              {row?.customerOrdersCount > 1 && (
+                                <div className="mt-1.5">
+                                  <a href={row?.customerProfileUrl || '#'} target="_blank" rel="noreferrer" className="text-[10px] font-bold text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20 hover:bg-red-500/20 transition-colors inline-block">
+                                    Repeat Customer: {row.customerOrdersCount} Orders
+                                  </a>
+                                </div>
+                              )}
                             </td>
 
                             <td className="py-4 pr-4 align-top text-right">

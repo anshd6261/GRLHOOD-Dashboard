@@ -6,6 +6,12 @@ const processOrders = (orders, gstRate = 18) => {
         const shipping = order.shippingAddress || {};
         const customerName = shipping.name || 'Guest';
 
+        const customer = order.customer || {};
+        const customerOrdersCount = parseInt(customer.numberOfOrders || 1, 10);
+        const rawCustomerId = customer.id || '';
+        const customerAdminId = rawCustomerId.split('/').pop();
+        const customerProfileUrl = customerAdminId ? `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/customers/${customerAdminId}` : '';
+
         // Determine payment method
         let payment = 'Cash on Delivery';
         const financialStatus = order.displayFinancialStatus || '';
@@ -157,6 +163,8 @@ const processOrders = (orders, gstRate = 18) => {
                     model,
                     sku,
                     customerName,
+                    customerOrdersCount,
+                    customerProfileUrl,
                     orderId, // Display ID (#1001)
                     orderLink,
                     productId,
