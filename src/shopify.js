@@ -231,7 +231,7 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
 
   const query = `
     query GetUnfulfilledOrders($cursor: String, $query: String!) {
-      orders(first: 50, after: $cursor, query: $query, sortKey: CREATED_AT, reverse: true) {
+      orders(first: 250, after: $cursor, query: $query, sortKey: CREATED_AT, reverse: true) {
         pageInfo {
           hasNextPage
           endCursor
@@ -311,8 +311,10 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
   let allOrders = [];
   let hasNextPage = true;
   let cursor = null;
+  let pageCount = 0;
 
-  while (hasNextPage) {
+  while (hasNextPage && pageCount < 10) {
+    pageCount++;
     const data = await graphqlRequest(query, {
       cursor,
       query: queryFilter
