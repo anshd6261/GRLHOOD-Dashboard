@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
-import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, Search, Mail, UploadCloud, ChevronRight, Box, BarChart2, MessageSquare, Users, History, Plus, Trash2, Save, X, Grid, ExternalLink, Truck, Calendar, CheckSquare } from 'lucide-react';
+import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, Search, Mail, UploadCloud, ChevronRight, Box, BarChart2, MessageSquare, Users, History, Plus, Trash2, Save, X, Grid, ExternalLink, Truck, Calendar, CheckSquare, XOctagon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SupplierDashboard from './pages/SupplierDashboard';
 import FinancialDashboard from './pages/FinancialDashboard';
@@ -238,6 +238,35 @@ function App() {
       }
     } catch (e) { alert('Failed: ' + (e.response?.data?.error || e.message)); }
     finally { setLoading(false); }
+  };
+
+  const handleCancelOrder = async (row) => {
+    if (!row?.id || !row?.orderId) {
+      alert("Missing order details for cancellation.");
+      return;
+    }
+    const confirmed = window.confirm(`Are you sure you want to PERMANENTLY cancel order ${row.orderId} on both Shopify and Shiprocket?`);
+    if (!confirmed) return;
+
+    setLoading(`Cancelling ${row.orderId}...`);
+    try {
+      const res = await axios.post(`${API_URL}/orders/${row.id}/cancel`, { orderName: row.orderId });
+      if (res.data.success) {
+        alert(res.data.message);
+        // Remove the order from local state
+        const newOrders = data.orders.filter(o => o.orderId !== row.orderId);
+        setData({ ...data, orders: newOrders });
+        setSelectedOrders(prev => {
+          const next = new Set(prev);
+          next.delete(row.orderId);
+          return next;
+        });
+      }
+    } catch (e) {
+      alert('Cancellation failed: ' + (e.response?.data?.error || e.message));
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Selection Logic
@@ -611,15 +640,24 @@ function App() {
                               </div>
                             </td>
 
-                            <td className="py-4 align-top w-10">
-                              <button onClick={() => {
-                                if (!confirm('Delete this row?')) return;
-                                const n = [...data.orders];
-                                n.splice(i, 1);
-                                setData({ ...data, orders: n });
-                              }} className="p-2 hover:bg-red-500/10 text-gray-600 hover:text-red-400 rounded-lg transition-colors opacity-0 group-hover:opacity-100">
-                                <Trash2 size={16} />
-                              </button>
+                            <td className="py-4 align-top w-14">
+                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  onClick={() => handleCancelOrder(row)}
+                                  title="Cancel on Shopify & Shiprocket"
+                                  className="p-1.5 hover:bg-red-500/20 text-red-500/70 hover:text-red-400 rounded-lg transition-colors border border-transparent hover:border-red-500/30"
+                                >
+                                  <XOctagon size={16} />
+                                </button>
+                                <button onClick={() => {
+                                  if (!confirm('Delete this row?')) return;
+                                  const n = [...data.orders];
+                                  n.splice(i, 1);
+                                  setData({ ...data, orders: n });
+                                }} className="p-1.5 hover:bg-gray-500/20 text-gray-500 hover:text-gray-300 rounded-lg transition-colors">
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}

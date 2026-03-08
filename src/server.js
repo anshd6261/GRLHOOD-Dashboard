@@ -199,7 +199,46 @@ app.post('/api/upload-portal', async (req, res) => {
     }
 });
 
-// 7. History Endpoints
+// 7. Cancel Order (Dual Sync)
+app.post('/api/orders/:id/cancel', async (req, res) => {
+    try {
+        const numericId = req.params.id; // e.g., 123456789 from Shopify
+        const { orderName } = req.body; // e.g., #1005
+
+        if (!numericId || !orderName) {
+            return res.status(400).json({ error: 'Missing numeric ID or orderName' });
+        }
+
+        console.log(`[API] Processing Dual Cancellation for Order ${orderName} (${numericId})...`);
+
+        // 1. Cancel in Shiprocket first
+        let srResult = { success: false, message: 'Skipped' };
+        try {
+            srResult = await shiprocket.cancelOrderByChannelId(orderName);
+        } catch (e) {
+            // If it fails to find the order on SR, we log it and continue to cancel on Shopify
+            console.warn(`[API] Shiprocket Cancel Warning:`, e.message);
+            srResult.message = e.message;
+        }
+
+        // 2. Cancel in Shopify
+        await shopify.cancelOrder(numericId);
+
+        console.log(`[API] Dual Cancel Success: ${orderName}`);
+
+        res.json({
+            success: true,
+            message: `Order ${orderName} cancelled successfully on Shopify.`,
+            shiprocket: srResult
+        });
+
+    } catch (e) {
+        console.error('[API] Cancellation Error:', e);
+        res.status(500).json({ success: false, error: e.message || 'Failed to cancel order' });
+    }
+});
+
+// 8. History Endpoints
 app.get('/api/history', (req, res) => {
     res.json(getHistory());
 });

@@ -370,8 +370,41 @@ const fetchOrdersByDate = async (startDate, endDate) => {
         console.log(`[SHIPROCKET] Fetched ${allOrders.length} orders in range.`);
         return { success: true, data: allOrders };
     } catch (error) {
-        console.error('[SHIPROCKET] fetchOrdersByDate Error:', error.message);
         return { success: false, error: error.message };
+    }
+};
+
+const cancelOrderByChannelId = async (channelOrderId) => {
+    try {
+        const headers = await getHeaders();
+        // The channelOrderId is typically the #1005 without the #
+        const cleanId = channelOrderId.toString().replace('#', '');
+
+        // Find the Shiprocket order
+        const searchRes = await axios.get(`https://apiv2.shiprocket.in/v1/external/orders?search=${cleanId}`, { headers });
+        const orders = searchRes.data?.data || [];
+
+        const match = orders.find(o => o.channel_order_id === cleanId);
+        if (!match) {
+            throw new Error(`Order ${cleanId} not found in Shiprocket.`);
+        }
+
+        if (match.status_code === 5) {
+            console.log(`[SHIPROCKET] Order ${cleanId} is already canceled.`);
+            return { success: true, message: 'Already canceled' };
+        }
+
+        // Cancel it
+        const payload = {
+            ids: [match.id]
+        };
+        const cancelRes = await axios.post('https://apiv2.shiprocket.in/v1/external/orders/cancel', payload, { headers });
+        console.log(`[SHIPROCKET] Cancelled ${cleanId} (${match.id}):`, cancelRes.data);
+        return { success: true, data: cancelRes.data };
+
+    } catch (e) {
+        console.error(`[SHIPROCKET] Cancel Failed for ${channelOrderId}:`, e.response?.data || e.message);
+        throw new Error(e.response?.data?.message || e.message);
     }
 };
 
@@ -387,5 +420,6 @@ module.exports = {
     getWalletBalance,
     createOrder,
     ensureReplacementOrder,
-    fetchOrdersByDate
+    fetchOrdersByDate,
+    cancelOrderByChannelId
 };

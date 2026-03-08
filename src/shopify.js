@@ -387,9 +387,28 @@ const getOrder = async (id) => {
   return data.order;
 };
 
+const cancelOrder = async (id) => {
+  const globalId = id.toString().includes('gid://') ? id : `gid://shopify/Order/${id}`;
+  const query = `
+    mutation orderCancel($orderId: ID!) {
+      orderCancel(orderId: $orderId, notifyCustomer: true, reason: CUSTOMER) {
+        orderCancelUserErrors {
+          message
+        }
+      }
+    }
+  `;
+  const data = await graphqlRequest(query, { orderId: globalId });
+  if (data.orderCancel && data.orderCancel.orderCancelUserErrors && data.orderCancel.orderCancelUserErrors.length > 0) {
+    throw new Error(data.orderCancel.orderCancelUserErrors[0].message);
+  }
+  return true;
+};
+
 module.exports = {
   getUnfulfilledOrders,
   assignSkuToProduct,
   getOrder,
-  graphqlRequest
+  graphqlRequest,
+  cancelOrder
 };
