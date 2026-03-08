@@ -448,8 +448,8 @@ function App() {
                 <div className="panel-dark p-6 relative">
                   <div className="flex justify-between items-start mb-6">
                     <div>
-                      <h3 className="text-xl font-bold flex items-center gap-2"><IndianRupee size={20} className="text-emerald-400" /> COD Expectations</h3>
-                      <div className="text-sm text-gray-400 mt-1">Pending payments in-transit</div>
+                      <h3 className="text-xl font-bold flex items-center gap-2"><IndianRupee size={20} className="text-emerald-400" /> COD Collections & Remittance</h3>
+                      <div className="text-sm text-gray-400 mt-1">Pending payments and collected funds</div>
                     </div>
                     <div className="bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full text-xs font-bold border border-emerald-500/20 flex items-center gap-1">
                       <RefreshCw size={12} className={rtoLoading ? "animate-spin" : ""} /> Live
@@ -459,16 +459,21 @@ function App() {
                   {rtoLoading ? (
                     <div className="h-28 flex items-center justify-center"><RefreshCw size={24} className="animate-spin text-gray-500" /></div>
                   ) : (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4">
-                        <div className="text-emerald-400 text-sm font-medium mb-1">Expected Amount</div>
-                        <div className="text-3xl font-bold text-emerald-300">₹{rtoData?.codStats?.expectedValue?.toLocaleString() || 0}</div>
-                        <div className="text-xs text-emerald-400/60 mt-2">Total COD Pipeline</div>
+                    <div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-[#1A1A1A] border border-white/5 rounded-xl p-4">
+                          <div className="text-gray-400 text-sm font-medium mb-1">Pending Payments</div>
+                          <div className="text-3xl font-bold text-white">₹{rtoData?.codStats?.pendingValue?.toLocaleString() || 0}</div>
+                          <div className="text-xs text-gray-500 mt-2">{rtoData?.codStats?.pendingCount || 0} Orders in-transit</div>
+                        </div>
+                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4">
+                          <div className="text-emerald-400 text-sm font-medium mb-1">COD Collected</div>
+                          <div className="text-3xl font-bold text-emerald-300">₹{rtoData?.codStats?.collectedValue?.toLocaleString() || 0}</div>
+                          <div className="text-xs text-emerald-400/60 mt-2">{rtoData?.codStats?.collectedCount || 0} Orders delivered</div>
+                        </div>
                       </div>
-                      <div className="bg-[#1A1A1A] border border-white/5 rounded-xl p-4">
-                        <div className="text-gray-400 text-sm font-medium mb-1">Pending Shipments</div>
-                        <div className="text-3xl font-bold text-white">{rtoData?.codStats?.pendingCount || 0}</div>
-                        <div className="text-xs text-gray-500 mt-2">Orders awaiting delivery</div>
+                      <div className="mt-4 text-center text-xs font-bold text-emerald-400/70 bg-emerald-500/5 py-2 rounded-lg border border-emerald-500/10">
+                        Estimated Remittance: Within 2 Business Days of Delivery
                       </div>
                     </div>
                   )}

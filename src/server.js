@@ -233,9 +233,11 @@ app.get('/api/shiprocket/stats', async (req, res) => {
         let rtoOrdersCount = 0;
         let rtoLossValue = 0;
         let rtoProductsCount = 0;
-        let codExpectedValue = 0;
-        let validOrdersCount = 0;
+        let pendingCodValue = 0;
         let pendingCodCount = 0;
+        let collectedCodValue = 0;
+        let collectedCodCount = 0;
+        let validOrdersCount = 0;
 
         const RTO_CODES = [12, 13, 14, 15, 16, 55]; // RTO statuses
         const CANCELED_CODES = [5];
@@ -262,9 +264,14 @@ app.get('/api/shiprocket/stats', async (req, res) => {
 
             // Expected COD Pipeline (Active, COD, Not RTO, Not Canceled, Not Delivered)
             // It could be NEW (1), READY TO SHIP (3), IN TRANSIT (20), OUT FOR DELIVERY (19), UNDELIVERED (36) etc.
-            if (pm === 'cod' && !isRTO && !isCanceled && !isDelivered) {
-                codExpectedValue += total;
-                pendingCodCount++;
+            if (pm === 'cod') {
+                if (isDelivered) {
+                    collectedCodValue += total;
+                    collectedCodCount++;
+                } else if (!isRTO && !isCanceled) {
+                    pendingCodValue += total;
+                    pendingCodCount++;
+                }
             }
         });
 
@@ -279,8 +286,10 @@ app.get('/api/shiprocket/stats', async (req, res) => {
                 itemsCount: rtoProductsCount
             },
             codStats: {
-                expectedValue: codExpectedValue,
-                pendingCount: pendingCodCount
+                pendingValue: pendingCodValue,
+                pendingCount: pendingCodCount,
+                collectedValue: collectedCodValue,
+                collectedCount: collectedCodCount
             }
         });
     } catch (e) {
