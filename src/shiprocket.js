@@ -1,13 +1,45 @@
 const axios = require('axios');
 require('dotenv').config();
 
+// Custom Shiprocket API Instance with Rate Limit Protection
+const srApi = axios.create();
+
+srApi.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+        const config = error.config;
+
+        // Only retry if it's a 429 Rate Limit error and we haven't exceeded max retries
+        if (error.response && error.response.status === 429 && config) {
+            config.__retryCount = config.__retryCount || 0;
+
+            if (config.__retryCount < 5) {
+                config.__retryCount += 1;
+                // Exponential Backoff: 1s, 2s, 4s, 8s, 16s
+                const waitTime = Math.pow(2, config.__retryCount - 1) * 1000;
+
+                console.warn(`[SHIPROCKET] Rate Limited (429). Retrying attempt ${config.__retryCount}/5 in ${waitTime}ms...`);
+
+                // Wait for the delay
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+
+                // Return the axios request promise to seamlessly retry
+                return srApi(config);
+            }
+        }
+
+        // If it's not a 429, or we ran out of retries, reject normally
+        return Promise.reject(error);
+    }
+);
+
 let token = null;
 
 const authenticate = async () => {
     if (token) return token;
 
     try {
-        const response = await axios.post('https://apiv2.shiprocket.in/v1/external/auth/login', {
+        const response = await srApi.post('https://apiv2.shiprocket.in/v1/external/auth/login', {
             email: process.env.SHIPROCKET_EMAIL,
             password: process.env.SHIPROCKET_PASSWORD
         });
@@ -30,7 +62,7 @@ const getHeaders = async () => {
 const getWalletBalance = async () => {
     try {
         const headers = await getHeaders();
-        const response = await axios.get('https://apiv2.shiprocket.in/v1/external/account/details/statement', { headers });
+        const response = await srApi.get('https://apiv2.shiprocket.in/v1/external/account/details/statement', { headers });
 
         if (response.data && response.data.data && response.data.data.length > 0) {
             const balanceStr = response.data.data[0].balance_amount;
@@ -92,7 +124,7 @@ const createOrder = async (order) => {
             weight: 0.5
         };
 
-        const response = await axios.post('https://apiv2.shiprocket.in/v1/external/orders/create/adhoc', payload, { headers });
+        const response = await srApi.post('https://apiv2.shiprocket.in/v1/external/orders/create/adhoc', payload, { headers });
         return { success: true, shipment_id: response.data.shipment_id, order_id: response.data.order_id };
 
     } catch (error) {
@@ -111,7 +143,7 @@ const ensureReplacementOrder = async (order) => {
         const headers = await getHeaders();
         const replacementOrderId = `${order.name}-Fixed`;
 
-        const search = await axios.get(`https://apiv2.shiprocket.in/v1/external/orders?per_page=50`, { headers });
+        const search = await srApi.get(`https://apiv2.shiprocket.in/v1/external/orders?per_page=50`, { headers });
         const match = search.data.data.find(o => o.channel_order_id == replacementOrderId);
 
         if (match) {
@@ -165,7 +197,7 @@ const ensureReplacementOrder = async (order) => {
         console.log(`[SR] Creating Replacement Order ${replacementOrderId}...`);
 
         try {
-            const res = await axios.post('https://apiv2.shiprocket.in/v1/external/orders/create/adhoc', payload, { headers });
+            const res = await srApi.post('https://apiv2.shiprocket.in/v1/external/orders/create/adhoc', payload, { headers });
             console.log(`[SR] Created ${replacementOrderId}:`, res.data.order_id);
             return {
                 shipment_id: res.data.shipment_id,
@@ -188,7 +220,7 @@ const assignCourier = async (shipmentId) => {
     try {
         const headers = await getHeaders();
         const payload = { shipment_id: shipmentId };
-        const response = await axios.post('https://apiv2.shiprocket.in/v1/external/courier/assign/awb', payload, { headers });
+        const response = await srApi.post('https://apiv2.shiprocket.in/v1/external/courier/assign/awb', payload, { headers });
         return { success: true, awb: response.data.response.data.awb_code };
     } catch (error) {
         let msg = "Unknown Error";
@@ -225,7 +257,7 @@ const schedulePickup = async (shipmentId) => {
         const dateToday = getLocalDate(0);
         console.log(`[SHIPROCKET] Attempting pickup for TODAY (${dateToday})...`);
         const payload = { shipment_id: [shipmentId], pickup_date: dateToday };
-        await axios.post('https://apiv2.shiprocket.in/v1/external/courier/generate/pickup', payload, { headers });
+        await srApi.post('https://apiv2.shiprocket.in/v1/external/courier/generate/pickup', payload, { headers });
         console.log(`[SHIPROCKET] Pickup scheduled for TODAY.`);
         return { success: true, date: dateToday };
     } catch (error) {
@@ -236,7 +268,7 @@ const schedulePickup = async (shipmentId) => {
         const dateTomorrow = getLocalDate(1);
         console.log(`[SHIPROCKET] Attempting pickup for TOMORROW (${dateTomorrow})...`);
         const payload = { shipment_id: [shipmentId], pickup_date: dateTomorrow };
-        await axios.post('https://apiv2.shiprocket.in/v1/external/courier/generate/pickup', payload, { headers });
+        await srApi.post('https://apiv2.shiprocket.in/v1/external/courier/generate/pickup', payload, { headers });
         console.log(`[SHIPROCKET] Pickup scheduled for TOMORROW.`);
         return { success: true, date: dateTomorrow };
     } catch (error) {
@@ -252,7 +284,7 @@ const findOrderByShopifyId = async (shopifyOrderId) => {
         const PER_PAGE = 100;
 
         for (let page = 1; page <= MAX_PAGES; page++) {
-            const response = await axios.get(`https://apiv2.shiprocket.in/v1/external/orders?per_page=${PER_PAGE}&page=${page}`, { headers });
+            const response = await srApi.get(`https://apiv2.shiprocket.in/v1/external/orders?per_page=${PER_PAGE}&page=${page}`, { headers });
 
             if (response.data?.data?.length > 0) {
                 // Strict Match on Page
@@ -288,7 +320,7 @@ const generateLabel = async (shipmentId) => {
     try {
         const headers = await getHeaders();
         const payload = { shipment_id: [shipmentId] };
-        const response = await axios.post('https://apiv2.shiprocket.in/v1/external/courier/generate/label', payload, { headers });
+        const response = await srApi.post('https://apiv2.shiprocket.in/v1/external/courier/generate/label', payload, { headers });
         if (response.data.label_url) return { success: true, url: response.data.label_url };
         return { success: false, error: 'No URL in response' };
     } catch (error) {
@@ -333,7 +365,7 @@ const bulkGenerateLabel = async (shipmentIds) => {
     try {
         const headers = await getHeaders();
         console.log(`[SHIPROCKET] Generating Bulk Label for ${shipmentIds.length} shipments...`);
-        const response = await axios.post('https://apiv2.shiprocket.in/v1/external/courier/generate/label', { shipment_id: shipmentIds }, { headers });
+        const response = await srApi.post('https://apiv2.shiprocket.in/v1/external/courier/generate/label', { shipment_id: shipmentIds }, { headers });
 
         if (response.data.label_url) return { success: true, url: response.data.label_url };
         return { success: false, error: 'No URL in response' };
@@ -357,7 +389,7 @@ const fetchOrdersByDate = async (startDate, endDate) => {
 
         while (hasMore) {
             const url = `https://apiv2.shiprocket.in/v1/external/orders?filter_by=date&from=${startStr}&to=${endStr}&per_page=100&page=${page}`;
-            const response = await axios.get(url, { headers });
+            const response = await srApi.get(url, { headers });
 
             if (response.data && response.data.data && response.data.data.length > 0) {
                 allOrders = allOrders.concat(response.data.data);
@@ -381,7 +413,7 @@ const cancelOrderByChannelId = async (channelOrderId) => {
         const cleanId = channelOrderId.toString().replace('#', '');
 
         // Find the Shiprocket order
-        const searchRes = await axios.get(`https://apiv2.shiprocket.in/v1/external/orders?search=${cleanId}`, { headers });
+        const searchRes = await srApi.get(`https://apiv2.shiprocket.in/v1/external/orders?search=${cleanId}`, { headers });
         const orders = searchRes.data?.data || [];
 
         const match = orders.find(o => o.channel_order_id === cleanId);
@@ -398,7 +430,7 @@ const cancelOrderByChannelId = async (channelOrderId) => {
         const payload = {
             ids: [match.id]
         };
-        const cancelRes = await axios.post('https://apiv2.shiprocket.in/v1/external/orders/cancel', payload, { headers });
+        const cancelRes = await srApi.post('https://apiv2.shiprocket.in/v1/external/orders/cancel', payload, { headers });
         console.log(`[SHIPROCKET] Cancelled ${cleanId} (${match.id}):`, cancelRes.data);
         return { success: true, data: cancelRes.data };
 
