@@ -5,12 +5,25 @@ const processOrders = (orders, gstRate = 18) => {
         const orderId = order.name.replace('#', ''); // Remove # from order ID
         const shipping = order.shippingAddress || {};
         const customerName = shipping.name || 'Guest';
+        const shippingDetails = {
+            phone: shipping.phone || '',
+            address1: shipping.address1 || '',
+            city: shipping.city || '',
+            zip: shipping.zip || ''
+        };
 
         const customer = order.customer || {};
         const customerOrdersCount = parseInt(customer.numberOfOrders || 1, 10);
         const rawCustomerId = customer.id || '';
         const customerAdminId = rawCustomerId.split('/').pop();
         const customerProfileUrl = customerAdminId ? `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/customers/${customerAdminId}` : '';
+
+        // Extract RTO Risk from Shiprocket's FlexAssure Tags
+        let rtoRisk = "Unknown";
+        const tags = Array.isArray(order.tags) ? order.tags : [];
+        if (tags.some(t => t.toLowerCase() === 'flexassure:highrisk')) rtoRisk = "High";
+        else if (tags.some(t => t.toLowerCase() === 'flexassure:mediumrisk')) rtoRisk = "Medium";
+        else if (tags.some(t => t.toLowerCase() === 'flexassure:lowrisk')) rtoRisk = "Low";
 
         // Determine payment method
         let payment = 'Cash on Delivery';
@@ -165,6 +178,8 @@ const processOrders = (orders, gstRate = 18) => {
                     customerName,
                     customerOrdersCount,
                     customerProfileUrl,
+                    shippingDetails,
+                    rtoRisk,
                     orderId, // Display ID (#1001)
                     orderLink,
                     productId,

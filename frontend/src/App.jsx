@@ -611,21 +611,39 @@ function App() {
                             </td>
 
                             <td className="py-4 align-top">
-                              <input
-                                value={row?.customerName || ''}
-                                onChange={(e) => { const n = [...data.orders]; n[i].customerName = e.target.value; setData({ ...data, orders: n }) }}
-                                className="bg-transparent outline-none font-bold text-gray-300 w-full mb-1"
-                              />
-                              <div className="text-xs text-gray-600">
-                                {row?.orderLink ? <a href={row.orderLink || '#'} target="_blank" rel="noreferrer" className="hover:text-blue-400">View in Shopify</a> : 'Manual Entry'}
-                              </div>
-                              {row?.customerOrdersCount > 1 && (
-                                <div className="mt-1.5">
-                                  <a href={row?.customerProfileUrl || '#'} target="_blank" rel="noreferrer" className="text-[10px] font-bold text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20 hover:bg-red-500/20 transition-colors inline-block">
-                                    Repeat Customer: {row.customerOrdersCount} Orders
-                                  </a>
+                              <div className="flex flex-col gap-1.5">
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    value={row?.customerName || ''}
+                                    onChange={(e) => { const n = [...data.orders]; n[i].customerName = e.target.value; setData({ ...data, orders: n }) }}
+                                    className="bg-transparent outline-none font-bold text-gray-300 flex-1 w-full"
+                                  />
+                                  {row?.rtoRisk && row.rtoRisk !== "Unknown" && (
+                                    <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded-sm border whitespace-nowrap ${row.rtoRisk === 'High' ? 'bg-red-500/20 text-red-400 border-red-500/30' : row.rtoRisk === 'Medium' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'}`}>
+                                      {row.rtoRisk} RTO
+                                    </span>
+                                  )}
                                 </div>
-                              )}
+
+                                {row?.shippingDetails && (
+                                  <div className="text-[10px] text-gray-400 leading-tight bg-white/5 p-1.5 rounded-md border border-white/10">
+                                    {row.shippingDetails.phone && <div className="text-gray-300 font-mono mb-0.5">{row.shippingDetails.phone}</div>}
+                                    <div className="line-clamp-2" title={`${row.shippingDetails.address1}, ${row.shippingDetails.city} ${row.shippingDetails.zip}`}>
+                                      {row.shippingDetails.address1}<br />
+                                      {row.shippingDetails.city} - {row.shippingDetails.zip}
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div className="text-xs text-gray-600 mt-0.5 flex flex-wrap items-center gap-2">
+                                  {row?.orderLink ? <a href={row.orderLink || '#'} target="_blank" rel="noreferrer" className="hover:text-blue-400 transition-colors">View in Shopify</a> : 'Manual Entry'}
+                                  {row?.customerOrdersCount > 1 && (
+                                    <a href={row?.customerProfileUrl || '#'} target="_blank" rel="noreferrer" className="text-[10px] font-bold text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 hover:bg-purple-500/30 transition-colors">
+                                      Repeat: {row.customerOrdersCount}
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
                             </td>
 
                             <td className="py-4 pr-4 align-top text-right">
