@@ -34,21 +34,44 @@ srApi.interceptors.response.use(
 );
 
 let token = null;
+let tokenExpiry = null;
+let authPromise = null;
 
 const authenticate = async () => {
-    if (token) return token;
-
-    try {
-        const response = await srApi.post('https://apiv2.shiprocket.in/v1/external/auth/login', {
-            email: process.env.SHIPROCKET_EMAIL,
-            password: process.env.SHIPROCKET_PASSWORD
-        });
-        token = response.data.token;
+    // If we have a valid token, return it instantly
+    if (token && tokenExpiry && new Date() < tokenExpiry) {
         return token;
-    } catch (error) {
-        console.error('[SHIPROCKET] Auth Failed:', error.response?.data || error.message);
-        throw new Error('Shiprocket Authentication Failed');
     }
+
+    // If an authentication request is already in-flight, await its completion
+    // instead of triggering a duplicate request (Prevents 429 Too Many Requests bursts)
+    if (authPromise) {
+        return authPromise;
+    }
+
+    // Create a new Singleton Promise for authentication
+    authPromise = (async () => {
+        try {
+            console.log('[SHIPROCKET] Fetching new authentication token...');
+            const response = await srApi.post('https://apiv2.shiprocket.in/v1/external/auth/login', {
+                email: process.env.SHIPROCKET_EMAIL,
+                password: process.env.SHIPROCKET_PASSWORD
+            });
+            token = response.data.token;
+            // Shiprocket tokens last 10 days, but we refresh every 24 hours to be absolutely safe
+            tokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+            console.log('[SHIPROCKET] Token obtained successfully.');
+            return token;
+        } catch (error) {
+            console.error('[SHIPROCKET] Auth Failed:', error.response?.data || error.message);
+            throw new Error('Shiprocket Authentication Failed');
+        } finally {
+            // Clear the promise lock once resolved or rejected
+            authPromise = null;
+        }
+    })();
+
+    return authPromise;
 };
 
 const getHeaders = async () => {

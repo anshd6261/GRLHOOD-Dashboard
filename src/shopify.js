@@ -3,6 +3,7 @@ require('dotenv').config();
 
 let accessToken = null;
 let tokenExpiry = null;
+let authPromise = null;
 
 const getCleanDomain = () => {
   let domain = process.env.SHOPIFY_STORE_DOMAIN;
@@ -24,27 +25,38 @@ const getAccessToken = async () => {
     return accessToken;
   }
 
-  const domain = getCleanDomain();
-  const url = `https://${domain}/admin/oauth/access_token`;
-
-  console.log(`[AUTH] Fetching new access token for ${domain}...`);
-
-  try {
-    const response = await axios.post(url, {
-      client_id: process.env.SHOPIFY_CLIENT_ID,
-      client_secret: process.env.SHOPIFY_CLIENT_SECRET,
-      grant_type: 'client_credentials'
-    });
-
-    accessToken = response.data.access_token;
-    tokenExpiry = new Date(Date.now() + 23 * 60 * 60 * 1000);
-
-    console.log('[AUTH] Token obtained successfully');
-    return accessToken;
-  } catch (error) {
-    console.error('[AUTH] Failed to get token:', error.response?.data || error.message);
-    throw new Error('Authentication failed');
+  // If an authentication request is already in-flight, await its completion
+  if (authPromise) {
+    return authPromise;
   }
+
+  authPromise = (async () => {
+    const domain = getCleanDomain();
+    const url = `https://${domain}/admin/oauth/access_token`;
+
+    console.log(`[AUTH] Fetching new access token for ${domain}...`);
+
+    try {
+      const response = await axios.post(url, {
+        client_id: process.env.SHOPIFY_CLIENT_ID,
+        client_secret: process.env.SHOPIFY_CLIENT_SECRET,
+        grant_type: 'client_credentials'
+      });
+
+      accessToken = response.data.access_token;
+      tokenExpiry = new Date(Date.now() + 23 * 60 * 60 * 1000);
+
+      console.log('[AUTH] Token obtained successfully');
+      return accessToken;
+    } catch (error) {
+      console.error('[AUTH] Failed to get token:', error.response?.data || error.message);
+      throw new Error('Authentication failed');
+    } finally {
+      authPromise = null;
+    }
+  })();
+
+  return authPromise;
 };
 
 const graphqlRequest = async (query, variables = {}) => {
@@ -241,12 +253,17 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
             id   # Need Order ID for link
             name # #1001
             createdAt
+            tags
             riskLevel # HIGH, MEDIUM, LOW
             displayFinancialStatus
             paymentGatewayNames
             shippingAddress {
               name
               phone
+              address1
+              city
+              zip
+              country
             }
             customer {
               id
