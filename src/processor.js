@@ -1,4 +1,23 @@
 const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
+    // 1. Pre-process to find duplicated phone numbers with different names
+    const phoneToNamesMap = {};
+    for (const order of orders) {
+        let phone = order.shippingAddress?.phone || order.phone || '';
+        phone = phone.replace(/\D/g, ''); // Extract only digits
+        // Normalize to last 10 digits if possible (standard Indian mobile length)
+        if (phone.length > 10) phone = phone.slice(-10);
+
+        let name = order.shippingAddress?.name || 'Guest';
+        name = name.toLowerCase().trim(); // Normalize for comparison
+
+        if (phone && phone.length >= 10) {
+            if (!phoneToNamesMap[phone]) {
+                phoneToNamesMap[phone] = new Set();
+            }
+            phoneToNamesMap[phone].add(name);
+        }
+    }
+
     const processedRows = [];
 
     for (const order of orders) {
@@ -6,6 +25,14 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
         const displayOrderId = order.name.replace('#', '');
         const shipping = order.shippingAddress || {};
         const customerName = shipping.name || 'Guest';
+
+        let cleanPhone = shipping.phone || order.phone || '';
+        cleanPhone = cleanPhone.replace(/\D/g, '');
+        if (cleanPhone.length > 10) cleanPhone = cleanPhone.slice(-10);
+
+        // Check if this order has a phone number mapped to multiple distinct names
+        const hasCopiedNumberDifferentName = cleanPhone.length >= 10 && phoneToNamesMap[cleanPhone] && phoneToNamesMap[cleanPhone].size > 1;
+
         const shippingDetails = {
             phone: shipping.phone || '',
             address1: shipping.address1 || '',
@@ -204,6 +231,7 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
                     rtoRisk,
                     rtoReason,
                     shiprocketId,
+                    hasCopiedNumberDifferentName,
                     orderId: displayOrderId, // Display ID (1001)
                     orderLink,
                     productId,

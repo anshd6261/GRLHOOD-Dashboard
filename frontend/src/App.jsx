@@ -657,6 +657,11 @@ function App() {
                                       </AnimatePresence>
                                     </div>
                                   )}
+                                  {row?.hasCopiedNumberDifferentName && (
+                                    <span className="text-[9px] uppercase font-black px-2 py-0.5 rounded shadow-sm border whitespace-nowrap bg-red-500/10 text-red-500 border-red-500/20 ml-1" title="This exact phone number was used by different customer names.">
+                                      Copied Number
+                                    </span>
+                                  )}
                                 </div>
 
                                 {row?.shippingDetails && (
