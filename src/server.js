@@ -63,7 +63,8 @@ app.get('/api/orders', async (req, res) => {
                 if (srOrder.channel_order_id) {
                     rtoMap[srOrder.channel_order_id] = {
                         risk: srOrder.rto_prediction || "Unknown",
-                        reason: srOrder.rto_reason || ""
+                        reason: srOrder.rto_reason || "",
+                        shiprocketId: srOrder.id
                     };
                 }
             });

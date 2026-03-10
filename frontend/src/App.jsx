@@ -65,6 +65,9 @@ function App() {
   const [rtoDates, setRtoDates] = useState([new Date(new Date().setDate(new Date().getDate() - 30)), new Date()]);
   const [rtoStartDate, rtoEndDate] = rtoDates;
 
+  // RTO Click Modal State
+  const [openRtoRiskId, setOpenRtoRiskId] = useState(null);
+
   useEffect(() => { if (activeTab === 'history') fetchHistory(); }, [activeTab]);
 
   useEffect(() => {
@@ -567,11 +570,18 @@ function App() {
                               <input type="checkbox" checked={selectedOrders.has(row?.orderId)} onChange={() => row?.orderId && toggleSelectRow(row.orderId)} className="rounded border-gray-600 bg-transparent" />
                             </td>
                             <td className="py-4 pl-2 align-top w-[140px]">
-                              <input
-                                className="bg-transparent outline-none font-mono text-sm text-white font-bold mb-1 w-full"
-                                value={row?.orderId || ''}
-                                onChange={(e) => { const n = [...data.orders]; n[i].orderId = e.target.value; setData({ ...data, orders: n }) }}
-                              />
+                              <div className="flex items-center gap-2 mb-1">
+                                <input
+                                  className="bg-transparent outline-none font-mono text-sm text-white font-bold w-16"
+                                  value={row?.orderId || ''}
+                                  onChange={(e) => { const n = [...data.orders]; n[i].orderId = e.target.value; setData({ ...data, orders: n }) }}
+                                />
+                                {row?.shiprocketId && (
+                                  <a href={`https://app.shiprocket.in/seller/orders/details/${row.shiprocketId}`} target="_blank" className="text-indigo-400 bg-indigo-500/10 p-1 rounded hover:bg-indigo-500/20 transition-colors" title="Open in Shiprocket">
+                                    <ExternalLink size={12} />
+                                  </a>
+                                )}
+                              </div>
                               <select
                                 value={row?.payment || 'Prepaid'}
                                 onChange={(e) => { const n = [...data.orders]; n[i].payment = e.target.value; setData({ ...data, orders: n }) }}
@@ -621,18 +631,30 @@ function App() {
                                     className="bg-transparent outline-none font-bold text-gray-200 flex-1 w-full"
                                   />
                                   {row?.rtoRisk && row.rtoRisk !== "Unknown" && (
-                                    <div className="relative group/rto">
-                                      <span className={`text-[9px] uppercase font-black px-2 py-0.5 rounded shadow-sm border whitespace-nowrap cursor-pointer transition-all duration-300 ${row.rtoRisk === 'High' ? 'bg-red-500/20 text-red-400 border-red-500/40 hover:bg-red-500/30 hover:shadow-red-500/20' : row.rtoRisk === 'Medium' ? 'bg-orange-500/20 text-orange-400 border-orange-500/40 hover:bg-orange-500/30 hover:shadow-orange-500/20' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-500/30 hover:shadow-emerald-500/20'}`}>
+                                    <div className="relative">
+                                      <span
+                                        onClick={() => setOpenRtoRiskId(openRtoRiskId === row.orderId ? null : row.orderId)}
+                                        className={`text-[9px] uppercase font-black px-2 py-0.5 rounded shadow-sm border whitespace-nowrap cursor-pointer transition-all duration-300 ${row.rtoRisk === 'High' ? 'bg-red-500/20 text-red-400 border-red-500/40 hover:bg-red-500/30 hover:shadow-red-500/20' : row.rtoRisk === 'Medium' ? 'bg-orange-500/20 text-orange-400 border-orange-500/40 hover:bg-orange-500/30 hover:shadow-orange-500/20' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-500/30 hover:shadow-emerald-500/20'}`}>
                                         {row.rtoRisk} RTO
                                       </span>
-                                      {/* RTO Reason Bubble On Hover */}
-                                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2.5 bg-[#151515]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl opacity-0 translate-y-2 pointer-events-none group-hover/rto:opacity-100 group-hover/rto:translate-y-0 group-hover/rto:pointer-events-auto transition-all duration-300 z-50">
-                                        <div className="text-[10px] text-gray-300 font-medium leading-relaxed">
-                                          <span className={`font-bold block mb-1 ${row.rtoRisk === 'High' ? 'text-red-400' : row.rtoRisk === 'Medium' ? 'text-orange-400' : 'text-emerald-400'}`}>Risk Analysis</span>
-                                          {row.rtoReason || 'No specific reason provided by Shiprocket.'}
-                                        </div>
-                                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#151515]/95"></div>
-                                      </div>
+
+                                      <AnimatePresence>
+                                        {openRtoRiskId === row.orderId && (
+                                          <motion.div
+                                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                                            exit={{ opacity: 0, scale: 0.95 }}
+                                            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-3 bg-[#151515]/95 backdrop-blur-md border border-white/20 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-50 pointer-events-auto"
+                                          >
+                                            <button onClick={() => setOpenRtoRiskId(null)} className="absolute top-2 right-2 text-gray-400 hover:text-white"><X size={12} /></button>
+                                            <div className="text-[11px] text-gray-200 font-medium leading-relaxed pr-4">
+                                              <span className={`font-bold block mb-1 text-xs ${row.rtoRisk === 'High' ? 'text-red-400' : row.rtoRisk === 'Medium' ? 'text-orange-400' : 'text-emerald-400'}`}>Risk Analysis</span>
+                                              {row.rtoReason || 'No specific reason provided by Shiprocket.'}
+                                            </div>
+                                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#151515]/95"></div>
+                                          </motion.div>
+                                        )}
+                                      </AnimatePresence>
                                     </div>
                                   )}
                                 </div>

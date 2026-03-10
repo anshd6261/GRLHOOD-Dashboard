@@ -23,6 +23,7 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
         // Shiprocket `channel_order_id` might be `#1001` or `1001`. We'll try both.
         let rtoRisk = "Unknown";
         let rtoReason = "No reason provided.";
+        let shiprocketId = null;
 
         const srMatch = rtoMap[order.name] || rtoMap[displayOrderId] || rtoMap[parseInt(displayOrderId, 10)];
         if (srMatch) {
@@ -34,6 +35,9 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
 
             if (srMatch.reason) {
                 rtoReason = srMatch.reason;
+            }
+            if (srMatch.shiprocketId) {
+                shiprocketId = srMatch.shiprocketId;
             }
         } else {
             // Fallback to tags if Shiprocket data wasn't found in the 14 day fetch
@@ -199,6 +203,7 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
                     shippingDetails,
                     rtoRisk,
                     rtoReason,
+                    shiprocketId,
                     orderId: displayOrderId, // Display ID (1001)
                     orderLink,
                     productId,
