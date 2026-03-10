@@ -316,8 +316,10 @@ function App() {
 
   return (
     <div className="min-h-screen bg-[#0F0F0F] font-sans text-white flex">
-      <nav className="sidebar">
-        <div className="mb-8"><img src="/logo.png" className="w-10 h-10 object-contain" /></div>
+      <nav className="sidebar bg-[#111] border-r border-white-[0.03] backdrop-blur-3xl shadow-[4px_0_24px_rgba(0,0,0,0.5)]">
+        <div className="mb-8 p-2 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 rounded-2xl border border-white/5 shadow-inner">
+          <img src="/logo.png" className="w-10 h-10 object-contain drop-shadow-md" alt="Logo" />
+        </div>
         <NavItem icon={<Grid size={22} />} active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
         <NavItem icon={<History size={22} />} active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
         <NavItem icon={<IndianRupee size={22} />} active={activeTab === 'supplier'} onClick={() => setActiveTab('supplier')} />
@@ -616,12 +618,22 @@ function App() {
                                   <input
                                     value={row?.customerName || ''}
                                     onChange={(e) => { const n = [...data.orders]; n[i].customerName = e.target.value; setData({ ...data, orders: n }) }}
-                                    className="bg-transparent outline-none font-bold text-gray-300 flex-1 w-full"
+                                    className="bg-transparent outline-none font-bold text-gray-200 flex-1 w-full"
                                   />
                                   {row?.rtoRisk && row.rtoRisk !== "Unknown" && (
-                                    <span className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded-sm border whitespace-nowrap ${row.rtoRisk === 'High' ? 'bg-red-500/20 text-red-400 border-red-500/30' : row.rtoRisk === 'Medium' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'}`}>
-                                      {row.rtoRisk} RTO
-                                    </span>
+                                    <div className="relative group/rto">
+                                      <span className={`text-[9px] uppercase font-black px-2 py-0.5 rounded shadow-sm border whitespace-nowrap cursor-pointer transition-all duration-300 ${row.rtoRisk === 'High' ? 'bg-red-500/20 text-red-400 border-red-500/40 hover:bg-red-500/30 hover:shadow-red-500/20' : row.rtoRisk === 'Medium' ? 'bg-orange-500/20 text-orange-400 border-orange-500/40 hover:bg-orange-500/30 hover:shadow-orange-500/20' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-500/30 hover:shadow-emerald-500/20'}`}>
+                                        {row.rtoRisk} RTO
+                                      </span>
+                                      {/* RTO Reason Bubble On Hover */}
+                                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 p-2.5 bg-[#151515]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl opacity-0 translate-y-2 pointer-events-none group-hover/rto:opacity-100 group-hover/rto:translate-y-0 group-hover/rto:pointer-events-auto transition-all duration-300 z-50">
+                                        <div className="text-[10px] text-gray-300 font-medium leading-relaxed">
+                                          <span className={`font-bold block mb-1 ${row.rtoRisk === 'High' ? 'text-red-400' : row.rtoRisk === 'Medium' ? 'text-orange-400' : 'text-emerald-400'}`}>Risk Analysis</span>
+                                          {row.rtoReason || 'No specific reason provided by Shiprocket.'}
+                                        </div>
+                                        <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#151515]/95"></div>
+                                      </div>
+                                    </div>
                                   )}
                                 </div>
 
@@ -647,13 +659,13 @@ function App() {
                             </td>
 
                             <td className="py-4 pr-4 align-top text-right">
-                              <div className="flex items-center justify-end gap-1 text-gray-400">
+                              <div className="flex items-center justify-end gap-1 text-gray-400 bg-black/20 px-2 py-1 rounded w-fit ml-auto border border-white/5">
                                 <span className="text-xs">₹</span>
                                 <input
                                   type="number"
                                   value={row?.cogs || 0}
                                   onChange={(e) => { const n = [...data.orders]; n[i].cogs = parseFloat(e.target.value); setData({ ...data, orders: n }) }}
-                                  className="bg-transparent outline-none w-16 text-right font-mono text-sm text-white"
+                                  className="bg-transparent outline-none w-14 text-right font-mono text-sm text-gray-200"
                                 />
                               </div>
                             </td>

@@ -50,13 +50,27 @@ app.get('/api/orders', async (req, res) => {
 
         console.log(`[API] Fetching orders... Options:`, { daysLookback, startDate, endDate, statusMode });
 
-        // Fetch
-        const rawOrders = await getUnfulfilledOrders(daysLookback, startDate, endDate, statusMode);
+        // Fetch from Shopify and Shiprocket concurrently
+        const [rawOrders, srRes] = await Promise.all([
+            getUnfulfilledOrders(daysLookback, startDate, endDate, statusMode),
+            shiprocket.fetchRecentOrdersForSync(14) // 14 days lookback for RTO data
+        ]);
 
-        // Process
-        const processedRows = processOrders(rawOrders, gstRate);
+        // Build RTO Map from Shiprocket data
+        const rtoMap = {};
+        if (srRes.success && srRes.data) {
+            srRes.data.forEach(srOrder => {
+                if (srOrder.channel_order_id) {
+                    rtoMap[srOrder.channel_order_id] = {
+                        risk: srOrder.rto_prediction || "Unknown",
+                        reason: srOrder.rto_reason || ""
+                    };
+                }
+            });
+        }
 
-        // Calculate Stats
+        // Process orders with the RTO map
+        const processedRows = processOrders(rawOrders, gstRate, rtoMap);
         const totalCOGS = processedRows.reduce((sum, row) => sum + (row.cogs || 0), 0);
         const totalRevenue = processedRows.reduce((sum, row) => sum + (row.price || 0), 0);
         const gstAmount = totalCOGS * (gstRate / 100);

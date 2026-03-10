@@ -1,9 +1,18 @@
-const { getUnfulfilledOrders } = require('./src/shopify');
+const { graphqlRequest } = require('./src/shopify');
 (async () => {
-  try {
-    const orders = await getUnfulfilledOrders(null, "2026-01-01T00:00:00.000Z", "2026-02-28T23:59:59.999Z");
-    console.log("Found:", orders.length);
-  } catch(e) {
-    console.error(e);
-  }
+  const query = `
+    query {
+      orders(first: 5, query: "fulfillment_status:unfulfilled", sortKey: CREATED_AT, reverse: true) {
+        edges {
+          node {
+            name
+            tags
+            customAttributes { key value }
+            shippingAddress { phone address1 city zip country }
+          }
+        }
+      }
+    }`;
+  const res = await graphqlRequest(query);
+  console.log(JSON.stringify(res.orders.edges, null, 2));
 })();

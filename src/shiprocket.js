@@ -214,7 +214,7 @@ const ensureReplacementOrder = async (order) => {
             order_items: items,
             payment_method: "Prepaid",
             sub_total: items.reduce((sum, i) => sum + (i.selling_price * i.units), 0),
-            length: 10, breadth: 10, height: 10, weight: 0.5
+            length: 8, breadth: 5, height: 2, weight: 0.5
         };
 
         console.log(`[SR] Creating Replacement Order ${replacementOrderId}...`);
@@ -238,6 +238,32 @@ const ensureReplacementOrder = async (order) => {
 };
 
 
+
+
+const fetchRecentOrdersForSync = async (days = 3) => {
+    try {
+        const headers = await getHeaders();
+        const d = new Date();
+        const end = d.toISOString().split('T')[0] + ' 23:59:59';
+        d.setDate(d.getDate() - days);
+        const start = d.toISOString().split('T')[0] + ' 00:00:00';
+
+        let allOrders = [];
+        let page = 1;
+
+        // Grab a few pages to get the most recent ones roughly (or just per_page=100)
+        // Adjust pagination as needed, normally 50-100 is enough for a sync.
+        const res = await srApi.get(`https://apiv2.shiprocket.in/v1/external/orders?from=${start}&to=${end}&per_page=100&page=${page}`, { headers });
+        if (res.data && res.data.data) {
+            allOrders = res.data.data;
+        }
+
+        return { success: true, data: allOrders };
+    } catch (e) {
+        console.error(`[SHIPROCKET] fetchRecentOrdersForSync Error:`, e.message);
+        return { success: false, data: [] };
+    }
+};
 
 const assignCourier = async (shipmentId) => {
     try {
@@ -476,5 +502,6 @@ module.exports = {
     createOrder,
     ensureReplacementOrder,
     fetchOrdersByDate,
-    cancelOrderByChannelId
+    cancelOrderByChannelId,
+    fetchRecentOrdersForSync
 };

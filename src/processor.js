@@ -1,8 +1,9 @@
-const processOrders = (orders, gstRate = 18) => {
+const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
     const processedRows = [];
 
     for (const order of orders) {
-        const orderId = order.name.replace('#', ''); // Remove # from order ID
+        const orderId = order.name; // Keep # for Shiprocket lookup since SR channel_order_id includes it
+        const displayOrderId = order.name.replace('#', '');
         const shipping = order.shippingAddress || {};
         const customerName = shipping.name || 'Guest';
         const shippingDetails = {
@@ -18,12 +19,29 @@ const processOrders = (orders, gstRate = 18) => {
         const customerAdminId = rawCustomerId.split('/').pop();
         const customerProfileUrl = customerAdminId ? `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/customers/${customerAdminId}` : '';
 
-        // Extract RTO Risk from Shiprocket's FlexAssure Tags
+        // Extract RTO Risk from Shiprocket Data Map
+        // Shiprocket `channel_order_id` might be `#1001` or `1001`. We'll try both.
         let rtoRisk = "Unknown";
-        const tags = Array.isArray(order.tags) ? order.tags : [];
-        if (tags.some(t => t.toLowerCase() === 'flexassure:highrisk')) rtoRisk = "High";
-        else if (tags.some(t => t.toLowerCase() === 'flexassure:mediumrisk')) rtoRisk = "Medium";
-        else if (tags.some(t => t.toLowerCase() === 'flexassure:lowrisk')) rtoRisk = "Low";
+        let rtoReason = "No reason provided.";
+
+        const srMatch = rtoMap[order.name] || rtoMap[displayOrderId] || rtoMap[parseInt(displayOrderId, 10)];
+        if (srMatch) {
+            const rawRisk = srMatch.risk ? srMatch.risk.toLowerCase() : "";
+            if (rawRisk === "high") rtoRisk = "High";
+            else if (rawRisk === "medium") rtoRisk = "Medium";
+            else if (rawRisk === "low") rtoRisk = "Low";
+            else rtoRisk = "Unknown"; // E.g. prepaid orders or empty
+
+            if (srMatch.reason) {
+                rtoReason = srMatch.reason;
+            }
+        } else {
+            // Fallback to tags if Shiprocket data wasn't found in the 14 day fetch
+            const tags = Array.isArray(order.tags) ? order.tags : [];
+            if (tags.some(t => t.toLowerCase() === 'flexassure:highrisk')) rtoRisk = "High";
+            else if (tags.some(t => t.toLowerCase() === 'flexassure:mediumrisk')) rtoRisk = "Medium";
+            else if (tags.some(t => t.toLowerCase() === 'flexassure:lowrisk')) rtoRisk = "Low";
+        }
 
         // Determine payment method
         let payment = 'Cash on Delivery';
@@ -180,7 +198,8 @@ const processOrders = (orders, gstRate = 18) => {
                     customerProfileUrl,
                     shippingDetails,
                     rtoRisk,
-                    orderId, // Display ID (#1001)
+                    rtoReason,
+                    orderId: displayOrderId, // Display ID (1001)
                     orderLink,
                     productId,
                     thumbnail,
