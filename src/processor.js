@@ -88,6 +88,8 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
         }
 
         // Process line items
+        const orderRows = [];
+
         for (const edge of order.lineItems.edges) {
             const item = edge.node;
             const variant = item.variant || {};
@@ -219,7 +221,7 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
             // Expand Quantity -> Multiple Rows
             const quantity = item.quantity || 1;
             for (let i = 0; i < quantity; i++) {
-                processedRows.push({
+                orderRows.push({
                     id: orderAdminId, // Numeric ID for API calls
                     category,
                     model,
@@ -242,6 +244,22 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
                     price
                 });
             }
+        }
+
+        // Determine Suspicious Multiple Models
+        // We only look at records that actually have a 'model' string and are completely different
+        // We exclude GripPads or standalone generic accessories to prevent false positives.
+        const phoneModels = orderRows
+            .filter(r => r.category !== 'GripPad' && r.model && r.model !== 'Unknown Model' && r.model !== 'GripPad')
+            .map(r => r.model.trim().toLowerCase());
+
+        const uniquePhoneModels = new Set(phoneModels);
+        const hasSuspiciousModels = uniquePhoneModels.size > 1;
+
+        // Push everything to result array
+        for (const row of orderRows) {
+            row.hasSuspiciousModels = hasSuspiciousModels;
+            processedRows.push(row);
         }
     }
 

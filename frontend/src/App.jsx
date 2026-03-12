@@ -662,6 +662,11 @@ function App() {
                                       Copied Number
                                     </span>
                                   )}
+                                  {row?.hasSuspiciousModels && (
+                                    <span className="text-[9px] uppercase font-black px-2 py-0.5 rounded shadow-sm border whitespace-nowrap bg-yellow-500/10 text-yellow-500 border-yellow-500/20 ml-1" title="This order has multiple DIFFERENT phone models, which is unusual for a single customer.">
+                                      Suspicious Models
+                                    </span>
+                                  )}
                                 </div>
 
                                 {row?.shippingDetails && (
