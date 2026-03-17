@@ -414,7 +414,7 @@ function App() {
   return (
     <div className="mobile-container pb-24 text-white font-sans flex flex-col">
       {/* STICKY TOP APP BAR (Global Controls) */}
-      <div className="sticky top-0 z-50 bg-[#0A0A0A]/85 backdrop-blur-2xl border-b border-white/5 px-4 py-3 flex justify-between items-center shadow-[0_4px_30px_rgba(0,0,0,0.6)]">
+      <div className="sticky top-0 z-50 bg-[#0A0A0A]/85 backdrop-blur-2xl border-b border-white/5 px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 flex justify-between items-center shadow-[0_4px_30px_rgba(0,0,0,0.6)]">
 
         {/* Global Nav Controls */}
         <div className="flex items-center gap-3 w-full max-w-[400px]">
