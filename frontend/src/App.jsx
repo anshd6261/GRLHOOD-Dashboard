@@ -2,10 +2,14 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
-import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, Search, Mail, UploadCloud, ChevronRight, Box, BarChart2, MessageSquare, Users, History, Plus, Trash2, Save, X, Grid, ExternalLink, Truck, Calendar, CheckSquare, XOctagon } from 'lucide-react';
+import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, Search, Mail, UploadCloud, ChevronRight, ChevronDown, ChevronUp, Box, BarChart2, MessageSquare, Users, History, Plus, Trash2, Save, X, Grid, ExternalLink, Truck, Calendar, CheckSquare, XOctagon, AlertTriangle, Edit3 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SupplierDashboard from './pages/SupplierDashboard';
 import FinancialDashboard from './pages/FinancialDashboard';
+import HomeAnalytics from './pages/HomeAnalytics';
+import ProductAnalysis from './pages/ProductAnalysis';
+import CsvEditorModal from './components/CsvEditorModal';
+import EditOrderModal from './components/EditOrderModal';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
@@ -58,38 +62,65 @@ function App() {
 
   // Selection State
   const [selectedOrders, setSelectedOrders] = useState(new Set());
+  const [showCsvEditor, setShowCsvEditor] = useState(false);
+  const [csvPreviewData, setCsvPreviewData] = useState([]);
 
-  // RTO and COD Tracking State
-  const [rtoData, setRtoData] = useState(null);
-  const [rtoLoading, setRtoLoading] = useState(false);
-  const [rtoDates, setRtoDates] = useState([new Date(new Date().setDate(new Date().getDate() - 30)), new Date()]);
-  const [rtoStartDate, rtoEndDate] = rtoDates;
+  // Accordion State
+  const [expandedOrders, setExpandedOrders] = useState(new Set());
+  const toggleOrderExpanded = (id) => {
+    setExpandedOrders(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
-  // RTO Click Modal State
-  const [openRtoRiskId, setOpenRtoRiskId] = useState(null);
-
-  useEffect(() => { if (activeTab === 'history') fetchHistory(); }, [activeTab]);
+  // Long-Press Selection Logic
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
 
   useEffect(() => {
-    if (activeTab === 'dashboard' && rtoStartDate && rtoEndDate) {
-      fetchShiprocketStats();
-    }
-  }, [rtoStartDate, rtoEndDate, activeTab]);
+    if (selectedOrders.size === 0) setSelectionMode(false);
+  }, [selectedOrders.size]);
 
-  const fetchShiprocketStats = async () => {
-    if (!rtoStartDate || !rtoEndDate) return;
-    setRtoLoading(true);
-    try {
-      const sStr = rtoStartDate.toISOString();
-      const eStr = rtoEndDate.toISOString();
-      const res = await axios.get(`${API_URL}/shiprocket/stats?startDate=${sStr}&endDate=${eStr}`);
-      setRtoData(res.data);
-    } catch (e) {
-      console.error("RTO Fetch Error:", e);
-    } finally {
-      setRtoLoading(false);
-    }
+  const handlePressStart = (id) => {
+    window.pressTimer = setTimeout(() => {
+      setSelectionMode(true);
+      toggleSelectRow(id);
+      if ("vibrate" in navigator) navigator.vibrate(50);
+    }, 600); // 600ms hold
   };
+  const handlePressEnd = () => {
+    if (window.pressTimer) clearTimeout(window.pressTimer);
+  };
+
+  const handleSaveEdit = (updatedItemsArray) => {
+    if (!data?.orders) return;
+    if (!updatedItemsArray || !Array.isArray(updatedItemsArray)) return;
+
+    const newOrders = [...data.orders];
+
+    // For each item edited in the modal, find it in the master list and overwrite it
+    updatedItemsArray.forEach(editedItem => {
+      const idx = newOrders.findIndex(o => o.id === editedItem.id);
+      if (idx > -1) {
+        newOrders[idx] = { ...newOrders[idx], ...editedItem };
+      }
+    });
+
+    setData({ ...data, orders: newOrders });
+    setToast({ message: "Order Updated Successfully!", type: "success" });
+    setEditingOrder(null);
+  };
+
+  // RTO Click Modal State (kept for Place Order tab)
+  const [openRtoRiskId, setOpenRtoRiskId] = useState(null);
+
+  // Fulfillment Filters & Calling State
+  const [activeFilter, setActiveFilter] = useState('All'); // 'All', 'High Risk', 'Missing Device', 'Multiple Orders'
+
+  useEffect(() => { if (activeTab === 'history') fetchHistory(); }, [activeTab]);
 
   /* --- NEW TOAST & UI STATE --- */
   const [toast, setToast] = useState(null); // { message, type: 'success'|'error'|'info' }
@@ -167,7 +198,7 @@ function App() {
 
       console.log('Syncing with:', { startStr, endStr });
 
-      const res = await axios.get(`${API_URL}/orders?startDate=${startStr}&endDate=${endStr}`);
+      const res = await axios.get(`${API_URL}/orders?status=unfulfilled&startDate=${startStr}&endDate=${endStr}`);
 
       if (res.headers['content-type']?.includes('text/html')) {
         throw new Error('Server returned HTML (500/404). Check Server Logs.');
@@ -221,7 +252,20 @@ function App() {
 
   const handleDownloadDashboard = (t) => data?.orders && executeDownload({ rows: data.orders, type: t });
   const handleSendEmail = async () => { if (data?.orders) { setLoading(true); try { await axios.post(`${API_URL}/email-approval`, { rows: data.orders }); alert('Sent'); } catch (e) { } finally { setLoading(false) } } };
-  const handleUploadPortal = async () => { if (data?.orders && confirm('Upload?')) { setLoading(true); try { await axios.post(`${API_URL}/upload-portal`, { rows: data.orders }); alert('Done'); } catch (e) { } finally { setLoading(false) } } };
+  const handleUploadPortal = async (ordersToUpload) => {
+    const targetOrders = (ordersToUpload && ordersToUpload.length > 0) ? ordersToUpload : data?.orders;
+    if (!targetOrders || targetOrders.length === 0) return;
+
+    setLoading('Uploading to Portal...');
+    try {
+      await axios.post(`${API_URL}/upload-portal`, { rows: targetOrders });
+      setToast({ message: 'Orders Successfully Sent to Portal', type: 'success' });
+    } catch (e) {
+      alert('Upload Failed: ' + (e.response?.data?.error || e.message));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const saveHistory = async () => {
     if (!editingBatch) return;
@@ -293,7 +337,8 @@ function App() {
   const handleDownloadSelected = () => {
     if (selectedOrders.size === 0 || !data?.orders) return;
     const selectedRows = data.orders.filter(o => selectedOrders.has(o.orderId));
-    executeDownload({ rows: selectedRows, type: 'selected' });
+    setCsvPreviewData(selectedRows);
+    setShowCsvEditor(true);
   };
 
   const handleDeleteSelected = () => {
@@ -313,206 +358,155 @@ function App() {
       const s = searchTerm.toLowerCase();
       const oid = r.orderId ? r.orderId.toString().toLowerCase() : '';
       const name = r.customerName ? r.customerName.toLowerCase() : '';
-      return !searchTerm || oid.includes(s) || name.includes(s);
+      const matchesSearch = !searchTerm || oid.includes(s) || name.includes(s);
+
+      let matchesFilter = true;
+      if (activeFilter === 'High Risk') matchesFilter = r.rtoRisk === 'High';
+      if (activeFilter === 'Missing Device') matchesFilter = !r.model || r.model.trim() === '' || r.model.toLowerCase() === 'unknown model';
+      if (activeFilter === 'Multiple Orders') matchesFilter = (r.customerOrdersCount || 1) > 1;
+
+      return matchesSearch && matchesFilter;
     });
-  }, [data, searchTerm]);
+  }, [data, searchTerm, activeFilter]);
+
+  // Group line items into parent Orders
+  const groupedFilteredOrders = React.useMemo(() => {
+    const groups = {};
+    filteredOrders.forEach(o => {
+      if (!groups[o.orderId]) {
+        groups[o.orderId] = {
+          orderId: o.orderId,
+          customerName: o.customerName,
+          payment: o.payment,
+          rtoRisk: o.rtoRisk,
+          hasCopiedNumberDifferentName: o.hasCopiedNumberDifferentName,
+          customerOrdersCount: o.customerOrdersCount,
+          shippingDetails: o.shippingDetails,
+          orderLink: o.orderLink,
+          shiprocketId: o.shiprocketId,
+          items: [],
+          totalCogs: 0,
+          totalItemsPrice: 0,
+          createdAt: o.createdAt
+        };
+      }
+      groups[o.orderId].items.push(o);
+      groups[o.orderId].totalCogs += (o.cogs || 0);
+      groups[o.orderId].totalItemsPrice += (o.price || 0);
+    });
+    return Object.values(groups);
+  }, [filteredOrders]);
 
   return (
-    <div className="min-h-screen bg-[#0F0F0F] font-sans text-white flex">
-      <nav className="sidebar bg-[#111] border-r border-white-[0.03] backdrop-blur-3xl shadow-[4px_0_24px_rgba(0,0,0,0.5)]">
-        <div className="mb-8 p-2 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 rounded-2xl border border-white/5 shadow-inner">
-          <img src="/logo.png" className="w-10 h-10 object-contain drop-shadow-md" alt="Logo" />
-        </div>
-        <NavItem icon={<Grid size={22} />} active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
-        <NavItem icon={<History size={22} />} active={activeTab === 'history'} onClick={() => setActiveTab('history')} />
-        <NavItem icon={<IndianRupee size={22} />} active={activeTab === 'supplier'} onClick={() => setActiveTab('supplier')} />
-        <NavItem icon={<BarChart2 size={22} />} active={activeTab === 'financials'} onClick={() => setActiveTab('financials')} />
-        <div className="flex-1"></div>
-        <NavItem icon={<Settings size={22} />} />
-        <div className="mb-4 text-xs text-gray-600">v7.2</div>
-      </nav>
+    <div className="mobile-container pb-24 text-white font-sans flex flex-col">
+      {/* STICKY TOP APP BAR (Global Controls) */}
+      <div className="sticky top-0 z-50 bg-[#0A0A0A]/85 backdrop-blur-2xl border-b border-white/5 px-4 py-3 flex justify-between items-center shadow-[0_4px_30px_rgba(0,0,0,0.6)]">
 
-      <main className="flex-1 ml-[80px] p-8 max-w-[1920px]">
-        <div className="flex justify-between items-center mb-10">
-          <div className="flex items-center gap-4 bg-[#1A1A1A] px-4 py-3 rounded-2xl w-[400px] border border-white/5 focus-within:border-white/10 transition-colors">
-            <Search size={18} className="text-gray-500" />
-            <input
-              type="text"
-              placeholder="Search orders, customers..."
-              className="bg-transparent outline-none text-sm w-full placeholder-gray-600"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 bg-[#1A1A1A] px-4 py-2 rounded-xl border border-white/5 z-50">
-              <Calendar size={16} className="text-gray-500" />
+        {/* Global Nav Controls */}
+        <div className="flex items-center gap-3 w-full max-w-[400px]">
+          {/* Glowing Date Picker Pill */}
+          <div className="relative group w-full flex-1">
+            <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/50 to-purple-500/50 rounded-2xl blur-lg opacity-40 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div className="relative flex items-center justify-center gap-2 bg-[#0A0A0A]/80 hover:bg-[#0A0A0A] transition-colors px-4 py-2.5 rounded-2xl border border-white/20 backdrop-blur-3xl shadow-[0_4px_20px_rgba(0,0,0,0.5)] w-full text-center">
+              <Calendar size={16} className="text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)] absolute left-4" />
               <DatePicker
                 selectsRange={true}
                 startDate={startDate}
                 endDate={endDate}
-                onChange={(update) => {
-                  setDateRange(update);
-                }}
-                className="bg-transparent text-sm font-bold text-white outline-none w-48 text-center cursor-pointer"
-                placeholderText="Select Date Range"
+                onChange={(update) => setDateRange(update)}
+                className="bg-transparent text-sm font-black text-white outline-none w-full text-center placeholder-white/50 cursor-pointer ml-4"
+                placeholderText="Select Date"
               />
             </div>
-            <button onClick={handleSync} disabled={loading} className="bg-white text-black px-6 py-3 rounded-xl font-bold text-sm hover:bg-gray-200 transition-colors flex items-center gap-2">
-              <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> {loading ? 'Syncing...' : 'Sync Data'}
-            </button>
           </div>
-        </div>
 
+          {/* Sync Button */}
+          <button onClick={handleSync} disabled={loading} className="relative group flex items-center justify-center focus:outline-none shrink-0">
+            <div className="absolute inset-0 bg-cyan-500/50 rounded-2xl blur-lg opacity-40 group-hover:opacity-100 transition-opacity duration-300"></div>
+            <div className="relative p-3 rounded-2xl bg-[#0A0A0A]/80 border border-white/20 hover:bg-[#0A0A0A] transition-colors shadow-[0_4px_20px_rgba(0,0,0,0.5)] backdrop-blur-3xl">
+              <RefreshCw size={18} className={loading ? 'animate-spin text-cyan-400' : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]'} />
+            </div>
+          </button>
+        </div>
+      </div>
+
+      <main className="flex-1 p-4 w-full relative">
         <AnimatePresence mode="wait">
           {activeTab === 'dashboard' && (
-            <motion.div key="dashboard" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-                <div className="card-gradient grad-cyan h-40">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="text-sm text-cyan-200/80 font-medium mb-1">Total Orders</div>
-                      <div className="text-4xl font-bold text-white tracking-tight">{data?.stats?.totalOrders || 0}</div>
-                    </div>
-                    <div className="icon-btn-filled bg-cyan-500/20 text-cyan-400"><Package size={20} /></div>
-                  </div>
-                  <div className="text-xs text-cyan-200/40">Pending Fulfillment</div>
-                </div>
+            <motion.div key="dashboard" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
+              <HomeAnalytics startDate={startDate} endDate={endDate} onNavigateToProductAnalysis={() => setActiveTab('product_analysis')} />
+            </motion.div>
+          )}
 
-                <div className="card-gradient grad-lime h-40">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="text-sm text-lime-200/80 font-medium mb-1">Total Items</div>
-                      <div className="text-4xl font-bold text-white tracking-tight">{data?.stats?.totalItems || 0}</div>
-                    </div>
-                    <div className="icon-btn-filled bg-lime-500/20 text-lime-400"><Smartphone size={20} /></div>
-                  </div>
-                  <div className="text-xs text-lime-200/40">Individual SKUs</div>
-                </div>
+          {activeTab === 'product_analysis' && (
+            <motion.div key="product_analysis" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
+              <ProductAnalysis startDate={startDate} endDate={endDate} />
+            </motion.div>
+          )}
 
-                <div className="card-gradient grad-purple h-40 flex flex-col justify-between">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <div className="text-sm text-purple-200/80 font-medium mb-1">Total COGS</div>
-                      <div className="text-3xl font-bold text-white tracking-tight">₹{data?.stats?.total?.toFixed(0) || 0}</div>
-                    </div>
-                    <div className="icon-btn-filled bg-purple-500/20 text-purple-400"><IndianRupee size={20} /></div>
+          {activeTab === 'place_order' && (
+            <motion.div key="place_order" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
+              {/* FULFILL METRICS 2x2 GRID */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="glass-card p-4 relative overflow-hidden flex flex-col justify-between h-32">
+                  <div className="absolute -top-10 -right-10 w-24 h-24 bg-cyan-500/10 blur-2xl rounded-full z-0"></div>
+                  <div className="flex justify-between items-start relative z-10">
+                    <div className="text-[10px] font-bold text-gray-400 tracking-wider">TOTAL ORDERS</div>
+                    <Package size={16} className="text-cyan-400" />
                   </div>
-                  <div className="text-xs text-purple-200/60 font-medium bg-black/20 rounded px-2 py-1.5 inline-block w-max mt-2">
-                    ₹{data?.stats?.subtotal?.toFixed(0) || 0} Base + ₹{data?.stats?.gst?.toFixed(0) || 0} (18% GST)
+                  <div className="relative z-10">
+                    <div className="text-3xl font-bold text-white tracking-tight">{data?.stats?.totalOrders || 0}</div>
+                    <div className="text-[10px] text-gray-400 uppercase mt-1">Pending Sync</div>
                   </div>
                 </div>
 
-                <div className="panel-dark h-40 flex flex-col justify-center gap-3">
+                <div className="glass-card p-4 relative overflow-hidden flex flex-col justify-between h-32">
+                  <div className="absolute -bottom-10 -left-10 w-24 h-24 bg-cyan-500/10 blur-2xl rounded-full z-0"></div>
+                  <div className="flex justify-between items-start relative z-10">
+                    <div className="text-[10px] font-bold text-gray-400 tracking-wider">TOTAL UNITS</div>
+                    <Smartphone size={16} className="text-cyan-400" />
+                  </div>
+                  <div className="relative z-10">
+                    <div className="text-3xl font-bold text-white tracking-tight">{data?.stats?.totalItems || 0}</div>
+                    <div className="text-[10px] text-gray-400 uppercase mt-1">SKUs</div>
+                  </div>
+                </div>
+
+                <div className="glass-card p-4 relative overflow-hidden flex flex-col justify-between h-32">
+                  <div className="absolute -top-10 -left-10 w-24 h-24 bg-cyan-500/10 blur-2xl rounded-full z-0"></div>
+                  <div className="flex justify-between items-start relative z-10">
+                    <div className="text-[10px] font-bold text-gray-400 tracking-wider">SUPPLIER INVOICE</div>
+                    <IndianRupee size={16} className="text-cyan-400" />
+                  </div>
+                  <div className="relative z-10">
+                    <div className="text-2xl font-bold text-white tracking-tight">₹{data?.stats?.total?.toFixed(0) || 0}</div>
+                    <div className="text-[10px] text-gray-400 font-medium mt-1">
+                      Includes 18% GST
+                    </div>
+                  </div>
+                </div>
+
+                <div className="glass-card p-3 relative overflow-hidden flex flex-col justify-center gap-2 h-32">
+                  <div className="absolute inset-0 bg-white/5 z-0"></div>
+                  <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-cyan-500/10 blur-3xl rounded-full z-0"></div>
                   {workflowStatus === 'review' ? (
-                    <>
-                      <div className="grid grid-cols-3 gap-3">
-                        <button onClick={() => handleDownloadDashboard('all')} className="bg-[#1A1A1A] hover:bg-[#252525] p-3 rounded-xl border border-white/5 text-xs font-bold text-white flex items-center justify-center gap-2 transition-colors">All CSV</button>
-                        <button onClick={() => handleDownloadDashboard('prepaid')} className="bg-[#1A1A1A] hover:bg-[#252525] p-3 rounded-xl border border-white/5 text-xs font-bold text-green-400 flex items-center justify-center gap-2 transition-colors">Prepaid CSV</button>
-                        <button onClick={() => handleDownloadDashboard('cod')} className="bg-[#1A1A1A] hover:bg-[#252525] p-3 rounded-xl border border-white/5 text-xs font-bold text-orange-400 flex items-center justify-center gap-2 transition-colors">COD CSV</button>
-                      </div>
-                      <div className="flex gap-3">
-                        <button onClick={handleSendEmail} className="flex-1 bg-[#1A1A1A] hover:bg-[#252525] p-3 rounded-xl border border-white/5 text-xs font-bold text-blue-400 flex items-center justify-center gap-2 transition-colors"><Mail size={16} /> Email</button>
-                        <button onClick={handleUploadPortal} className="flex-1 bg-white text-black p-3 rounded-xl font-bold text-xs hover:bg-gray-200 flex items-center justify-center gap-2 transition-colors"><UploadCloud size={16} /> Upload</button>
-                      </div>
-                      <button
-                        onClick={handleGenerateLabels}
-                        disabled={loading}
-                        className={`w-full relative btn-shine-effect group overflow-hidden p-4 rounded-xl font-bold text-sm flex items-center justify-center gap-3 transition-all duration-300 shadow-lg ${loading ? 'bg-gray-800 cursor-not-allowed' : 'bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600 bg-[length:200%_auto] hover:bg-right hover:scale-[1.02] shadow-indigo-500/25'}`}
-                      >
-                        {loading ? (
-                          <>
-                            <RefreshCw size={18} className="animate-spin text-indigo-300" />
-                            <span className="text-indigo-200">{typeof loading === 'string' ? loading : 'Processing...'}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Truck size={18} className="text-white group-hover:animate-bounce" />
-                            <span className="text-white tracking-wide">GENERATE LABELS (INSTANT)</span>
-                          </>
-                        )}
+                    <div className="relative z-10 flex flex-col gap-2 h-full justify-center">
+                      <button onClick={() => { setCsvPreviewData(data?.orders || []); setShowCsvEditor(true); }} disabled={loading} className="flex-1 bg-white hover:bg-gray-200 text-black rounded-[14px] font-black text-[11px] flex items-center justify-center gap-1.5 transition-all shadow-[0_0_15px_rgba(255,255,255,0.2)] tracking-widest uppercase">
+                        <UploadCloud size={14} /> SEND ORDER
                       </button>
-                    </>
+                      <button onClick={handleGenerateLabels} disabled={loading} className="flex-1 bg-white/5 border border-white/10 hover:bg-white/10 text-white rounded-[14px] font-bold text-[11px] flex items-center justify-center gap-1.5 transition-all tracking-widest uppercase">
+                        <Truck size={14} /> LABELS
+                      </button>
+                    </div>
                   ) : (
-                    <div className="text-center text-gray-500 text-sm">Sync to enable actions</div>
+                    <div className="relative z-10 text-center text-gray-500 text-[10px] font-black uppercase tracking-widest drop-shadow-md opacity-60">
+                      Sync to enable actions
+                    </div>
                   )}
                 </div>
               </div>
 
-              {/* RTO and COD Tracking Section */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-2">
-                <div className="panel-dark p-6 relative">
-                  <div className="flex justify-between items-start mb-6 w-full">
-                    <div>
-                      <h3 className="text-xl font-bold flex items-center gap-2"><Truck size={20} className="text-red-400" /> RTO Loss Tracker</h3>
-                      <div className="text-sm text-gray-400 mt-1">Shiprocket Delivery Exceptions</div>
-                    </div>
-                    <div className="bg-[#1A1A1A] px-2 py-1 rounded-lg border border-white/10 z-10 w-fit">
-                      <DatePicker
-                        selectsRange={true}
-                        startDate={rtoStartDate}
-                        endDate={rtoEndDate}
-                        onChange={(update) => setRtoDates(update)}
-                        className="bg-transparent text-xs font-bold text-white outline-none w-36 text-center cursor-pointer"
-                        placeholderText="Date Range"
-                        maxDate={new Date()}
-                      />
-                    </div>
-                  </div>
 
-                  {rtoLoading ? (
-                    <div className="h-28 flex items-center justify-center"><RefreshCw size={24} className="animate-spin text-gray-500" /></div>
-                  ) : (
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4">
-                        <div className="text-red-400 text-sm font-medium mb-1">RTO Percentage</div>
-                        <div className="text-3xl font-bold text-red-300">{rtoData?.rtoStats?.percentage || 0}%</div>
-                        <div className="text-xs text-red-400/60 mt-2">{rtoData?.rtoStats?.ordersCount || 0} Orders Returned</div>
-                      </div>
-                      <div className="bg-[#1A1A1A] border border-white/5 rounded-xl p-4">
-                        <div className="text-gray-400 text-sm font-medium mb-1">Total Loss Value</div>
-                        <div className="text-3xl font-bold text-white">₹{rtoData?.rtoStats?.lossValue?.toLocaleString() || 0}</div>
-                        <div className="text-xs text-gray-500 mt-2">Value of returning inventory</div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="panel-dark p-6 relative">
-                  <div className="flex justify-between items-start mb-6">
-                    <div>
-                      <h3 className="text-xl font-bold flex items-center gap-2"><IndianRupee size={20} className="text-emerald-400" /> COD Collections & Remittance</h3>
-                      <div className="text-sm text-gray-400 mt-1">Pending payments and collected funds</div>
-                    </div>
-                    <div className="bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full text-xs font-bold border border-emerald-500/20 flex items-center gap-1">
-                      <RefreshCw size={12} className={rtoLoading ? "animate-spin" : ""} /> Live
-                    </div>
-                  </div>
-
-                  {rtoLoading ? (
-                    <div className="h-28 flex items-center justify-center"><RefreshCw size={24} className="animate-spin text-gray-500" /></div>
-                  ) : (
-                    <div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="bg-[#1A1A1A] border border-white/5 rounded-xl p-4">
-                          <div className="text-gray-400 text-sm font-medium mb-1">Pending Payments</div>
-                          <div className="text-3xl font-bold text-white">₹{rtoData?.codStats?.pendingValue?.toLocaleString() || 0}</div>
-                          <div className="text-xs text-gray-500 mt-2">{rtoData?.codStats?.pendingCount || 0} Orders in-transit</div>
-                        </div>
-                        <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-4">
-                          <div className="text-emerald-400 text-sm font-medium mb-1">COD Collected</div>
-                          <div className="text-3xl font-bold text-emerald-300">₹{rtoData?.codStats?.collectedValue?.toLocaleString() || 0}</div>
-                          <div className="text-xs text-emerald-400/60 mt-2">{rtoData?.codStats?.collectedCount || 0} Orders delivered</div>
-                        </div>
-                      </div>
-                      <div className="mt-4 text-center text-xs font-bold text-emerald-400/70 bg-emerald-500/5 py-2 rounded-lg border border-emerald-500/10">
-                        Estimated Remittance: Within 2 Business Days of Delivery
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
 
 
               <AnimatePresence>
@@ -527,20 +521,26 @@ function App() {
                 )}
               </AnimatePresence>
 
-              <div className="panel-dark min-h-[500px]">
-                <div className="flex justify-between items-end mb-6 border-b border-white/5 pb-4">
-                  <div className="flex items-center gap-4">
-                    <h3 className="text-xl font-bold">Review Orders</h3>
-                    <div className="text-sm text-gray-500">{filteredOrders.length} records</div>
+              <div className="glass-card min-h-[500px] p-4 md:p-6 mb-24">
+                <div className="flex flex-col gap-4 mb-6 pt-2">
+                  <div className="flex justify-between items-center px-1">
+                    <h3 className="text-2xl font-black text-white glow-text tracking-wider uppercase">Review Orders</h3>
                   </div>
-                  <button onClick={() => {
-                    if (!data) setData({ orders: [] });
-                    const newRow = { orderId: 'MANUAL', category: '', model: '', customerName: '', cogs: 0, sku: '', payment: 'Prepaid', productId: null, thumbnail: null };
-                    const currentOrders = data?.orders || [];
-                    setData({ ...data, orders: [newRow, ...currentOrders] });
-                  }} className="px-3 py-1.5 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-lg hover:bg-blue-500/20 font-bold text-xs flex items-center gap-2 transition-colors">
-                    <Plus size={14} /> Add Order
-                  </button>
+
+                  {/* Quick Filter Pills */}
+                  <div className="flex justify-between items-center mt-2 px-1">
+                    <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar flex-1">
+                      {['All', 'High Risk', 'Missing Device', 'Multiple Orders'].map(f => (
+                        <button
+                          key={f}
+                          onClick={() => setActiveFilter(f)}
+                          className={`px-5 py-2.5 rounded-full text-xs font-bold whitespace-nowrap transition-all border shadow-sm tracking-wide ${activeFilter === f ? 'bg-white text-black border-white glow-text' : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-white'} `}
+                        >
+                          {f} {activeFilter === f && `(${filteredOrders.length})`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
                 {!data ? (
@@ -549,182 +549,136 @@ function App() {
                     <div className="mt-4 font-medium">No Data Synced</div>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr>
-                          <th className="table-header w-10 pl-4">
-                            <input type="checkbox" onChange={toggleSelectAll} checked={data?.orders?.length > 0 && selectedOrders.size === data.orders.length} className="rounded border-gray-600 bg-transparent" />
-                          </th>
-                          <th className="table-header pl-2">ID</th>
-                          <th className="table-header">Product Info</th>
-                          <th className="table-header">Customer</th>
-                          <th className="table-header text-right pr-4">Cost (COGS)</th>
-                          <th className="table-header w-10"></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredOrders.map((row, i) => (
-                          <tr key={i} className={`table-row group border-b border-white/[0.02] ${selectedOrders.has(row?.orderId) ? 'bg-white/[0.03]' : ''}`}>
-                            <td className="py-4 pl-4 align-top w-10">
-                              <input type="checkbox" checked={selectedOrders.has(row?.orderId)} onChange={() => row?.orderId && toggleSelectRow(row.orderId)} className="rounded border-gray-600 bg-transparent" />
-                            </td>
-                            <td className="py-4 pl-2 align-top w-[140px]">
-                              <div className="flex items-center gap-2 mb-1">
-                                <input
-                                  className="bg-transparent outline-none font-mono text-sm text-white font-bold w-16"
-                                  value={row?.orderId || ''}
-                                  onChange={(e) => { const n = [...data.orders]; n[i].orderId = e.target.value; setData({ ...data, orders: n }) }}
-                                />
-                                {row?.shiprocketId && (
-                                  <a href={`https://app.shiprocket.in/seller/orders/details/${row.shiprocketId}`} target="_blank" className="text-indigo-400 bg-indigo-500/10 p-1 rounded hover:bg-indigo-500/20 transition-colors" title="Open in Shiprocket">
-                                    <ExternalLink size={12} />
-                                  </a>
-                                )}
-                              </div>
-                              <select
-                                value={row?.payment || 'Prepaid'}
-                                onChange={(e) => { const n = [...data.orders]; n[i].payment = e.target.value; setData({ ...data, orders: n }) }}
-                                className={`text-[10px] font-bold px-1 py-0.5 rounded w-fit outline-none border-none cursor-pointer ${row?.payment === 'Prepaid' ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'}`}
-                              >
-                                <option value="Prepaid" className="bg-black text-white">Prepaid</option>
-                                <option value="Cash on Delivery" className="bg-black text-white">COD</option>
-                              </select>
-                            </td>
+                  <div className="space-y-6 pb-20">
+                    {groupedFilteredOrders.map((group, i) => {
+                      const isExpanded = expandedOrders.has(group.orderId);
+                      return (
+                        <div key={group.orderId} className={`glass-card overflow-hidden transition-all ${selectedOrders.has(group.orderId) ? 'ring-2 ring-cyan-500/50 bg-cyan-900/10' : ''}`}>
 
-                            <td className="py-4 align-top">
-                              <div className="flex gap-4">
-                                {row?.thumbnail && <img src={row.thumbnail} className="w-12 h-12 rounded-lg object-cover bg-white/5" />}
-                                <div>
-                                  <div className="font-bold text-white mb-1 flex items-center gap-2">
-                                    {row?.category || 'Unknown'}
-                                    {row?.previewUrl && <a href={row.previewUrl} target="_blank" className="text-gray-600 hover:text-white"><ExternalLink size={12} /></a>}
+                          {/* Parent Order Header (Always Visible) */}
+                          <div
+                            className="p-5 md:p-6 flex flex-col gap-4"
+                            onPointerDown={() => !selectionMode && handlePressStart(group.orderId)}
+                            onPointerUp={handlePressEnd}
+                            onPointerLeave={handlePressEnd}
+                          >
+                            <div className="flex justify-between items-start">
+                              <div className="flex items-start gap-4 w-full max-w-[75%]">
+                                {selectionMode && (
+                                  <div
+                                    onClick={(e) => { e.stopPropagation(); toggleSelectRow(group.orderId); }}
+                                    className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 mt-1 cursor-pointer transition-colors ${selectedOrders.has(group.orderId) ? 'border-cyan-400 bg-cyan-500/20' : 'border-white/20 bg-black/20'}`}
+                                  >
+                                    {selectedOrders.has(group.orderId) && <div className="w-2.5 h-2.5 rounded-sm bg-cyan-400"></div>}
                                   </div>
-                                  <div className="text-sm text-gray-400 mb-1">{row?.model || 'Unknown Model'}</div>
-                                  <div className="flex gap-2 items-center mt-1">
-                                    <input
-                                      value={row?.sku || ''}
-                                      onChange={(e) => {
-                                        const n = [...data.orders];
-                                        n[i].sku = e.target.value;
-                                        setData({ ...data, orders: n });
-                                      }}
-                                      className="text-[11px] font-mono text-white bg-white/10 px-2 py-1 rounded w-32 border border-white/20 outline-none focus:border-cyan-500 transition-colors"
-                                      placeholder="Enter SKU"
-                                    />
-                                    {(!row?.sku && row?.productId) && (
-                                      <button onClick={() => handleCreateSku(row.productId)} className="text-[10px] text-blue-400 bg-blue-500/10 px-2 py-1.5 rounded hover:bg-blue-500/20 transition-colors whitespace-nowrap">
-                                        Assign SKU
-                                      </button>
+                                )}
+                                <div className="min-w-0 flex-1 cursor-pointer" onClick={() => { if (selectionMode) { toggleSelectRow(group.orderId); } else { toggleOrderExpanded(group.orderId); } }}>
+                                  <div className="font-mono font-bold text-white text-lg lg:text-xl flex items-center gap-2">
+                                    {group.orderId}
+                                    <div className="p-1 rounded bg-white/5 text-gray-400">
+                                      {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                    </div>
+                                  </div>
+                                  <div className="text-sm text-gray-400 font-medium truncate mt-1">{group.customerName}</div>
+
+                                  {/* Order-level Tags (Aligned under text) */}
+                                  <div className="flex flex-wrap gap-2 mt-3">
+                                    <span className={`text-[10px] uppercase font-black px-2 py-0.5 rounded shadow-sm border whitespace-nowrap ${group.payment === 'Prepaid' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
+                                      {group.payment || 'Prepaid'}
+                                    </span>
+                                    <span className={`flex items-center gap-1 text-[10px] uppercase font-black px-2 py-0.5 rounded shadow-sm border whitespace-nowrap ${group.rtoRisk === 'High' ? 'bg-red-500/10 text-red-400 border-red-500/20' : group.rtoRisk === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : group.rtoRisk === 'Low' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-gray-500/10 text-gray-400 border-gray-500/20'}`}>
+                                      <AlertTriangle size={10} /> {group.rtoRisk || 'Unknown'} Risk
+                                    </span>
+                                    <span className={`text-[10px] uppercase font-black px-2 py-0.5 rounded shadow-sm border whitespace-nowrap ${group.customerOrdersCount > 1 ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-gray-500/10 text-gray-400 border-gray-500/20'}`}>
+                                      {group.customerOrdersCount > 1 ? `Repeat (${group.customerOrdersCount})` : 'New Customer'}
+                                    </span>
+                                    {group.hasCopiedNumberDifferentName && (
+                                      <span className="flex items-center gap-1 text-[10px] uppercase font-black px-2 py-0.5 rounded shadow-sm border whitespace-nowrap bg-purple-500/10 text-purple-400 border-purple-500/20">
+                                        <AlertTriangle size={10} /> Copied #
+                                      </span>
                                     )}
                                   </div>
                                 </div>
                               </div>
-                            </td>
 
-                            <td className="py-4 align-top">
-                              <div className="flex flex-col gap-1.5">
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    value={row?.customerName || ''}
-                                    onChange={(e) => { const n = [...data.orders]; n[i].customerName = e.target.value; setData({ ...data, orders: n }) }}
-                                    className="bg-transparent outline-none font-bold text-gray-200 flex-1 w-full"
-                                  />
-                                  {row?.rtoRisk && row.rtoRisk !== "Unknown" && (
-                                    <div className="relative">
-                                      <span
-                                        onClick={() => setOpenRtoRiskId(openRtoRiskId === row.orderId ? null : row.orderId)}
-                                        className={`text-[9px] uppercase font-black px-2 py-0.5 rounded shadow-sm border whitespace-nowrap cursor-pointer transition-all duration-300 ${row.rtoRisk === 'High' ? 'bg-red-500/20 text-red-400 border-red-500/40 hover:bg-red-500/30 hover:shadow-red-500/20' : row.rtoRisk === 'Medium' ? 'bg-orange-500/20 text-orange-400 border-orange-500/40 hover:bg-orange-500/30 hover:shadow-orange-500/20' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-500/30 hover:shadow-emerald-500/20'}`}>
-                                        {row.rtoRisk} RTO
-                                      </span>
+                              <div className="text-right shrink-0">
+                                <div className="text-xl font-black text-white glow-text">₹{group.totalItemsPrice}</div>
+                                <div className="text-xs text-gray-500 mt-1">{group.items.length} Unit{group.items.length > 1 ? 's' : ''}</div>
+                              </div>
+                            </div>
+                          </div>
 
-                                      <AnimatePresence>
-                                        {openRtoRiskId === row.orderId && (
-                                          <motion.div
-                                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                                            exit={{ opacity: 0, scale: 0.95 }}
-                                            className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-3 bg-[#151515]/95 backdrop-blur-md border border-white/20 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-50 pointer-events-auto"
-                                          >
-                                            <button onClick={() => setOpenRtoRiskId(null)} className="absolute top-2 right-2 text-gray-400 hover:text-white"><X size={12} /></button>
-                                            <div className="text-[11px] text-gray-200 font-medium leading-relaxed pr-4">
-                                              <span className={`font-bold block mb-1 text-xs ${row.rtoRisk === 'High' ? 'text-red-400' : row.rtoRisk === 'Medium' ? 'text-orange-400' : 'text-emerald-400'}`}>Risk Analysis</span>
-                                              {row.rtoReason || 'No specific reason provided by Shiprocket.'}
-                                            </div>
-                                            <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#151515]/95"></div>
-                                          </motion.div>
+                          {/* Expanded Area: Line Items & Footer Actions */}
+                          <AnimatePresence>
+                            {isExpanded && (
+                              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                                <div className="border-t border-white/5 bg-black/20 p-4 md:p-5 flex flex-col gap-4">
+
+                                  {/* Line Items List */}
+                                  <div className="space-y-3">
+                                    {group.items.map((item, idx) => (
+                                      <div key={idx} className="bg-black/30 rounded-xl p-3 border border-white/5 flex gap-3">
+                                        {item.thumbnail ? (
+                                          <img src={item.thumbnail} className="w-12 h-12 rounded-lg object-cover bg-white/5" />
+                                        ) : (
+                                          <div className="w-12 h-12 rounded-lg bg-white/5 flex items-center justify-center shrink-0">
+                                            <Package size={20} className="text-gray-500" />
+                                          </div>
                                         )}
-                                      </AnimatePresence>
-                                    </div>
-                                  )}
-                                  {row?.hasCopiedNumberDifferentName && (
-                                    <span className="text-[9px] uppercase font-black px-2 py-0.5 rounded shadow-sm border whitespace-nowrap bg-red-500/10 text-red-500 border-red-500/20 ml-1" title="This exact phone number was used by different customer names.">
-                                      Copied Number
-                                    </span>
-                                  )}
-                                  {row?.hasSuspiciousModels && (
-                                    <span className="text-[9px] uppercase font-black px-2 py-0.5 rounded shadow-sm border whitespace-nowrap bg-yellow-500/10 text-yellow-500 border-yellow-500/20 ml-1" title="This order has multiple DIFFERENT phone models, which is unusual for a single customer.">
-                                      Suspicious Models
-                                    </span>
-                                  )}
-                                </div>
+                                        <div className="flex-1 min-w-0">
+                                          <div className="font-bold text-white text-sm line-clamp-1">{item.category || 'Unknown Product'}</div>
+                                          <div className="text-xs text-gray-400 mt-1 truncate">{item.model || 'Unknown Model'} {item.sku && `• ${item.sku}`}</div>
+                                        </div>
+                                        <div className="text-right flex flex-col justify-end shrink-0 pl-2">
+                                          <div className="text-[10px] text-gray-500 uppercase font-black tracking-widest">COGS</div>
+                                          <div className="font-bold text-cyan-400 text-sm">₹{item.cogs || 0}</div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
 
-                                {row?.shippingDetails && (
-                                  <div className="text-[10px] text-gray-400 leading-tight bg-white/5 p-1.5 rounded-md border border-white/10">
-                                    {row.shippingDetails.phone && <div className="text-gray-300 font-mono mb-0.5">{row.shippingDetails.phone}</div>}
-                                    <div className="line-clamp-2" title={`${row.shippingDetails.address1}, ${row.shippingDetails.city} ${row.shippingDetails.zip}`}>
-                                      {row.shippingDetails.address1}<br />
-                                      {row.shippingDetails.city} - {row.shippingDetails.zip}
+                                  {/* Action Footer */}
+                                  <div className="pt-2 mt-1 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
+                                    <div className="flex items-center gap-2">
+                                      {group.shiprocketId && (
+                                        <a href={`https://app.shiprocket.in/seller/orders/details/${group.shiprocketId}`} target="_blank" className="p-2 rounded-xl bg-white/5 text-indigo-400 hover:bg-white/10 transition-colors border border-white/5 shrink-0">
+                                          <Truck size={16} />
+                                        </a>
+                                      )}
+                                      <a href={group.orderLink || '#'} target="_blank" className="p-2 rounded-xl bg-white/5 text-gray-400 hover:text-white transition-colors border border-white/5 shrink-0">
+                                        <ExternalLink size={16} />
+                                      </a>
+                                      <button
+                                        onClick={() => {
+                                          if (group.shippingDetails?.phone) {
+                                            window.location.href = `tel:${group.shippingDetails.phone}`;
+                                          }
+                                          setEditingOrder(group.items);
+                                        }}
+                                        className="p-2 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 hover:bg-green-500/20 transition-colors flex items-center gap-2 font-bold text-xs shrink-0"
+                                      >
+                                        <Smartphone size={16} /> Call {group.shippingDetails?.phone ? '' : '(Add)'}
+                                      </button>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                      <button onClick={() => setEditingOrder(group.items)} className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-white text-xs font-bold transition-colors flex items-center gap-2">
+                                        <Edit3 size={14} /> Edit
+                                      </button>
+                                      <button onClick={() => handleCancelOrder(group.items[0])} className="px-4 py-2 rounded-xl bg-red-500/10 text-red-400 text-xs font-bold border border-red-500/20 hover:bg-red-500/20 flex items-center gap-2 transition-colors">
+                                        <XOctagon size={14} /> Cancel
+                                      </button>
                                     </div>
                                   </div>
-                                )}
 
-                                <div className="text-xs text-gray-600 mt-0.5 flex flex-wrap items-center gap-2">
-                                  {row?.orderLink ? <a href={row.orderLink || '#'} target="_blank" rel="noreferrer" className="hover:text-blue-400 transition-colors">View in Shopify</a> : 'Manual Entry'}
-                                  {row?.customerOrdersCount > 1 && (
-                                    <a href={row?.customerProfileUrl || '#'} target="_blank" rel="noreferrer" className="text-[10px] font-bold text-purple-400 bg-purple-500/10 px-1.5 py-0.5 rounded border border-purple-500/20 hover:bg-purple-500/30 transition-colors">
-                                      Repeat: {row.customerOrdersCount}
-                                    </a>
-                                  )}
                                 </div>
-                              </div>
-                            </td>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
 
-                            <td className="py-4 pr-4 align-top text-right">
-                              <div className="flex items-center justify-end gap-1 text-gray-400 bg-black/20 px-2 py-1 rounded w-fit ml-auto border border-white/5">
-                                <span className="text-xs">₹</span>
-                                <input
-                                  type="number"
-                                  value={row?.cogs || 0}
-                                  onChange={(e) => { const n = [...data.orders]; n[i].cogs = parseFloat(e.target.value); setData({ ...data, orders: n }) }}
-                                  className="bg-transparent outline-none w-14 text-right font-mono text-sm text-gray-200"
-                                />
-                              </div>
-                            </td>
-
-                            <td className="py-4 align-top w-14">
-                              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button
-                                  onClick={() => handleCancelOrder(row)}
-                                  title="Cancel on Shopify & Shiprocket"
-                                  className="p-1.5 hover:bg-red-500/20 text-red-500/70 hover:text-red-400 rounded-lg transition-colors border border-transparent hover:border-red-500/30"
-                                >
-                                  <XOctagon size={16} />
-                                </button>
-                                <button onClick={() => {
-                                  if (!confirm('Delete this row?')) return;
-                                  const n = [...data.orders];
-                                  n.splice(i, 1);
-                                  setData({ ...data, orders: n });
-                                }} className="p-1.5 hover:bg-gray-500/20 text-gray-500 hover:text-gray-300 rounded-lg transition-colors">
-                                  <Trash2 size={16} />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -768,168 +722,201 @@ function App() {
           )}
 
         </AnimatePresence>
+
+        {/* Edit Order Modal */}
+        <EditOrderModal
+          isOpen={!!editingOrder}
+          onClose={() => setEditingOrder(null)}
+          order={editingOrder}
+          onSave={handleSaveEdit}
+        />        <AnimatePresence>
+          {editingBatch && (
+            <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-xl flex items-center justify-center p-8">
+              <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-[#111111] w-full max-w-6xl h-[90vh] rounded-3xl border border-white/10 flex flex-col overflow-hidden shadow-2xl">
+                <div className="p-6 border-b border-white/5 flex justify-between items-center bg-[#151515]">
+                  <h3 className="font-bold text-lg">Editing Batch {editingBatch.id}</h3>
+                  <div className="flex gap-3">
+                    <button onClick={() => {
+                      const newRow = { orderId: 'NEW', category: '', model: '', customerName: '', cogs: 0, sku: '', payment: 'Prepaid' };
+                      setEditingBatch({ ...editingBatch, rows: [newRow, ...editingBatch.rows] });
+                    }} className="px-4 py-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-lg hover:bg-blue-500/20 font-bold text-sm flex items-center gap-2"><Plus size={16} /> Add Row</button>
+                    <button onClick={() => setEditingBatch(null)} className="px-4 py-2 hover:bg-white/5 rounded-lg text-gray-400">Cancel</button>
+                    <button onClick={saveHistory} className="px-6 py-2 bg-white text-black font-bold rounded-lg flex items-center gap-2 hover:bg-gray-200"><Save size={16} /> Save & Download</button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-auto p-0">
+                  <table className="w-full text-left">
+                    <thead className="sticky top-0 bg-[#0F0F0F] z-10 text-xs text-gray-500 uppercase font-bold">
+                      <tr>
+                        <th className="p-4">Action</th>
+                        <th className="p-4">ID</th>
+                        <th className="p-4">Category</th>
+                        <th className="p-4">Model</th>
+                        <th className="p-4">SKU</th>
+                        <th className="p-4">Customer</th>
+                        <th className="p-4 text-right">COGS</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {editingBatch.rows.map((r, i) => (
+                        <tr key={i} className="hover:bg-white/5">
+                          <td className="p-4"><button onClick={() => { const n = [...editingBatch.rows]; n.splice(i, 1); setEditingBatch({ ...editingBatch, rows: n }) }} className="text-red-500 opacity-50 hover:opacity-100"><Trash2 size={16} /></button></td>
+                          <td className="p-4"><input value={r.orderId} onChange={(e) => { const n = [...editingBatch.rows]; n[i].orderId = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-20 text-cyan-400 font-mono" /></td>
+                          <td className="p-4"><input value={r.category} onChange={(e) => { const n = [...editingBatch.rows]; n[i].category = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-white" /></td>
+                          <td className="p-4"><input value={r.model} onChange={(e) => { const n = [...editingBatch.rows]; n[i].model = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-gray-400 focus:text-lime-400" /></td>
+                          <td className="p-4"><input value={r.sku || ''} onChange={(e) => { const n = [...editingBatch.rows]; n[i].sku = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-24 text-gray-500 font-mono text-xs" placeholder="SKU" /></td>
+                          <td className="p-4"><input value={r.customerName || ''} onChange={(e) => { const n = [...editingBatch.rows]; n[i].customerName = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-gray-300" placeholder="Customer" /></td>
+                          <td className="p-4 text-right"><input value={r.cogs} type="number" onChange={(e) => { const n = [...editingBatch.rows]; n[i].cogs = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-20 text-right text-gray-300" /></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {walletPopup && (
+            <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-8">
+              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-[#1A1A1A] w-full max-w-md rounded-3xl border border-white/10 p-8 flex flex-col items-center text-center shadow-2xl relative">
+                {/* Close Button */}
+                <button
+                  onClick={() => setWalletPopup(null)}
+                  className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-gray-400 hover:text-white transition-all"
+                >
+                  <X size={16} />
+                </button>
+
+                <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center text-red-500 mb-6">
+                  <IndianRupee size={32} />
+                </div>
+                <h3 className="text-2xl font-bold text-white mb-2">Insufficient Funds</h3>
+                <p className="text-gray-400 text-sm mb-6">
+                  Your Shiprocket wallet doesn't have enough balance to process{' '}
+                  <b className="text-white">{walletPopup.orderCount || 0} orders</b>.
+                </p>
+
+                {/* Balance Breakdown */}
+                <div className="bg-black/40 rounded-xl p-4 w-full mb-4 border border-white/5">
+                  <div className="flex justify-between text-sm mb-2">
+                    <span className="text-gray-500">Current Balance</span>
+                    <span className="text-white font-mono">₹{walletPopup.currentBalance}</span>
+                  </div>
+                  <div className="flex justify-between text-sm mb-2">
+                    <span className="text-gray-500">Required (Est.)</span>
+                    <span className="text-orange-400 font-mono">₹{walletPopup.estimatedCost}</span>
+                  </div>
+                  <div className="h-px bg-white/10 my-2"></div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-400 font-semibold">You Need to Add</span>
+                    <span className="text-red-400 font-mono font-bold">₹{walletPopup.shortfall || (walletPopup.estimatedCost - walletPopup.currentBalance)}</span>
+                  </div>
+                </div>
+
+                {/* Cost Breakdown */}
+                {walletPopup.avgCostPerOrder && (
+                  <div className="bg-blue-500/10 rounded-lg p-3 w-full mb-6 border border-blue-500/20">
+                    <div className="text-xs text-blue-300 mb-1">Estimate Breakdown</div>
+                    <div className="text-sm text-white">
+                      {walletPopup.orderCount} orders × ₹{walletPopup.avgCostPerOrder} avg. = ₹{walletPopup.estimatedCost}
+                    </div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      Based on your historical shipping costs + 10% safety margin
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex gap-3 w-full">
+                  <button
+                    onClick={() => setWalletPopup(null)}
+                    className="flex-1 bg-gray-800 text-white py-3 rounded-xl font-bold hover:bg-gray-700 transition-colors border border-white/10"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => setWalletPopup(null)}
+                    className="flex-1 bg-white text-black py-3 rounded-xl font-bold hover:bg-gray-200 transition-colors"
+                  >
+                    I've Added Funds
+                  </button>
+                </div>
+                <div className="mt-4 text-xs text-gray-600">
+                  Add ₹{walletPopup.shortfall || 0}+ to your Shiprocket wallet and try again.
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {loading === 'success_label' && (
+            <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-8">
+              <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-[#1A1A1A] w-full max-w-md rounded-3xl border border-white/10 p-8 flex flex-col items-center text-center shadow-2xl">
+                <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center text-green-500 mb-6">
+                  <Truck size={32} />
+                </div>
+                <h3 className="text-2xl font-bold text-white mb-2">Labels Generated!</h3>
+                <div className="space-y-4 w-full mt-4">
+                  {data?.labelUrl && (
+                    <a href={data.labelUrl} target="_blank" className="block w-full bg-indigo-600 text-white p-4 rounded-xl font-bold hover:bg-indigo-500 transition-colors">
+                      Download Labels (PDF)
+                    </a>
+                  )}
+                  {data?.highRiskUrl && (
+                    <a href={data.highRiskUrl} download="HIGH_RISK.csv" className="block w-full bg-red-900/40 text-red-200 border border-red-500/40 p-4 rounded-xl font-bold hover:bg-red-900/60 transition-colors">
+                      Download High Risk Report
+                    </a>
+                  )}
+                  <button onClick={() => { setLoading(false); setData(d => ({ ...d, labelUrl: null, highRiskUrl: null })); }} className="text-sm text-gray-500 hover:text-white mt-4">Close</button>
+                </div>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {toast && (
+            <motion.div
+              initial={{ opacity: 0, y: 50, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
+              className={`fixed bottom-24 right-4 z-[300] px-6 py-4 rounded-xl shadow-2xl border flex items-center gap-3 backdrop-blur-md ${toast.type === 'error' ? 'bg-red-500/10 border-red-500/50 text-red-200' : 'bg-green-500/10 border-green-500/50 text-green-200'}`}
+            >
+              {toast.type === 'error' ? <X size={20} className="text-red-500" /> : <CheckSquare size={20} className="text-green-500" />}
+              <span className="font-bold">{toast.message}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {showCsvEditor && (
+            <CsvEditorModal
+              orders={csvPreviewData}
+              onClose={() => setShowCsvEditor(false)}
+              onSaveOnly={() => setToast({ message: 'Files downloaded successfully', type: 'success' })}
+              onUploadPortal={handleUploadPortal}
+            />
+          )}
+        </AnimatePresence>
       </main>
 
-      <AnimatePresence>
-        {editingBatch && (
-          <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-xl flex items-center justify-center p-8">
-            <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-[#111111] w-full max-w-6xl h-[90vh] rounded-3xl border border-white/10 flex flex-col overflow-hidden shadow-2xl">
-              <div className="p-6 border-b border-white/5 flex justify-between items-center bg-[#151515]">
-                <h3 className="font-bold text-lg">Editing Batch {editingBatch.id}</h3>
-                <div className="flex gap-3">
-                  <button onClick={() => {
-                    const newRow = { orderId: 'NEW', category: '', model: '', customerName: '', cogs: 0, sku: '', payment: 'Prepaid' };
-                    setEditingBatch({ ...editingBatch, rows: [newRow, ...editingBatch.rows] });
-                  }} className="px-4 py-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-lg hover:bg-blue-500/20 font-bold text-sm flex items-center gap-2"><Plus size={16} /> Add Row</button>
-                  <button onClick={() => setEditingBatch(null)} className="px-4 py-2 hover:bg-white/5 rounded-lg text-gray-400">Cancel</button>
-                  <button onClick={saveHistory} className="px-6 py-2 bg-white text-black font-bold rounded-lg flex items-center gap-2 hover:bg-gray-200"><Save size={16} /> Save & Download</button>
-                </div>
-              </div>
-              <div className="flex-1 overflow-auto p-0">
-                <table className="w-full text-left">
-                  <thead className="sticky top-0 bg-[#0F0F0F] z-10 text-xs text-gray-500 uppercase font-bold">
-                    <tr>
-                      <th className="p-4">Action</th>
-                      <th className="p-4">ID</th>
-                      <th className="p-4">Category</th>
-                      <th className="p-4">Model</th>
-                      <th className="p-4">SKU</th>
-                      <th className="p-4">Customer</th>
-                      <th className="p-4 text-right">COGS</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {editingBatch.rows.map((r, i) => (
-                      <tr key={i} className="hover:bg-white/5">
-                        <td className="p-4"><button onClick={() => { const n = [...editingBatch.rows]; n.splice(i, 1); setEditingBatch({ ...editingBatch, rows: n }) }} className="text-red-500 opacity-50 hover:opacity-100"><Trash2 size={16} /></button></td>
-                        <td className="p-4"><input value={r.orderId} onChange={(e) => { const n = [...editingBatch.rows]; n[i].orderId = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-20 text-cyan-400 font-mono" /></td>
-                        <td className="p-4"><input value={r.category} onChange={(e) => { const n = [...editingBatch.rows]; n[i].category = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-white" /></td>
-                        <td className="p-4"><input value={r.model} onChange={(e) => { const n = [...editingBatch.rows]; n[i].model = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-gray-400 focus:text-lime-400" /></td>
-                        <td className="p-4"><input value={r.sku || ''} onChange={(e) => { const n = [...editingBatch.rows]; n[i].sku = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-24 text-gray-500 font-mono text-xs" placeholder="SKU" /></td>
-                        <td className="p-4"><input value={r.customerName || ''} onChange={(e) => { const n = [...editingBatch.rows]; n[i].customerName = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-gray-300" placeholder="Customer" /></td>
-                        <td className="p-4 text-right"><input value={r.cogs} type="number" onChange={(e) => { const n = [...editingBatch.rows]; n[i].cogs = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-20 text-right text-gray-300" /></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {walletPopup && (
-          <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-8">
-            <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-[#1A1A1A] w-full max-w-md rounded-3xl border border-white/10 p-8 flex flex-col items-center text-center shadow-2xl relative">
-              {/* Close Button */}
-              <button
-                onClick={() => setWalletPopup(null)}
-                className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-gray-400 hover:text-white transition-all"
-              >
-                <X size={16} />
-              </button>
-
-              <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center text-red-500 mb-6">
-                <IndianRupee size={32} />
-              </div>
-              <h3 className="text-2xl font-bold text-white mb-2">Insufficient Funds</h3>
-              <p className="text-gray-400 text-sm mb-6">
-                Your Shiprocket wallet doesn't have enough balance to process{' '}
-                <b className="text-white">{walletPopup.orderCount || 0} orders</b>.
-              </p>
-
-              {/* Balance Breakdown */}
-              <div className="bg-black/40 rounded-xl p-4 w-full mb-4 border border-white/5">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-500">Current Balance</span>
-                  <span className="text-white font-mono">₹{walletPopup.currentBalance}</span>
-                </div>
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-500">Required (Est.)</span>
-                  <span className="text-orange-400 font-mono">₹{walletPopup.estimatedCost}</span>
-                </div>
-                <div className="h-px bg-white/10 my-2"></div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-400 font-semibold">You Need to Add</span>
-                  <span className="text-red-400 font-mono font-bold">₹{walletPopup.shortfall || (walletPopup.estimatedCost - walletPopup.currentBalance)}</span>
-                </div>
-              </div>
-
-              {/* Cost Breakdown */}
-              {walletPopup.avgCostPerOrder && (
-                <div className="bg-blue-500/10 rounded-lg p-3 w-full mb-6 border border-blue-500/20">
-                  <div className="text-xs text-blue-300 mb-1">Estimate Breakdown</div>
-                  <div className="text-sm text-white">
-                    {walletPopup.orderCount} orders × ₹{walletPopup.avgCostPerOrder} avg. = ₹{walletPopup.estimatedCost}
-                  </div>
-                  <div className="text-xs text-gray-400 mt-1">
-                    Based on your historical shipping costs + 10% safety margin
-                  </div>
-                </div>
-              )}
-
-              <div className="flex gap-3 w-full">
-                <button
-                  onClick={() => setWalletPopup(null)}
-                  className="flex-1 bg-gray-800 text-white py-3 rounded-xl font-bold hover:bg-gray-700 transition-colors border border-white/10"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={() => setWalletPopup(null)}
-                  className="flex-1 bg-white text-black py-3 rounded-xl font-bold hover:bg-gray-200 transition-colors"
-                >
-                  I've Added Funds
-                </button>
-              </div>
-              <div className="mt-4 text-xs text-gray-600">
-                Add ₹{walletPopup.shortfall || 0}+ to your Shiprocket wallet and try again.
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {loading === 'success_label' && (
-          <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-8">
-            <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-[#1A1A1A] w-full max-w-md rounded-3xl border border-white/10 p-8 flex flex-col items-center text-center shadow-2xl">
-              <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center text-green-500 mb-6">
-                <Truck size={32} />
-              </div>
-              <h3 className="text-2xl font-bold text-white mb-2">Labels Generated!</h3>
-              <div className="space-y-4 w-full mt-4">
-                {data?.labelUrl && (
-                  <a href={data.labelUrl} target="_blank" className="block w-full bg-indigo-600 text-white p-4 rounded-xl font-bold hover:bg-indigo-500 transition-colors">
-                    Download Labels (PDF)
-                  </a>
-                )}
-                {data?.highRiskUrl && (
-                  <a href={data.highRiskUrl} download="HIGH_RISK.csv" className="block w-full bg-red-900/40 text-red-200 border border-red-500/40 p-4 rounded-xl font-bold hover:bg-red-900/60 transition-colors">
-                    Download High Risk Report
-                  </a>
-                )}
-                <button onClick={() => { setLoading(false); setData(d => ({ ...d, labelUrl: null, highRiskUrl: null })); }} className="text-sm text-gray-500 hover:text-white mt-4">Close</button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
-            className={`fixed bottom-8 right-8 z-[300] px-6 py-4 rounded-xl shadow-2xl border flex items-center gap-3 backdrop-blur-md ${toast.type === 'error' ? 'bg-red-500/10 border-red-500/50 text-red-200' : 'bg-green-500/10 border-green-500/50 text-green-200'}`}
-          >
-            {toast.type === 'error' ? <X size={20} className="text-red-500" /> : <CheckSquare size={20} className="text-green-500" />}
-            <span className="font-bold">{toast.message}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+      {/* BOTTOM TAB BAR (Sexy Glassmorphism Style) */}
+      <nav className="fixed bottom-0 w-full max-w-[500px] z-[100] flex justify-around items-center p-3 pb-[env(safe-area-inset-bottom,20px)] border-t border-white/10 bg-[#0A0A0A]/70 backdrop-blur-3xl rounded-t-[32px] shadow-[0_-20px_40px_rgba(0,0,0,0.8)] before:absolute before:inset-0 before:bg-gradient-to-t before:from-white/5 before:to-transparent before:rounded-t-[32px] before:pointer-events-none">
+        <button onClick={() => setActiveTab('dashboard')} className={`relative flex flex-col items-center gap-1.5 p-2 transition-all duration-300 ${activeTab === 'dashboard' ? 'text-cyan-400 translate-y-[-4px] drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]' : 'text-gray-500 hover:text-gray-300 hover:-translate-y-1'}`}>
+          <div className={`p-2.5 rounded-2xl transition-all duration-300 ${activeTab === 'dashboard' ? 'bg-cyan-500/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] border border-cyan-500/20' : 'bg-transparent border border-transparent'}`}><Grid size={22} /></div>
+          <span className="text-[10px] font-black tracking-widest uppercase">Home</span>
+        </button>
+        <button onClick={() => setActiveTab('place_order')} className={`relative flex flex-col items-center gap-1.5 p-2 transition-all duration-300 ${activeTab === 'place_order' ? 'text-purple-400 translate-y-[-4px] drop-shadow-[0_0_15px_rgba(168,85,247,0.8)]' : 'text-gray-500 hover:text-gray-300 hover:-translate-y-1'}`}>
+          <div className={`p-2.5 rounded-2xl transition-all duration-300 ${activeTab === 'place_order' ? 'bg-purple-500/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] border border-purple-500/20' : 'bg-transparent border border-transparent'}`}><CheckSquare size={22} /></div>
+          <span className="text-[10px] font-black tracking-widest uppercase">Fulfill</span>
+        </button>
+        <button onClick={() => setActiveTab('settings')} className={`relative flex flex-col items-center gap-1.5 p-2 transition-all duration-300 ${activeTab === 'settings' ? 'text-emerald-400 translate-y-[-4px] drop-shadow-[0_0_15px_rgba(16,185,129,0.8)]' : 'text-gray-500 hover:text-gray-300 hover:-translate-y-1'}`}>
+          <div className={`p-2.5 rounded-2xl transition-all duration-300 ${activeTab === 'settings' ? 'bg-emerald-500/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] border border-emerald-500/20' : 'bg-transparent border border-transparent'}`}><Settings size={22} /></div>
+          <span className="text-[10px] font-black tracking-widest uppercase">Settings</span>
+        </button>
+      </nav>
+    </div >
   );
 }
 

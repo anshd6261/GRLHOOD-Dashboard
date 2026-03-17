@@ -7,6 +7,7 @@ require('dotenv').config();
 const { getUnfulfilledOrders, assignSkuToProduct, getOrder } = require('./shopify');
 const { processOrders } = require('./processor');
 const shiprocket = require('./shiprocket');
+const rapidshyp = require('./rapidshyp');
 const riskValidator = require('./riskValidator'); // Fixed Import
 const { v4: uuidv4 } = require('uuid');
 const { generateCSV } = require('./csv_generator');
@@ -44,30 +45,38 @@ app.get('/api/orders', async (req, res) => {
         const startDate = req.query.startDate || null;
         const endDate = req.query.endDate || null;
 
-        // Always fetch unfulfilled orders only, as requested by the user
-        const statusMode = 'unfulfilled';
+        // Allow frontend to specify status ('unfulfilled' or 'all'). Default to 'all' for the new analytics home page.
+        const statusMode = req.query.status || 'all';
         const gstRate = parseFloat(process.env.GST_RATE || 18);
 
         console.log(`[API] Fetching orders... Options:`, { daysLookback, startDate, endDate, statusMode });
 
-        // Fetch from Shopify and Shiprocket concurrently
-        const [rawOrders, srRes] = await Promise.all([
+        // Fetch from Shopify and RapidShyp concurrently
+        const [rawOrders, rsRes] = await Promise.all([
             getUnfulfilledOrders(daysLookback, startDate, endDate, statusMode),
-            shiprocket.fetchRecentOrdersForSync(14) // 14 days lookback for RTO data
+            rapidshyp.fetchOrdersWithRTO('ALL', 10) // Fetch all orders with RTO risk data
         ]);
 
-        // Build RTO Map from Shiprocket data
+        // Build RTO Map from RapidShyp data (keyed by seller_order_id which is #3419 format)
         const rtoMap = {};
-        if (srRes.success && srRes.data) {
-            srRes.data.forEach(srOrder => {
-                if (srOrder.channel_order_id) {
-                    rtoMap[srOrder.channel_order_id] = {
-                        risk: srOrder.rto_prediction || "Unknown",
-                        reason: srOrder.rto_reason || "",
-                        shiprocketId: srOrder.id
+        if (rsRes.success && rsRes.data) {
+            rsRes.data.forEach(rsOrder => {
+                const sellerId = rsOrder.seller_order_id; // e.g., "#3419"
+                const cleanId = rsOrder.channel_order_id; // e.g., "3419"
+                if (sellerId || cleanId) {
+                    const rtoEntry = {
+                        risk: rsOrder.rto_prediction || "Unknown",
+                        reason: rsOrder.rto_reason || "",
+                        shiprocketId: rsOrder.order_id // RS MongoDB ID for linking
                     };
+                    if (sellerId) rtoMap[sellerId] = rtoEntry;
+                    if (cleanId) {
+                        rtoMap[cleanId] = rtoEntry;
+                        rtoMap[`#${cleanId}`] = rtoEntry;
+                    }
                 }
             });
+            console.log(`[API] Built RTO map with ${Object.keys(rtoMap).length} entries from RapidShyp.`);
         }
 
         // Process orders with the RTO map
@@ -214,7 +223,7 @@ app.post('/api/upload-portal', async (req, res) => {
     }
 });
 
-// 7. Cancel Order (Dual Sync)
+// 7. Cancel Order (Triple Sync: RapidShyp + Shiprocket + Shopify)
 app.post('/api/orders/:id/cancel', async (req, res) => {
     try {
         const numericId = req.params.id; // e.g., 123456789 from Shopify
@@ -224,26 +233,35 @@ app.post('/api/orders/:id/cancel', async (req, res) => {
             return res.status(400).json({ error: 'Missing numeric ID or orderName' });
         }
 
-        console.log(`[API] Processing Dual Cancellation for Order ${orderName} (${numericId})...`);
+        console.log(`[API] Processing Triple Cancellation for Order ${orderName} (${numericId})...`);
 
-        // 1. Cancel in Shiprocket first
+        // 1. Cancel in RapidShyp first
+        let rsResult = { success: false, message: 'Skipped' };
+        try {
+            rsResult = await rapidshyp.cancelOrder(orderName);
+        } catch (e) {
+            console.warn(`[API] RapidShyp Cancel Warning:`, e.message);
+            rsResult.message = e.message;
+        }
+
+        // 2. Cancel in Shiprocket
         let srResult = { success: false, message: 'Skipped' };
         try {
             srResult = await shiprocket.cancelOrderByChannelId(orderName);
         } catch (e) {
-            // If it fails to find the order on SR, we log it and continue to cancel on Shopify
             console.warn(`[API] Shiprocket Cancel Warning:`, e.message);
             srResult.message = e.message;
         }
 
-        // 2. Cancel in Shopify
+        // 3. Cancel in Shopify
         await shopify.cancelOrder(numericId);
 
-        console.log(`[API] Dual Cancel Success: ${orderName}`);
+        console.log(`[API] Triple Cancel Success: ${orderName}`);
 
         res.json({
             success: true,
-            message: `Order ${orderName} cancelled successfully on Shopify.`,
+            message: `Order ${orderName} cancelled successfully on all platforms.`,
+            rapidshyp: rsResult,
             shiprocket: srResult
         });
 

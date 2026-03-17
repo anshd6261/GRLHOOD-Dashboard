@@ -44,69 +44,75 @@ const TARGET_URL = 'https://app.shiprocket.in/seller/orders/new';
         console.log("Action menus found! Starting automation...");
 
         const updatedCount = await page.evaluate(async () => {
-            console.log("Starting Auto-Dimensions...");
+            console.log("Starting Auto-Dimensions FAST...");
 
+            // 1. Set to 100 per page if possible
+            let select = document.querySelector('mat-select[aria-label="Items per page:"], .mat-paginator-page-size-select');
+            if (select) {
+                select.click();
+                await new Promise(r => setTimeout(r, 500));
+                let options = Array.from(document.querySelectorAll('mat-option, .mat-option, .mat-option-text'));
+                let opt100 = options.find(o => o.innerText && o.innerText.includes('100'));
+                if (opt100) {
+                    opt100.click();
+                    await new Promise(r => setTimeout(r, 4000)); // wait for table refresh
+                } else {
+                    document.body.click(); // close dropdown if 100 isn't found
+                }
+            }
+
+            // 2. Fast Processing Iterate
             let updated = 0;
-
             let actionMenus = Array.from(document.querySelectorAll('button.mat-menu-trigger, i.icon-more_vert, .dropdown-toggle, .mat-icon-button, button[aria-label="More actions"]')).filter(el => el.getBoundingClientRect().width > 0);
 
             console.log(`Found ${actionMenus.length} action menus to process.`);
 
             for (let menu of actionMenus) {
                 menu.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                await new Promise(r => setTimeout(r, 500));
-
+                await new Promise(r => setTimeout(r, 50));
                 menu.click();
-                await new Promise(r => setTimeout(r, 1500));
 
-                let editOption = Array.from(document.querySelectorAll('.mat-menu-item, .dropdown-item, a, button, span')).find(el =>
-                    el.innerText && (el.innerText.toLowerCase().includes('edit order') || el.innerText.toLowerCase().includes('edit details'))
-                );
+                let editOption = await new Promise(resolve => {
+                    let attempt = 0; let interval = setInterval(() => {
+                        let el = Array.from(document.querySelectorAll('.mat-menu-item, .dropdown-item, a, button, span')).find(e => e.innerText && (e.innerText.toLowerCase().includes('edit order') || e.innerText.toLowerCase().includes('edit details')));
+                        if (el || attempt > 40) { clearInterval(interval); resolve(el); } attempt++;
+                    }, 25);
+                });
 
                 if (editOption) {
                     editOption.click();
-                    await new Promise(r => setTimeout(r, 4000));
+                    let inputs = await new Promise(resolve => {
+                        let attempt = 0; let interval = setInterval(() => {
+                            let length = document.querySelector('input[name="length"], input[formcontrolname="length"], input[placeholder*="Length"]');
+                            let breadth = document.querySelector('input[name="breadth"], input[formcontrolname="breadth"], input[placeholder*="Width"]');
+                            let height = document.querySelector('input[name="height"], input[formcontrolname="height"], input[placeholder*="Height"]');
+                            let saveBtn = Array.from(document.querySelectorAll('button')).find(el => el.innerText && (el.innerText.toLowerCase().includes('update order') || el.innerText.toLowerCase().includes('save') || el.innerText.toLowerCase().includes('update')));
+                            if ((length && breadth && height && saveBtn) || attempt > 80) { clearInterval(interval); resolve({ length, breadth, height, saveBtn }); } attempt++;
+                        }, 25);
+                    });
 
-                    let length = document.querySelector('input[name="length"], input[formcontrolname="length"], input[placeholder*="Length"]');
-                    let breadth = document.querySelector('input[name="breadth"], input[formcontrolname="breadth"], input[placeholder*="Width"]');
-                    let height = document.querySelector('input[name="height"], input[formcontrolname="height"], input[placeholder*="Height"]');
-
-                    if (length && breadth && height) {
+                    if (inputs && inputs.length && inputs.saveBtn && !inputs.saveBtn.disabled) {
                         let setNativeValue = (el, val) => {
-                            let lastVal = el.value;
-                            el.focus();
-                            el.value = val;
-                            let ev = new Event('input', { bubbles: true });
-                            ev.simulated = true;
+                            let lastVal = el.value; el.focus(); el.value = val;
+                            let ev = new Event('input', { bubbles: true }); ev.simulated = true;
                             if (el._valueTracker) el._valueTracker.setValue(lastVal);
-                            el.dispatchEvent(ev);
-                            el.blur();
+                            el.dispatchEvent(ev); el.blur();
                         };
 
-                        setNativeValue(length, '8');
-                        setNativeValue(breadth, '5');
-                        setNativeValue(height, '2');
+                        setNativeValue(inputs.length, '8'); setNativeValue(inputs.breadth, '5'); setNativeValue(inputs.height, '2');
+                        inputs.saveBtn.click(); updated++;
 
-                        await new Promise(r => setTimeout(r, 1000));
-
-                        let updateBtn = Array.from(document.querySelectorAll('button')).find(el =>
-                            el.innerHTML.toLowerCase().includes('update order') ||
-                            el.innerHTML.toLowerCase().includes('save')
-                        );
-
-                        if (updateBtn) {
-                            updateBtn.click();
-                            updated++;
-                            await new Promise(r => setTimeout(r, 4000));
-                        }
+                        await new Promise(resolve => {
+                            let attempt = 0; let interval = setInterval(() => {
+                                if (!document.body.contains(inputs.saveBtn) || attempt > 80) { clearInterval(interval); resolve(); } attempt++;
+                            }, 25);
+                        });
                     } else {
                         let closeBtn = document.querySelector('.close, .modal-close, button[aria-label="Close"]');
-                        if (closeBtn) closeBtn.click();
+                        if (closeBtn) closeBtn.click(); document.body.click();
                     }
-                } else {
-                    document.body.click();
-                }
-                await new Promise(r => setTimeout(r, 1500));
+                } else { document.body.click(); }
+                await new Promise(r => setTimeout(r, 50));
             }
             return updated;
         });
