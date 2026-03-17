@@ -511,12 +511,13 @@ function App() {
 
               <AnimatePresence>
                 {selectedOrders.size > 0 && (
-                  <motion.div initial={{ y: -20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }} className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50 bg-[#1A1A1A] border border-white/10 rounded-2xl p-4 shadow-2xl flex items-center gap-4">
-                    <div className="font-bold text-white px-2">{selectedOrders.size} Selected</div>
-                    <div className="h-8 w-px bg-white/10"></div>
-                    <button onClick={handleDownloadSelected} className="flex items-center gap-2 text-sm font-bold text-cyan-400 hover:bg-cyan-500/10 px-4 py-2 rounded-xl transition-colors"><Download size={16} /> Download CSV</button>
-                    <button onClick={handleDeleteSelected} className="flex items-center gap-2 text-sm font-bold text-red-400 hover:bg-red-500/10 px-4 py-2 rounded-xl transition-colors"><Trash2 size={16} /> Remove</button>
-                    <button onClick={() => setSelectedOrders(new Set())} className="p-2 hover:bg-white/10 rounded-full text-gray-400"><X size={16} /></button>
+                  <motion.div initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }} className="fixed bottom-24 right-4 z-50 flex flex-col gap-3">
+                    <button onClick={handleDownloadSelected} className="w-14 h-14 bg-cyan-500 rounded-full shadow-[0_4px_20px_rgba(6,182,212,0.4)] flex items-center justify-center text-black hover:scale-105 active:scale-95 transition-all">
+                      <Download size={24} />
+                    </button>
+                    <button onClick={handleDeleteSelected} className="w-14 h-14 bg-red-500 rounded-full shadow-[0_4px_20px_rgba(239,68,68,0.4)] flex items-center justify-center text-white hover:scale-105 active:scale-95 transition-all">
+                      <Trash2 size={24} />
+                    </button>
                   </motion.div>
                 )}
               </AnimatePresence>
