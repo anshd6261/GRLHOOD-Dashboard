@@ -30,9 +30,9 @@ const uploadOrderPayload = async (pdfUrl, standardCsvContent, financialCsvConten
         const date = new Date();
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
         const monthName = monthNames[date.getMonth()];
-        const dateStr = date.toISOString().split('T')[0];
+        const dateLabel = getFormattedDate();
 
-        const basePath = `/Orders/${monthName}/${dateStr}`;
+        const basePath = `/ORDERS/${monthName}/${dateLabel} Order`;
 
         console.log(`[DROPBOX] Uploading artifacts to ${basePath}...`);
 
@@ -42,8 +42,6 @@ const uploadOrderPayload = async (pdfUrl, standardCsvContent, financialCsvConten
             const pdfRes = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
             pdfBuffer = pdfRes.data;
         }
-
-        const dateLabel = getFormattedDate();
 
         const uploads = [];
         if (standardCsvContent) {
