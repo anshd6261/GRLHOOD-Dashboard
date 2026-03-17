@@ -54,6 +54,8 @@ export default function CsvEditorModal({ orders, onClose, onSaveOnly, onUploadPo
         try {
             // 1. Download Standard Supplier CSV
             const resSup = await axios.post(`${API_URL}/download`, { rows: editedOrders, skipHistory: true, type: 'supplier' }, { responseType: 'blob' });
+            if (resSup.status !== 200) throw new Error('Supplier CSV generation failed');
+            
             const urlSup = window.URL.createObjectURL(new Blob([resSup.data], { type: 'text/csv' }));
             const aSup = document.createElement('a');
             aSup.href = urlSup;
@@ -62,10 +64,12 @@ export default function CsvEditorModal({ orders, onClose, onSaveOnly, onUploadPo
             aSup.download = fileSup;
             aSup.click();
 
-            await new Promise(resolve => setTimeout(resolve, 800));
+            await new Promise(resolve => setTimeout(resolve, 1000));
 
             // 2. Download Financial Report CSV
             const resFin = await axios.post(`${API_URL}/download`, { rows: editedOrders, skipHistory: true, type: 'financial' }, { responseType: 'blob' });
+            if (resFin.status !== 200) throw new Error('Financial CSV generation failed');
+
             const urlFin = window.URL.createObjectURL(new Blob([resFin.data], { type: 'text/csv' }));
             const aFin = document.createElement('a');
             aFin.href = urlFin;
@@ -74,14 +78,19 @@ export default function CsvEditorModal({ orders, onClose, onSaveOnly, onUploadPo
             aFin.download = fileFin;
             aFin.click();
 
-            // 3. Backup to Dropbox
-            axios.post(`${API_URL}/dropbox/upload`, { orders: editedOrders }).catch(err => console.error("Dropbox background sync failed:", err));
+            // 3. Backup to Dropbox (Now blocking for visibility)
+            try {
+                await axios.post(`${API_URL}/dropbox/upload`, { orders: editedOrders });
+            } catch (dropboxErr) {
+                console.error("Dropbox sync failed:", dropboxErr);
+                alert("Downloads started, but Dropbox backup failed. Please check your Dropbox credentials or quota.");
+            }
 
             if (onSaveOnly) onSaveOnly();
             onClose();
         } catch (e) {
-            console.error(e);
-            alert("Network error: Unable to download CSV.");
+            console.error("Save Only Error:", e);
+            alert(`Error: ${e.response?.data?.error || e.message}. If this persists, try syncing again.`);
         } finally {
             setDownloading(false);
         }
@@ -151,8 +160,8 @@ export default function CsvEditorModal({ orders, onClose, onSaveOnly, onUploadPo
                                 <div className="flex items-center gap-4">
                                     {/* Product Thumb */}
                                     <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-black/40 overflow-hidden border border-white/10 shrink-0 shadow-inner">
-                                        {order.image ? (
-                                            <img src={order.image} alt="" className="w-full h-full object-cover" />
+                                        {order.thumbnail ? (
+                                            <img src={order.thumbnail} alt="" className="w-full h-full object-cover" />
                                         ) : (
                                             <div className="w-full h-full flex items-center justify-center text-white/20"><FileText size={24} /></div>
                                         )}
@@ -184,13 +193,13 @@ export default function CsvEditorModal({ orders, onClose, onSaveOnly, onUploadPo
                                     {/* Instant Contact Actions */}
                                     <div className="flex flex-col gap-2 shrink-0">
                                         <button 
-                                            onClick={() => handleCall(order.phone)}
+                                            onClick={() => handleCall(order.shippingDetails?.phone)}
                                             className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500 hover:text-white transition-all shadow-lg active:scale-95"
                                         >
                                             <Phone size={18} />
                                         </button>
                                         <button 
-                                            onClick={() => handleWhatsApp(order.phone, order.customerName)}
+                                            onClick={() => handleWhatsApp(order.shippingDetails?.phone, order.customerName)}
                                             className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-2xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500 hover:text-white transition-all shadow-lg active:scale-95"
                                         >
                                             <MessageSquare size={18} />

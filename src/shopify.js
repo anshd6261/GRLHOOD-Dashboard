@@ -246,6 +246,7 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
           node {
             id   # Need Order ID for link
             name # #1001
+            phone # Global Order Phone
             createdAt
             tags
             riskLevel # HIGH, MEDIUM, LOW
@@ -262,6 +263,7 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
             customer {
               id
               numberOfOrders
+              phone # Customer Profile Phone
             }
             lineItems(first: 100) {
               edges {

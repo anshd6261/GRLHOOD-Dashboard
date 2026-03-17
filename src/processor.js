@@ -34,7 +34,7 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
         const hasCopiedNumberDifferentName = cleanPhone.length >= 10 && phoneToNamesMap[cleanPhone] && phoneToNamesMap[cleanPhone].size > 1;
 
         const shippingDetails = {
-            phone: shipping.phone || '',
+            phone: shipping.phone || order.phone || order.customer?.phone || '',
             address1: shipping.address1 || '',
             city: shipping.city || '',
             zip: shipping.zip || ''
