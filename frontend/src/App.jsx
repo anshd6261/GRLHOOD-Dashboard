@@ -512,20 +512,11 @@ function App() {
                       )}
                     </h3>
 
-                    {data && data.orders && data.orders.length > 0 && (
+                    {data && data.orders && data.orders.length > 0 && selectedOrders.size === 0 && (
                       <div className="flex items-center gap-2">
-                        {selectedOrders.size > 0 && (
-                          <button onClick={handleDeleteSelected} className="w-10 h-10 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-all flex items-center justify-center shadow-lg">
-                            <Trash2 size={16} />
-                          </button>
-                        )}
                         <button
                           onClick={() => {
-                            if (selectedOrders.size > 0) {
-                              handleDownloadSelected();
-                            } else {
-                              setCsvPreviewData(data?.orders || []); setShowCsvEditor(true);
-                            }
+                            setCsvPreviewData(data?.orders || []); setShowCsvEditor(true);
                           }}
                           className="w-10 h-10 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/20 hover:text-cyan-300 transition-all flex items-center justify-center shadow-[0_0_15px_rgba(34,211,238,0.2)]"
                         >
@@ -609,9 +600,10 @@ function App() {
                                 </div>
                               </div>
 
-                              <div className="text-right shrink-0">
-                                <div className="text-xl font-black text-white glow-text">₹{group.totalItemsPrice}</div>
-                                <div className="text-xs text-gray-500 mt-1">{group.items.length} Unit{group.items.length > 1 ? 's' : ''}</div>
+                              <div className="text-right shrink-0 flex flex-col items-end">
+                                <div className="text-[10px] text-gray-400 uppercase font-black tracking-widest leading-none mb-1 text-right">Total Invoice</div>
+                                <div className="text-xl font-black text-cyan-400 glow-text leading-none text-right">₹{group.items.reduce((sum, item) => sum + (item.cogs || 0) + (item.gst || 0), 0).toFixed(0)}</div>
+                                <div className="text-[10px] font-bold text-gray-500 mt-1 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded text-right">{group.items.length} Unit{group.items.length > 1 ? 's' : ''}</div>
                               </div>
                             </div>
                           </div>
@@ -923,6 +915,40 @@ function App() {
             />
           )}
         </AnimatePresence>
+        <AnimatePresence>
+          {selectedOrders.size > 0 && activeTab === 'place_order' && (
+            <motion.div
+              initial={{ opacity: 0, y: 50, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 50, scale: 0.9 }}
+              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+              className="fixed bottom-[90px] left-4 right-4 z-[150] bg-black/80 backdrop-blur-2xl border border-white/20 p-4 rounded-[28px] shadow-[0_20px_60px_rgba(0,0,0,0.8)] flex items-center justify-between"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center text-cyan-400 font-black shadow-[0_0_15px_rgba(34,211,238,0.3)] border border-cyan-500/30">
+                  {selectedOrders.size}
+                </div>
+                <span className="text-sm font-bold text-white tracking-widest uppercase">Selected</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleDeleteSelected}
+                  className="px-4 py-3 rounded-2xl bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:text-red-300 transition-all font-bold text-xs uppercase tracking-widest flex items-center gap-2"
+                >
+                  <Trash2 size={16} />
+                </button>
+                <button
+                  onClick={handleDownloadSelected}
+                  className="px-5 py-3 rounded-2xl bg-white text-black font-black uppercase tracking-widest text-xs shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:bg-gray-200 hover:-translate-y-1 transition-all flex items-center gap-2"
+                >
+                  <Download size={16} />
+                  Action
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
       </main>
 
       {/* BOTTOM TAB BAR (Sexy Glassmorphism Style) */}
