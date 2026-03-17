@@ -10,7 +10,6 @@ import HomeAnalytics from './pages/HomeAnalytics';
 import ProductAnalysis from './pages/ProductAnalysis';
 import CsvEditorModal from './components/CsvEditorModal';
 import EditOrderModal from './components/EditOrderModal';
-import ShipOrdersModal from './components/ShipOrdersModal';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
@@ -65,10 +64,6 @@ function App() {
   const [selectedOrders, setSelectedOrders] = useState(new Set());
   const [showCsvEditor, setShowCsvEditor] = useState(false);
   const [csvPreviewData, setCsvPreviewData] = useState([]);
-
-  // Ship Orders Workflow
-  const [showShipOrdersModal, setShowShipOrdersModal] = useState(false);
-  const [shipOrdersData, setShipOrdersData] = useState([]);
 
   // Accordion State
   const [expandedOrders, setExpandedOrders] = useState(new Set());
@@ -261,17 +256,22 @@ function App() {
     const targetOrders = (ordersToUpload && ordersToUpload.length > 0) ? ordersToUpload : data?.orders;
     if (!targetOrders || targetOrders.length === 0) return;
 
-    setLoading('Uploading to Portal and Dropbox...');
+    setLoading('Processing Order & Saving to Dropbox...');
     try {
+      // 1. Send to Portal (Manufacturer) Note: Bypassed securely on Vercel automatically
       await axios.post(`${API_URL}/upload-portal`, { rows: targetOrders });
-      setToast({ message: 'Orders Successfully Sent to Portal', type: 'success' });
+      
+      // 2. Direct Backup to Dropbox (No Shiprocket/RapidShyp Courier Assignment)
+      await axios.post(`${API_URL}/dropbox/upload`, { orders: targetOrders });
 
-      // Clear CSV Modal, Open Ship Orders Modal
+      setToast({ message: 'Order Placed & Saved safely to Dropbox!', type: 'success' });
+
+      // Clean up UI & Sync to remove processed orders
       setShowCsvEditor(false);
-      setShipOrdersData(targetOrders);
-      setShowShipOrdersModal(true);
+      handleSync();
+      
     } catch (e) {
-      alert('Upload Failed: ' + (e.response?.data?.error || e.message));
+      alert('Upload Sequence Failed: ' + (e.response?.data?.error || e.message));
     } finally {
       setLoading(false);
     }
@@ -896,22 +896,6 @@ function App() {
               onClose={() => setShowCsvEditor(false)}
               onSaveOnly={() => setToast({ message: 'Files downloaded successfully', type: 'success' })}
               onUploadPortal={handleUploadPortal}
-            />
-          )}
-        </AnimatePresence>
-
-        <AnimatePresence>
-          {showShipOrdersModal && (
-            <ShipOrdersModal
-              orders={shipOrdersData}
-              onClose={() => {
-                setShowShipOrdersModal(false);
-                setSelectedOrders(new Set()); // clear selection
-                handleSync(); // refresh to move fulfilled out
-              }}
-              onSuccess={(paths) => {
-                setToast({ message: `Success! Saved to ${paths}`, type: 'success' });
-              }}
             />
           )}
         </AnimatePresence>

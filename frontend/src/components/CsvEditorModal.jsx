@@ -64,6 +64,9 @@ export default function CsvEditorModal({ orders, onClose, onSaveOnly, onUploadPo
             a.download = filename;
             a.click();
 
+            // Backup to Dropbox
+            await axios.post(`${API_URL}/dropbox/upload`, { orders });
+
             if (onSaveOnly) onSaveOnly();
         } catch (e) {
             console.error(e);

@@ -203,6 +203,40 @@ app.post('/api/email-approval', async (req, res) => {
     }
 });
 
+// 5.5 Direct Dropbox Upload
+app.post('/api/dropbox/upload', async (req, res) => {
+    try {
+        const { orders } = req.body;
+        if (!orders || !Array.isArray(orders)) return res.status(400).json({ success: false, error: 'Invalid orders provided.' });
+
+        const standardCsvContent = generateCSV(orders, parseFloat(process.env.GST_RATE || 18));
+            
+        const reqHeaders = ['Order ID', 'Customer Name', 'City', 'State', 'Product', 'Model', 'Payment Type', 'Total Revenue', 'COGS BASE', 'GST (18%)', 'Total Outflow'];
+        const rows = orders.map(o => [
+            o.orderId,
+            `"${o.customerName || ''}"`,
+            `"${o.city || ''}"`,
+            `"${o.state || ''}"`,
+            `"${o.productName || ''}"`,
+            `"${o.model || ''}"`,
+            o.payment,
+            o.total || 0,
+            o.cogs || 0,
+            o.gst || 0,
+            (o.cogs || 0) + (o.gst || 0)
+        ]);
+        const financialCsvContent = [reqHeaders.join(','), ...rows.map(r => r.join(','))].join('\n');
+
+        const { uploadOrderPayload } = require('./dropbox');
+        const finalPath = await uploadOrderPayload(null, standardCsvContent, financialCsvContent);
+        
+        res.json({ success: true, dropboxPaths: finalPath });
+    } catch (e) {
+        console.error('[DROPBOX] Direct Upload Failed:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // 6. Upload to Portal
 app.post('/api/upload-portal', async (req, res) => {
     try {
