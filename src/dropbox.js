@@ -1,6 +1,7 @@
 const { Dropbox } = require('dropbox');
 const fetch = require('isomorphic-fetch');
 const axios = require('axios');
+const { getFormattedDate } = require('./csv_generator');
 require('dotenv').config();
 
 const getDropboxClient = () => {
@@ -42,12 +43,14 @@ const uploadOrderPayload = async (pdfUrl, standardCsvContent, financialCsvConten
             pdfBuffer = pdfRes.data;
         }
 
+        const dateLabel = getFormattedDate();
+
         const uploads = [];
         if (standardCsvContent) {
-            uploads.push(uploadFile(dbx, `${basePath}/${dateStr}_Order.csv`, Buffer.from(standardCsvContent, 'utf-8')));
+            uploads.push(uploadFile(dbx, `${basePath}/${dateLabel} Order.csv`, Buffer.from(standardCsvContent, 'utf-8')));
         }
         if (financialCsvContent) {
-            uploads.push(uploadFile(dbx, `${basePath}/${dateStr}_Order_Financial_Report.csv`, Buffer.from(financialCsvContent, 'utf-8')));
+            uploads.push(uploadFile(dbx, `${basePath}/${dateLabel} Order - Financial report.csv`, Buffer.from(financialCsvContent, 'utf-8')));
         }
         if (pdfBuffer) {
             uploads.push(uploadFile(dbx, `${basePath}/${dateStr}_Labels.pdf`, Buffer.from(pdfBuffer, 'binary')));
