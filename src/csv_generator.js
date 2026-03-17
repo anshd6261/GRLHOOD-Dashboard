@@ -57,34 +57,7 @@ const generateCSV = (inputRows, gstRate = 18) => {
         ]);
     });
 
-    // Spacer
-    csvRows.push([]);
-    csvRows.push(['════════════════════════', 'ORDER SUMMARY', '════════════════════════']);
-    csvRows.push([]);
-
-    // Category Summary
-    csvRows.push(['VARIANT CATEGORY', 'QUANTITY']);
-    Object.entries(categoryCounts)
-        .sort((a, b) => b[1] - a[1]) // Sort by count descending
-        .forEach(([category, count]) => {
-            csvRows.push([category, count]);
-        });
-
-    csvRows.push([]);
-    csvRows.push(['TOTAL ITEMS', rows.length]);
-    csvRows.push(['TOTAL ORDERS', new Set(rows.map(r => r.orderId)).size]);
-
-    // Invoice Section
-    csvRows.push([]);
-    csvRows.push(['════════════════════════', 'INVOICE', '════════════════════════']);
-    csvRows.push([]);
-    csvRows.push(['Subtotal (COGS)', `₹${totalCOGS.toFixed(2)}`]);
-    csvRows.push([`GST (${gstRate}%)`, `₹${gstAmount.toFixed(2)}`]);
-    csvRows.push(['GRAND TOTAL', `₹${grandTotal.toFixed(2)}`]);
-    csvRows.push([]);
-    csvRows.push(['Generated On', new Date().toLocaleString()]);
-
-    // 3. Stringify
+    // 3. Stringify purely the data rows with no visual summaries
     const output = stringify(csvRows);
 
     // Add BOM for Excel compatibility

@@ -213,7 +213,11 @@ app.post('/api/upload-portal', async (req, res) => {
         const tempPath = process.env.VERCEL ? path.join('/tmp', 'temp_upload.csv') : path.join(__dirname, '..', 'temp_upload.csv');
         fs.writeFileSync(tempPath, csvContent);
 
-        await uploadToPortal(tempPath);
+        if (process.env.VERCEL) {
+             console.log('[PORTAL] Bypassing Puppeteer on Vercel. Proceeding directly to Automation Engine.');
+        } else {
+             await uploadToPortal(tempPath);
+        }
 
         if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
 

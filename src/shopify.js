@@ -222,15 +222,9 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
     const end = new Date(endDate);
     end.setHours(23, 59, 59, 999);
 
-    // Format: YYYY-MM-DDTHH:mm:ss (Local Time, No Z)
-    // This ensures we search in the Store's timezone which aligns with setHours(0,0,0,0) locally.
-    const formatLocalISO = (d) => {
-      const pad = (n) => String(n).padStart(2, '0');
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-    };
-
-    dateFilter = `created_at:>=${formatLocalISO(start)} created_at:<=${formatLocalISO(end)}`;
-    console.log(`[ORDERS] Fetching orders from ${formatLocalISO(start)} to ${formatLocalISO(end)} [Mode: ${statusMode}]...`);
+    // Use native UTC ISO strings for Shopify GraphQL accuracy
+    dateFilter = `created_at:>=${start.toISOString()} created_at:<=${end.toISOString()}`;
+    console.log(`[ORDERS] Fetching orders from ${start.toISOString()} to ${end.toISOString()} [Mode: ${statusMode}]...`);
   } else {
     const daysAgo = new Date();
     daysAgo.setDate(daysAgo.getDate() - daysLookback);
@@ -334,7 +328,7 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
   let cursor = null;
   let pageCount = 0;
 
-  while (hasNextPage && pageCount < 10) {
+  while (hasNextPage && pageCount < 40) {
     pageCount++;
     const data = await graphqlRequest(query, {
       cursor,
