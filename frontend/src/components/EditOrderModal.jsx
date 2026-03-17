@@ -100,7 +100,7 @@ export default function EditOrderModal({ isOpen, onClose, order, onSave }) {
                                         <a title="Call Customer" href={`tel:${customerData.phone}`} className="p-1.5 bg-green-500/10 text-green-400 rounded-md hover:bg-green-500/20 transition-colors border border-green-500/20">
                                             <PhoneCall size={14} />
                                         </a>
-                                        <a title="WhatsApp Customer" target="_blank" href={`https://wa.me/${customerData.phone.replace(/[^0-9]/g, '')}?text=Hi%20${encodeURIComponent(customerData.customerName)},%20this%20is%20regarding%20your%20recent%20order%20from%20GRLHOOD.`} className="p-1.5 bg-[#25D366]/20 text-[#25D366] rounded-md hover:bg-[#25D366]/30 transition-colors border border-[#25D366]/30">
+                                        <a title="WhatsApp Customer" target="_blank" href={`https://wa.me/${customerData.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${customerData.customerName}, this is GRLHOOD! 🌸\n\nWe noticed you forgot to mention your Phone Model in your recent order. Could you please share it so we can dispatch your order soon? 📱✨`)}`} className="p-1.5 bg-[#25D366]/20 text-[#25D366] rounded-md hover:bg-[#25D366]/30 transition-colors border border-[#25D366]/30">
                                             <MessageSquare size={14} />
                                         </a>
                                     </div>

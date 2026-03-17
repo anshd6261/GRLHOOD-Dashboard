@@ -404,7 +404,11 @@ function App() {
       groups[o.orderId].totalCogs += (o.cogs || 0);
       groups[o.orderId].totalItemsPrice += (o.price || 0);
     });
-    return Object.values(groups);
+    return Object.values(groups).sort((a, b) => {
+      const idA = parseInt(a.orderId) || 0;
+      const idB = parseInt(b.orderId) || 0;
+      return idB - idA; // Highest to lowest
+    });
   }, [filteredOrders]);
 
   return (
@@ -579,6 +583,11 @@ function App() {
                                     </div>
                                   </div>
                                   <div className="text-sm text-gray-400 font-medium truncate mt-1">{group.customerName}</div>
+                                  {group.createdAt && (
+                                    <div className="text-[10px] text-gray-500 font-medium mt-0.5">
+                                      {new Date(group.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} • {new Date(group.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                                    </div>
+                                  )}
 
                                   {/* Order-level Tags (Aligned under text) */}
                                   <div className="flex flex-wrap gap-2 mt-3">
@@ -659,6 +668,16 @@ function App() {
                                       >
                                         <Smartphone size={16} /> Call {group.shippingDetails?.phone ? '' : '(Add)'}
                                       </button>
+                                      {group.shippingDetails?.phone && (
+                                        <a
+                                          href={`https://wa.me/${group.shippingDetails.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${group.customerName}, this is GRLHOOD! 🌸\n\nWe noticed you forgot to mention your Phone Model in your recent order. Could you please share it so we can dispatch your order soon? 📱✨`)}`}
+                                          target="_blank"
+                                          className="p-2 rounded-xl bg-[#25D366]/10 border border-[#25D366]/20 text-[#25D366] hover:bg-[#25D366]/20 transition-colors shrink-0"
+                                          title="WhatsApp - Ask Phone Model"
+                                        >
+                                          <MessageSquare size={16} />
+                                        </a>
+                                      )}
                                     </div>
 
                                     <div className="flex gap-2">
