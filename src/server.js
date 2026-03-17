@@ -213,8 +213,9 @@ app.post('/api/dropbox/upload', async (req, res) => {
         
         res.json({ success: true, dropboxPaths: finalPath });
     } catch (e) {
-        console.error('[DROPBOX] Direct Upload Failed:', e);
-        res.status(500).json({ success: false, error: e.message });
+        console.error('[DROPBOX] Direct Upload Failed:', e.response?.data || e.message);
+        const detail = e.response?.data?.error_description || e.response?.data?.error || e.message;
+        res.status(500).json({ success: false, error: detail, hasRefresh: !!process.env.DROPBOX_REFRESH_TOKEN, hasKey: !!process.env.DROPBOX_APP_KEY, hasSecret: !!process.env.DROPBOX_APP_SECRET });
     }
 });
 
