@@ -3,9 +3,36 @@ const { getFormattedDate } = require('./csv_generator');
 require('dotenv').config();
 
 const DROPBOX_UPLOAD_URL = 'https://content.dropboxapi.com/2/files/upload';
+const DROPBOX_TOKEN_URL = 'https://api.dropboxapi.com/oauth2/token';
+
+/**
+ * Get a fresh short-lived access token using the permanent refresh token.
+ */
+const getAccessToken = async () => {
+    const refreshToken = process.env.DROPBOX_REFRESH_TOKEN;
+    const appKey = process.env.DROPBOX_APP_KEY;
+    const appSecret = process.env.DROPBOX_APP_SECRET;
+
+    if (!refreshToken || !appKey || !appSecret) {
+        throw new Error('Missing DROPBOX_REFRESH_TOKEN, DROPBOX_APP_KEY, or DROPBOX_APP_SECRET in env');
+    }
+
+    console.log('[DROPBOX] Refreshing access token...');
+    const res = await axios.post(DROPBOX_TOKEN_URL, null, {
+        params: {
+            grant_type: 'refresh_token',
+            refresh_token: refreshToken,
+            client_id: appKey,
+            client_secret: appSecret
+        }
+    });
+
+    console.log('[DROPBOX] ✅ Got fresh access token');
+    return res.data.access_token;
+};
 
 const uploadFile = async (token, filePath, contents) => {
-    console.log(`[DROPBOX] Attempting upload to: ${filePath} (${contents.length} bytes)`);
+    console.log(`[DROPBOX] Uploading: ${filePath} (${contents.length} bytes)`);
     try {
         const res = await axios.post(DROPBOX_UPLOAD_URL, contents, {
             headers: {
@@ -21,18 +48,18 @@ const uploadFile = async (token, filePath, contents) => {
             maxContentLength: Infinity,
             maxBodyLength: Infinity
         });
-        console.log(`[DROPBOX] ✅ Successfully uploaded: ${filePath}`);
+        console.log(`[DROPBOX] ✅ Uploaded: ${filePath}`);
         return res.data;
     } catch (e) {
         const errMsg = e.response?.data?.error_summary || e.response?.data || e.message;
-        console.error(`[DROPBOX] ❌ Failed to upload ${filePath}:`, errMsg);
+        console.error(`[DROPBOX] ❌ Failed: ${filePath}`, errMsg);
         throw new Error(`Dropbox upload failed for ${filePath}: ${JSON.stringify(errMsg)}`);
     }
 };
 
 const uploadOrderPayload = async (pdfUrl, standardCsvContent, financialCsvContent) => {
-    const token = process.env.DROPBOX_ACCESS_TOKEN;
-    if (!token) throw new Error("Missing DROPBOX_ACCESS_TOKEN in .env");
+    // Get a fresh access token every time (they only last 4 hours)
+    const token = await getAccessToken();
 
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const monthName = monthNames[new Date().getMonth()];
@@ -40,8 +67,7 @@ const uploadOrderPayload = async (pdfUrl, standardCsvContent, financialCsvConten
 
     // Path: /ORDERS/March/17th March 2026 Order/
     const folderPath = `/ORDERS/${monthName}/${dateLabel} Order`;
-
-    console.log(`[DROPBOX] Target folder: ${folderPath}`);
+    console.log(`[DROPBOX] Target: ${folderPath}`);
 
     // Upload Standard Supplier CSV
     if (standardCsvContent) {
@@ -55,12 +81,11 @@ const uploadOrderPayload = async (pdfUrl, standardCsvContent, financialCsvConten
 
     // Upload PDF Labels (if provided)
     if (pdfUrl) {
-        console.log(`[DROPBOX] Downloading Label PDF from ${pdfUrl}...`);
         const pdfRes = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
         await uploadFile(token, `${folderPath}/${dateLabel} Labels.pdf`, Buffer.from(pdfRes.data));
     }
 
-    console.log(`[DROPBOX] ✅ All uploads complete to ${folderPath}`);
+    console.log(`[DROPBOX] ✅ All uploads complete → ${folderPath}`);
     return folderPath;
 };
 
