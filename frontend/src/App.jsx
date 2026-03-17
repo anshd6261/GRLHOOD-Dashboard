@@ -250,7 +250,14 @@ function App() {
     }
   };
 
-  const handleDownloadDashboard = (t) => data?.orders && executeDownload({ rows: data.orders, type: t });
+  const handleDownloadDashboard = (t) => {
+    if (!data?.orders) return;
+    let target = data.orders;
+    if (t === 'prepaid') target = data.orders.filter(r => r.payment === 'Prepaid');
+    if (t === 'cod') target = data.orders.filter(r => r.payment === 'Cash on Delivery');
+    setCsvPreviewData(target);
+    setShowCsvEditor(true);
+  };
   const handleSendEmail = async () => { if (data?.orders) { setLoading(true); try { await axios.post(`${API_URL}/email-approval`, { rows: data.orders }); alert('Sent'); } catch (e) { } finally { setLoading(false) } } };
   const handleUploadPortal = async (ordersToUpload) => {
     const targetOrders = (ordersToUpload && ordersToUpload.length > 0) ? ordersToUpload : data?.orders;
@@ -280,7 +287,8 @@ function App() {
   const saveHistory = async () => {
     if (!editingBatch) return;
     await axios.put(`${API_URL}/history/${editingBatch.id}`, { rows: editingBatch.rows });
-    await executeDownload({ rows: editingBatch.rows, skipHistory: true });
+    setCsvPreviewData(editingBatch.rows);
+    setShowCsvEditor(true);
     await fetchHistory(); setEditingBatch(null);
   };
 
