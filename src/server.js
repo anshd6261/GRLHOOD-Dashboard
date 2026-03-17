@@ -17,6 +17,7 @@ const emailService = require('./email');
 const { getAggregatedPandL, getDailyPandL, getCashPosition } = require('./calculations');
 const { getAllAlerts } = require('./alerts');
 const { syncPayUApi } = require('./sync_payu');
+const { uploadOrderPayload } = require('./dropbox');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -817,6 +818,109 @@ async function processLabelGenerationJob(jobId) {
     }
 }
 
+
+// 9.5 RapidShyp/Shiprocket Direct Bulk Workflows
+app.post('/api/rapidshyp/bulk-assign', async (req, res) => {
+    try {
+        const { orderIds } = req.body;
+        if (!orderIds || !Array.isArray(orderIds)) return res.status(400).json({ success: false, error: 'Invalid orderIds provided.' });
+
+        await shiprocket.authenticate();
+
+        const validShipmentIds = [];
+        const failedOrders = [];
+        
+        console.log(`[BULK-ASSIGN] Searching Shiprocket for ${orderIds.length} orders...`);
+        for (let orderNum of orderIds) {
+            let cleanId = orderNum.toString().replace('#', '');
+            try {
+                const search = await shiprocket.findOrderByShopifyId(cleanId);
+                if (search.found && search.shipment_id) {
+                    validShipmentIds.push({ shipmentId: search.shipment_id, orderId: orderNum });
+                } else {
+                    failedOrders.push(orderNum);
+                }
+            } catch (e) {
+                failedOrders.push(orderNum);
+            }
+        }
+        
+        if (validShipmentIds.length === 0) {
+            return res.json({ success: false, error: 'No matched orders found in Shiprocket to assign.' });
+        }
+
+        const assignmentRes = await shiprocket.bulkAssignCouriers(validShipmentIds);
+        res.json({ success: true, successful: assignmentRes.successful, failed: assignmentRes.failed, notFound: failedOrders });
+    } catch (e) {
+        console.error('[BULK-ASSIGN] Failed:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/rapidshyp/bulk-labels-dropbox', async (req, res) => {
+    try {
+        const { orderIds, orders } = req.body; 
+        if (!orderIds || !Array.isArray(orderIds)) return res.status(400).json({ success: false, error: 'Invalid orderIds provided.' });
+
+        await shiprocket.authenticate();
+
+        const validShipmentIds = [];
+        for (let orderNum of orderIds) {
+            let cleanId = orderNum.toString().replace('#', '');
+            try {
+                const search = await shiprocket.findOrderByShopifyId(cleanId);
+                if (search.found && search.shipment_id) {
+                    validShipmentIds.push(search.shipment_id);
+                }
+            } catch (e) {}
+        }
+
+        if (validShipmentIds.length === 0) return res.json({ success: false, error: 'No successful shipments found for labels.' });
+
+        console.log(`[BULK-LABELS] Generating labels for ${validShipmentIds.length} shipments...`);
+        const labelRes = await shiprocket.bulkGenerateLabel(validShipmentIds);
+        
+        if (!labelRes.success) return res.json({ success: false, error: labelRes.error });
+
+        // Generate CSVPayloads for Dropbox
+        let standardCsvContent = null;
+        let financialCsvContent = null;
+        if (orders && orders.length > 0) {
+            standardCsvContent = generateCSV(orders, parseFloat(process.env.GST_RATE || 18));
+            
+            const reqHeaders = ['Order ID', 'Customer Name', 'City', 'State', 'Product', 'Model', 'Payment Type', 'Total Revenue', 'COGS BASE', 'GST (18%)', 'Total Outflow'];
+            const rows = orders.map(o => [
+                o.orderId,
+                `"${o.customerName || ''}"`,
+                `"${o.city || ''}"`,
+                `"${o.state || ''}"`,
+                `"${o.productName || ''}"`,
+                `"${o.model || ''}"`,
+                o.payment,
+                o.total || 0,
+                o.cogs || 0,
+                o.gst || 0,
+                (o.cogs || 0) + (o.gst || 0)
+            ]);
+            financialCsvContent = [reqHeaders.join(','), ...rows.map(r => r.join(','))].join('\n');
+        }
+
+        console.log(`[DROPBOX] Pending PDF upload for Label URL: ${labelRes.url}`);
+        let finalPath = '';
+        try {
+            finalPath = await uploadOrderPayload(labelRes.url, standardCsvContent, financialCsvContent);
+        } catch (dbError) {
+            console.error('[API] Dropbox Upload Failed:', dbError.message);
+            // Don't fail the whole request just because Dropbox failed, still return the URL
+            finalPath = 'Dropbox Upload Failed';
+        }
+        
+        res.json({ success: true, url: labelRes.url, dropboxPaths: finalPath });
+    } catch (e) {
+        console.error('[BULK-LABELS] Failed:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
 
 // 10. Catch-All for Frontend
 app.get(/.*/, (req, res) => {

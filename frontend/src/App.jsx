@@ -10,6 +10,7 @@ import HomeAnalytics from './pages/HomeAnalytics';
 import ProductAnalysis from './pages/ProductAnalysis';
 import CsvEditorModal from './components/CsvEditorModal';
 import EditOrderModal from './components/EditOrderModal';
+import ShipOrdersModal from './components/ShipOrdersModal';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
@@ -64,6 +65,10 @@ function App() {
   const [selectedOrders, setSelectedOrders] = useState(new Set());
   const [showCsvEditor, setShowCsvEditor] = useState(false);
   const [csvPreviewData, setCsvPreviewData] = useState([]);
+
+  // Ship Orders Workflow
+  const [showShipOrdersModal, setShowShipOrdersModal] = useState(false);
+  const [shipOrdersData, setShipOrdersData] = useState([]);
 
   // Accordion State
   const [expandedOrders, setExpandedOrders] = useState(new Set());
@@ -256,10 +261,15 @@ function App() {
     const targetOrders = (ordersToUpload && ordersToUpload.length > 0) ? ordersToUpload : data?.orders;
     if (!targetOrders || targetOrders.length === 0) return;
 
-    setLoading('Uploading to Portal...');
+    setLoading('Uploading to Portal and Dropbox...');
     try {
       await axios.post(`${API_URL}/upload-portal`, { rows: targetOrders });
       setToast({ message: 'Orders Successfully Sent to Portal', type: 'success' });
+
+      // Clear CSV Modal, Open Ship Orders Modal
+      setShowCsvEditor(false);
+      setShipOrdersData(targetOrders);
+      setShowShipOrdersModal(true);
     } catch (e) {
       alert('Upload Failed: ' + (e.response?.data?.error || e.message));
     } finally {
@@ -472,60 +482,57 @@ function App() {
                   </div>
                 </div>
 
-                <div className="glass-card p-4 relative overflow-hidden flex flex-col justify-between h-32">
+                <div className="glass-card p-4 relative overflow-hidden flex flex-col justify-between h-32 col-span-2">
                   <div className="absolute -top-10 -left-10 w-24 h-24 bg-cyan-500/10 blur-2xl rounded-full z-0"></div>
                   <div className="flex justify-between items-start relative z-10">
-                    <div className="text-[10px] font-bold text-gray-400 tracking-wider">SUPPLIER INVOICE</div>
+                    <div className="text-[10px] font-bold text-gray-400 tracking-wider">SUPPLIER INVOICE TOTAL</div>
                     <IndianRupee size={16} className="text-cyan-400" />
                   </div>
                   <div className="relative z-10">
                     <div className="text-2xl font-bold text-white tracking-tight">₹{data?.stats?.total?.toFixed(0) || 0}</div>
                     <div className="text-[10px] text-gray-400 font-medium mt-1">
-                      Includes 18% GST
+                      Includes COGS + 18% GST (Calculated across pending orders)
                     </div>
                   </div>
-                </div>
-
-                <div className="glass-card p-3 relative overflow-hidden flex flex-col justify-center gap-2 h-32">
-                  <div className="absolute inset-0 bg-white/5 z-0"></div>
-                  <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-cyan-500/10 blur-3xl rounded-full z-0"></div>
-                  {workflowStatus === 'review' ? (
-                    <div className="relative z-10 flex flex-col gap-2 h-full justify-center">
-                      <button onClick={() => { setCsvPreviewData(data?.orders || []); setShowCsvEditor(true); }} disabled={loading} className="flex-1 bg-white hover:bg-gray-200 text-black rounded-[14px] font-black text-[11px] flex items-center justify-center gap-1.5 transition-all shadow-[0_0_15px_rgba(255,255,255,0.2)] tracking-widest uppercase">
-                        <UploadCloud size={14} /> SEND ORDER
-                      </button>
-                      <button onClick={handleGenerateLabels} disabled={loading} className="flex-1 bg-white/5 border border-white/10 hover:bg-white/10 text-white rounded-[14px] font-bold text-[11px] flex items-center justify-center gap-1.5 transition-all tracking-widest uppercase">
-                        <Truck size={14} /> LABELS
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="relative z-10 text-center text-gray-500 text-[10px] font-black uppercase tracking-widest drop-shadow-md opacity-60">
-                      Sync to enable actions
-                    </div>
-                  )}
                 </div>
               </div>
 
 
 
 
-              <AnimatePresence>
-                {selectedOrders.size > 0 && (
-                  <motion.div initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }} className="fixed bottom-24 right-4 z-50 flex flex-col gap-3">
-                    <button onClick={handleDownloadSelected} className="w-14 h-14 bg-cyan-500 rounded-full shadow-[0_4px_20px_rgba(6,182,212,0.4)] flex items-center justify-center text-black hover:scale-105 active:scale-95 transition-all">
-                      <Download size={24} />
-                    </button>
-                    <button onClick={handleDeleteSelected} className="w-14 h-14 bg-red-500 rounded-full shadow-[0_4px_20px_rgba(239,68,68,0.4)] flex items-center justify-center text-white hover:scale-105 active:scale-95 transition-all">
-                      <Trash2 size={24} />
-                    </button>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              <div className="glass-card min-h-[500px] p-4 md:p-6 mb-24">
+              <div className="glass-card min-h-[500px] p-4 md:p-6 mb-24 mt-6">
                 <div className="flex flex-col gap-4 mb-6 pt-2">
                   <div className="flex justify-between items-center px-1">
-                    <h3 className="text-2xl font-black text-white glow-text tracking-wider uppercase">Review Orders</h3>
+                    <h3 className="text-2xl font-black text-white glow-text tracking-wider uppercase flex items-center gap-3">
+                      Review Orders
+                      {selectedOrders.size > 0 && (
+                        <span className="text-xs font-bold bg-white/10 text-white px-2 py-0.5 rounded-full backdrop-blur-md border border-white/10">
+                          {selectedOrders.size}
+                        </span>
+                      )}
+                    </h3>
+
+                    {data && data.orders && data.orders.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        {selectedOrders.size > 0 && (
+                          <button onClick={handleDeleteSelected} className="w-10 h-10 rounded-full bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-all flex items-center justify-center shadow-lg">
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            if (selectedOrders.size > 0) {
+                              handleDownloadSelected();
+                            } else {
+                              setCsvPreviewData(data?.orders || []); setShowCsvEditor(true);
+                            }
+                          }}
+                          className="w-10 h-10 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/20 hover:text-cyan-300 transition-all flex items-center justify-center shadow-[0_0_15px_rgba(34,211,238,0.2)]"
+                        >
+                          <Download size={18} />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Quick Filter Pills */}
@@ -897,6 +904,22 @@ function App() {
               onClose={() => setShowCsvEditor(false)}
               onSaveOnly={() => setToast({ message: 'Files downloaded successfully', type: 'success' })}
               onUploadPortal={handleUploadPortal}
+            />
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {showShipOrdersModal && (
+            <ShipOrdersModal
+              orders={shipOrdersData}
+              onClose={() => {
+                setShowShipOrdersModal(false);
+                setSelectedOrders(new Set()); // clear selection
+                handleSync(); // refresh to move fulfilled out
+              }}
+              onSuccess={(paths) => {
+                setToast({ message: `Success! Saved to ${paths}`, type: 'success' });
+              }}
             />
           )}
         </AnimatePresence>

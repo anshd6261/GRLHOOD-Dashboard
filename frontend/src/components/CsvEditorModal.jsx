@@ -154,7 +154,7 @@ export default function CsvEditorModal({ orders, onClose, onSaveOnly, onUploadPo
                         className={`w-full p-4 rounded-full font-black text-sm flex items-center justify-center gap-2 transition-all tracking-widest uppercase relative overflow-hidden group btn-shine-effect ${hasMissingModels ? 'bg-white/5 text-gray-500 cursor-not-allowed border border-white/10' : 'bg-white text-black hover:bg-gray-200 shadow-[0_0_20px_rgba(255,255,255,0.2)]'}`}
                     >
                         {uploading ? <RefreshCw className="animate-spin text-black" size={18} /> : <UploadCloud className="text-black group-hover:-translate-y-1 transition-transform" size={18} />}
-                        {uploading ? 'PROCESSING...' : 'PLACE ORDER'}
+                        {uploading ? 'PROCESSING...' : 'SEND ORDER (PORTAL & DROPBOX)'}
                     </button>
                 </div>
             </motion.div>
