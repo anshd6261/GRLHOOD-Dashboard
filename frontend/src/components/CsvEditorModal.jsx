@@ -23,7 +23,7 @@ export default function CsvEditorModal({ orders, onClose, onSaveOnly, onUploadPo
     const handleSaveOnly = async () => {
         setDownloading(true);
         try {
-            // Download Standard Supplier CSV (Backend)
+            // 1. Download Standard Supplier CSV
             const resSup = await axios.post(`${API_URL}/download`, { rows: orders, skipHistory: true, type: 'supplier' }, { responseType: 'blob' });
             const urlSup = window.URL.createObjectURL(new Blob([resSup.data], { type: 'text/csv' }));
             const aSup = document.createElement('a');
@@ -33,7 +33,10 @@ export default function CsvEditorModal({ orders, onClose, onSaveOnly, onUploadPo
             aSup.download = fileSup;
             aSup.click();
 
-            // Download Financial Report CSV (Backend)
+            // Small delay to prevent browser download blocking
+            await new Promise(resolve => setTimeout(resolve, 800));
+
+            // 2. Download Financial Report CSV
             const resFin = await axios.post(`${API_URL}/download`, { rows: orders, skipHistory: true, type: 'financial' }, { responseType: 'blob' });
             const urlFin = window.URL.createObjectURL(new Blob([resFin.data], { type: 'text/csv' }));
             const aFin = document.createElement('a');
@@ -43,16 +46,16 @@ export default function CsvEditorModal({ orders, onClose, onSaveOnly, onUploadPo
             aFin.download = fileFin;
             aFin.click();
 
-            // Backup to Dropbox
-            await axios.post(`${API_URL}/dropbox/upload`, { orders });
+            // 3. Backup to Dropbox (Fire and forget/Background)
+            axios.post(`${API_URL}/dropbox/upload`, { orders }).catch(err => console.error("Dropbox background sync failed:", err));
 
             if (onSaveOnly) onSaveOnly();
+            onClose(); // Close on success
         } catch (e) {
             console.error(e);
-            alert("Failed to download CSV: " + (e.message));
+            alert("Network error: Unable to download CSV. Please check your connection.");
         } finally {
             setDownloading(false);
-            onClose();
         }
     };
 
@@ -127,16 +130,16 @@ export default function CsvEditorModal({ orders, onClose, onSaveOnly, onUploadPo
                         className="w-full bg-[#1A1A1A] hover:bg-[#252525] border border-white/10 text-white p-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-md group"
                     >
                         {downloading ? <RefreshCw className="animate-spin text-cyan-400" size={18} /> : <Download className="text-cyan-400 group-hover:scale-110 transition-transform" size={18} />}
-                        SAVE ONLY (CSV + Financials)
+                        SAVE TO COMPUTER & DROPBOX
                     </button>
 
                     <button
                         onClick={handleUpload}
-                        disabled={downloading || uploading || hasMissingModels}
-                        className={`w-full p-4 rounded-full font-black text-sm flex items-center justify-center gap-2 transition-all tracking-widest uppercase relative overflow-hidden group btn-shine-effect ${hasMissingModels ? 'bg-white/5 text-gray-500 cursor-not-allowed border border-white/10' : 'bg-white text-black hover:bg-gray-200 shadow-[0_0_20px_rgba(255,255,255,0.2)]'}`}
+                        disabled={downloading || uploading}
+                        className={`w-full p-4 rounded-full font-black text-sm flex items-center justify-center gap-2 transition-all tracking-widest uppercase relative overflow-hidden group btn-shine-effect ${hasMissingModels ? 'bg-amber-500 text-black hover:bg-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.3)]' : 'bg-white text-black hover:bg-gray-200 shadow-[0_0_20px_rgba(255,255,255,0.2)]'}`}
                     >
                         {uploading ? <RefreshCw className="animate-spin text-black" size={18} /> : <UploadCloud className="text-black group-hover:-translate-y-1 transition-transform" size={18} />}
-                        {uploading ? 'PROCESSING...' : 'SEND ORDER (PORTAL & DROPBOX)'}
+                        {uploading ? 'PROCESSING...' : (hasMissingModels ? 'PLACE ORDER ANYWAY' : 'SEND ORDER (PORTAL & DROPBOX)')}
                     </button>
                 </div>
             </motion.div>
