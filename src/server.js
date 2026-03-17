@@ -10,7 +10,7 @@ const shiprocket = require('./shiprocket');
 const rapidshyp = require('./rapidshyp');
 const riskValidator = require('./riskValidator'); // Fixed Import
 const { v4: uuidv4 } = require('uuid');
-const { generateCSV } = require('./csv_generator');
+const { generateSupplierCSV, generateFinancialCSV, getFormattedDate, saveCSV } = require('./csv_generator');
 const { generateExcel } = require('./excel');
 const { getHistory, saveBatch, updateBatch } = require('./history');
 const emailService = require('./email');
@@ -139,19 +139,16 @@ app.post('/api/download', async (req, res) => {
             });
         }
 
-        const csvContent = generateCSV(rows, gstRate);
+        let csvContent, filename;
+        const datePrefix = getFormattedDate();
 
-        // Determine File Name Based on Content
-        const today = new Date().toISOString().split('T')[0];
-        const hasPrepaid = rows.some(r => r.payment === 'Prepaid');
-        const hasCOD = rows.some(r => r.payment === 'Cash on Delivery');
-
-        let type = 'MIXED';
-        if (hasPrepaid && !hasCOD) type = 'PREPAID';
-        if (!hasPrepaid && hasCOD) type = 'COD';
-
-        const batchId = batch.id.slice(-3);
-        const filename = `${today}_NLG_POD_${type}_BATCH-${batchId}.csv`;
+        if (req.body.type === 'financial') {
+            csvContent = generateFinancialCSV(rows, gstRate);
+            filename = `${datePrefix} Order - Financial report.csv`;
+        } else {
+            csvContent = generateSupplierCSV(rows);
+            filename = `${datePrefix} Order.csv`;
+        }
 
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -186,9 +183,8 @@ app.post('/api/email-approval', async (req, res) => {
     try {
         const { rows } = req.body;
         const gstRate = parseFloat(process.env.GST_RATE || 18);
-        const csvContent = generateCSV(rows, gstRate);
-        const date = new Date();
-        const filename = `FULFILLMENT-${date.getMonth() + 1}-${date.getDate()}.csv`;
+        const csvContent = generateSupplierCSV(rows);
+        const filename = `${getFormattedDate()} Order.csv`;
 
         const sent = await sendApprovalEmail(csvContent, filename);
 
@@ -209,23 +205,8 @@ app.post('/api/dropbox/upload', async (req, res) => {
         const { orders } = req.body;
         if (!orders || !Array.isArray(orders)) return res.status(400).json({ success: false, error: 'Invalid orders provided.' });
 
-        const standardCsvContent = generateCSV(orders, parseFloat(process.env.GST_RATE || 18));
-            
-        const reqHeaders = ['Order ID', 'Customer Name', 'City', 'State', 'Product', 'Model', 'Payment Type', 'Total Revenue', 'COGS BASE', 'GST (18%)', 'Total Outflow'];
-        const rows = orders.map(o => [
-            o.orderId,
-            `"${o.customerName || ''}"`,
-            `"${o.city || ''}"`,
-            `"${o.state || ''}"`,
-            `"${o.productName || ''}"`,
-            `"${o.model || ''}"`,
-            o.payment,
-            o.total || 0,
-            o.cogs || 0,
-            o.gst || 0,
-            (o.cogs || 0) + (o.gst || 0)
-        ]);
-        const financialCsvContent = [reqHeaders.join(','), ...rows.map(r => r.join(','))].join('\n');
+        const standardCsvContent = generateSupplierCSV(orders);
+        const financialCsvContent = generateFinancialCSV(orders, parseFloat(process.env.GST_RATE || 18));
 
         const { uploadOrderPayload } = require('./dropbox');
         const finalPath = await uploadOrderPayload(null, standardCsvContent, financialCsvContent);
@@ -241,8 +222,7 @@ app.post('/api/dropbox/upload', async (req, res) => {
 app.post('/api/upload-portal', async (req, res) => {
     try {
         const { rows } = req.body;
-        const gstRate = parseFloat(process.env.GST_RATE || 18);
-        const csvContent = generateCSV(rows, gstRate);
+        const csvContent = generateSupplierCSV(rows);
 
         const tempPath = process.env.VERCEL ? path.join('/tmp', 'temp_upload.csv') : path.join(__dirname, '..', 'temp_upload.csv');
         fs.writeFileSync(tempPath, csvContent);

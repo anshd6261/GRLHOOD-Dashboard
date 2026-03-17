@@ -20,49 +20,28 @@ export default function CsvEditorModal({ orders, onClose, onSaveOnly, onUploadPo
     const totalGst = orders.reduce((sum, o) => sum + (o.gst || 0), 0);
     const supplierInvoice = totalCogs + totalGst;
 
-    const generateFinancialCSV = () => {
-        const headers = ['Order ID', 'Customer Name', 'City', 'State', 'Product', 'Model', 'Payment Type', 'Total Revenue', 'COGS BASE', 'GST (18%)', 'Total Outflow'];
-        const rows = orders.map(o => [
-            o.orderId,
-            `"${o.customerName || ''}"`,
-            `"${o.city || ''}"`,
-            `"${o.state || ''}"`,
-            `"${o.productName || ''}"`,
-            `"${o.model || ''}"`,
-            o.payment,
-            o.total || 0,
-            o.cogs || 0,
-            o.gst || 0,
-            (o.cogs || 0) + (o.gst || 0)
-        ]);
-        const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-
-        const blob = new Blob([csvContent], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        const dateStr = new Date().toISOString().split('T')[0];
-        a.download = `${dateStr}_Order_Financial_Report.csv`;
-        a.click();
-    };
-
     const handleSaveOnly = async () => {
         setDownloading(true);
         try {
-            // Download Financial Report (Frontend)
-            generateFinancialCSV();
-
             // Download Standard Supplier CSV (Backend)
-            const target = orders; // Assume all are going
-            const res = await axios.post(`${API_URL}/download`, { rows: target, skipHistory: true }, { responseType: 'blob' });
-            const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
-            const a = document.createElement('a');
-            a.href = url;
+            const resSup = await axios.post(`${API_URL}/download`, { rows: orders, skipHistory: true, type: 'supplier' }, { responseType: 'blob' });
+            const urlSup = window.URL.createObjectURL(new Blob([resSup.data], { type: 'text/csv' }));
+            const aSup = document.createElement('a');
+            aSup.href = urlSup;
+            let fileSup = 'Order.csv';
+            if (resSup.headers['x-filename']) fileSup = resSup.headers['x-filename'];
+            aSup.download = fileSup;
+            aSup.click();
 
-            let filename = `${new Date().toISOString().split('T')[0]}_Orders.csv`;
-            if (res.headers['x-filename']) filename = res.headers['x-filename'];
-            a.download = filename;
-            a.click();
+            // Download Financial Report CSV (Backend)
+            const resFin = await axios.post(`${API_URL}/download`, { rows: orders, skipHistory: true, type: 'financial' }, { responseType: 'blob' });
+            const urlFin = window.URL.createObjectURL(new Blob([resFin.data], { type: 'text/csv' }));
+            const aFin = document.createElement('a');
+            aFin.href = urlFin;
+            let fileFin = 'Order - Financial report.csv';
+            if (resFin.headers['x-filename']) fileFin = resFin.headers['x-filename'];
+            aFin.download = fileFin;
+            aFin.click();
 
             // Backup to Dropbox
             await axios.post(`${API_URL}/dropbox/upload`, { orders });
