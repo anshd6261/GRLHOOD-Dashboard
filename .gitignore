@@ -7,4 +7,4 @@ error_state_*.html
 error_state_*.png
 .vercel
 .cursor/
-.env*.local
+.env*

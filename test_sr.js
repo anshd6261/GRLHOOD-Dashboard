@@ -1,18 +1,10 @@
-const shiprocket = require('./src/shiprocket');
+const { getHeaders } = require('./src/shiprocket.js');
+const axios = require('axios');
 
-const run = async () => {
-    try {
-        await shiprocket.authenticate();
+async function test() {
+    const headers = await getHeaders();
+    const res = await axios.get('https://apiv2.shiprocket.in/v1/external/orders?per_page=5', { headers });
+    console.log(JSON.stringify(res.data.data[0], null, 2));
+}
 
-        const SEARCH_ID = '1561';
-        console.log(`Searching for Order: ${SEARCH_ID}`);
-
-        const result = await shiprocket.findOrderByShopifyId(SEARCH_ID);
-        console.log('Result:', JSON.stringify(result, null, 2));
-
-    } catch (e) {
-        console.error('Error:', e);
-    }
-};
-
-run();
+test().catch(console.error);

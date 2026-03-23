@@ -52,10 +52,11 @@ app.get('/api/orders', async (req, res) => {
 
         console.log(`[API] Fetching orders... Options:`, { daysLookback, startDate, endDate, statusMode });
 
-        // Fetch from Shopify and RapidShyp concurrently
-        const [rawOrders, rsRes] = await Promise.all([
+        // Fetch from Shopify, Shiprocket, and RapidShyp concurrently
+        const [rawOrders, rsRes, srRes] = await Promise.all([
             getUnfulfilledOrders(daysLookback, startDate, endDate, statusMode),
-            rapidshyp.fetchOrdersWithRTO('ALL', 10) // Fetch all orders with RTO risk data
+            rapidshyp.fetchOrdersWithRTO('ALL', 10), // Fetch all orders with RTO risk data
+            shiprocket.getOrdersForSync(daysLookback, startDate, endDate) // Override Risk with Shiprocket's Predictions
         ]);
 
         // Build RTO Map from RapidShyp data (keyed by seller_order_id which is #3419 format)
@@ -78,6 +79,28 @@ app.get('/api/orders', async (req, res) => {
                 }
             });
             console.log(`[API] Built RTO map with ${Object.keys(rtoMap).length} entries from RapidShyp.`);
+        }
+
+        // Override RTO Map with Shiprocket AI Predictions
+        if (srRes && srRes.data) {
+            let overrides = 0;
+            srRes.data.forEach(srOrder => {
+                const cleanId = srOrder.channel_order_id;
+                if (!cleanId) return;
+
+                // Make sure we have the object in the map or create it
+                if (!rtoMap[cleanId]) rtoMap[cleanId] = { risk: "Unknown", reason: "", shiprocketId: null };
+                
+                // Shiprocket's prediction uses the exact same field names (rto_prediction, rto_reason)
+                if (srOrder.rto_prediction) {
+                    rtoMap[cleanId].risk = srOrder.rto_prediction;
+                    if (srOrder.rto_reason) rtoMap[cleanId].reason = srOrder.rto_reason;
+                    // Also update the hashed version just in case Shopify uses #
+                    rtoMap[`#${cleanId}`] = rtoMap[cleanId];
+                    overrides++;
+                }
+            });
+            console.log(`[API] Overrode ${overrides} RTO predictions with Shiprocket's models.`);
         }
 
         // Process orders with the RTO map

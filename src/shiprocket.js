@@ -455,6 +455,26 @@ const fetchOrdersByDate = async (startDate, endDate) => {
     }
 };
 
+const getOrdersForSync = async (daysLookback, startDate, endDate) => {
+    let startStr, endStr;
+
+    if (startDate && endDate) {
+        // Use provided ISO strings
+        startStr = startDate;
+        endStr = endDate;
+    } else {
+        // Fallback to daysLookback
+        const dEnd = new Date();
+        endStr = dEnd.toISOString();
+        
+        const dStart = new Date();
+        dStart.setDate(dStart.getDate() - (daysLookback > 0 ? daysLookback : 3));
+        startStr = dStart.toISOString();
+    }
+
+    return fetchOrdersByDate(startStr, endStr);
+};
+
 const cancelOrderByChannelId = async (channelOrderId) => {
     try {
         const headers = await getHeaders();
@@ -502,6 +522,7 @@ module.exports = {
     createOrder,
     ensureReplacementOrder,
     fetchOrdersByDate,
+    getOrdersForSync,
     cancelOrderByChannelId,
     fetchRecentOrdersForSync
 };

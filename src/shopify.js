@@ -213,19 +213,11 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
   let dateFilter = '';
 
   if (startDate && endDate) {
-    // ISO String for Start and End
-    // Start: 00:00:00
-    const start = new Date(startDate);
-    start.setHours(0, 0, 0, 0);
-
-    // End: 23:59:59
-    const end = new Date(endDate);
-    end.setHours(23, 59, 59, 999);
-
-    // Use native UTC ISO strings for Shopify GraphQL accuracy
-    dateFilter = `created_at:>=${start.toISOString()} created_at:<=${end.toISOString()}`;
-    console.log(`[ORDERS] Fetching orders from ${start.toISOString()} to ${end.toISOString()} [Mode: ${statusMode}]...`);
-  } else {
+    // startDate and endDate are assumed to be ISO strings provided by the client,
+    // which already include the correct boundaries for the user's timezone.
+    dateFilter = `created_at:>=${startDate} created_at:<=${endDate}`;
+    console.log(`[ORDERS] Fetching orders from ${startDate} to ${endDate} [Mode: ${statusMode}]...`);
+  } else if (daysLookback > 0) {
     const daysAgo = new Date();
     daysAgo.setDate(daysAgo.getDate() - daysLookback);
     // Strip millis, use proper ISO for fallback or simpler format
@@ -248,9 +240,11 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
             name # #1001
             phone # Global Order Phone
             createdAt
+            cancelledAt
             tags
             riskLevel # HIGH, MEDIUM, LOW
             displayFinancialStatus
+            displayFulfillmentStatus
             paymentGatewayNames
             shippingAddress {
               name

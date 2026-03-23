@@ -21,6 +21,8 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
     const processedRows = [];
 
     for (const order of orders) {
+        if (order.cancelledAt) continue; // Skip completely cancelled orders
+
         const orderId = order.name; // Keep # for Shiprocket lookup since SR channel_order_id includes it
         const displayOrderId = order.name.replace('#', '');
         const shipping = order.shippingAddress || {};
@@ -239,9 +241,9 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
                     productId,
                     thumbnail,
                     previewUrl,
-                    payment,
-                    cogs,
-                    price
+                    cogs: cogs,
+                    price: price,
+                    fulfillmentStatus: order.displayFulfillmentStatus || 'UNFULFILLED'
                 });
             }
         }

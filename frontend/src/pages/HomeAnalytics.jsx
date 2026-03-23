@@ -23,8 +23,16 @@ export default function HomeAnalytics({ startDate, endDate, onNavigateToProductA
             let startStr = '';
             let endStr = '';
 
-            if (startDate instanceof Date && !isNaN(startDate)) startStr = startDate.toISOString();
-            if (endDate instanceof Date && !isNaN(endDate)) endStr = endDate.toISOString();
+            if (startDate instanceof Date && !isNaN(startDate)) {
+                const startClone = new Date(startDate);
+                startClone.setHours(0, 0, 0, 0);
+                startStr = startClone.toISOString();
+            }
+            if (endDate instanceof Date && !isNaN(endDate)) {
+                const endClone = new Date(endDate);
+                endClone.setHours(23, 59, 59, 999);
+                endStr = endClone.toISOString();
+            }
 
             // Fetch ALL orders for analytics
             const res = await axios.get(`${API_URL}/orders?status=all&startDate=${startStr}&endDate=${endStr}`);

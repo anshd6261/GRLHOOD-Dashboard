@@ -190,10 +190,14 @@ function App() {
       let endStr = '';
 
       if (startDate instanceof Date && !isNaN(startDate)) {
-        startStr = startDate.toISOString();
+        const startClone = new Date(startDate);
+        startClone.setHours(0, 0, 0, 0);
+        startStr = startClone.toISOString();
       }
       if (endDate instanceof Date && !isNaN(endDate)) {
-        endStr = endDate.toISOString();
+        const endClone = new Date(endDate);
+        endClone.setHours(23, 59, 59, 999);
+        endStr = endClone.toISOString();
       }
 
       console.log('Syncing with:', { startStr, endStr });

@@ -39,6 +39,12 @@ export default function CsvEditorModal({ orders, onClose, onSaveOnly, onUploadPo
         }
     };
 
+    const handleDeleteRow = (index) => {
+        const updated = [...editedOrders];
+        updated.splice(index, 1);
+        setEditedOrders(updated);
+    };
+
     const missingModelsCount = editedOrders.filter(o => !o.model || o.model.trim() === '' || o.model.toLowerCase() === 'unknown model').length;
     const hasMissingModels = missingModelsCount > 0;
 
@@ -151,64 +157,91 @@ export default function CsvEditorModal({ orders, onClose, onSaveOnly, onUploadPo
                     </button>
                 </div>
 
-                {/* Main Content: Interactive Grid */}
-                <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 custom-scrollbar">
-                    {editedOrders.map((order, idx) => {
-                        const isMissing = !order.model || order.model.trim() === '' || order.model.toLowerCase() === 'unknown model';
-                        return (
-                            <div key={`${order.orderId}_${order.sku}_${idx}`} className={`relative p-4 rounded-3xl border transition-all duration-300 ${isMissing ? 'bg-rose-500/5 border-rose-500/20 shadow-[0_0_20px_rgba(244,63,94,0.05)]' : 'bg-white/5 border-white/10'}`}>
-                                <div className="flex items-center gap-4">
-                                    {/* Product Thumb */}
-                                    <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-black/40 overflow-hidden border border-white/10 shrink-0 shadow-inner">
-                                        {order.thumbnail ? (
-                                            <img src={order.thumbnail} alt="" className="w-full h-full object-cover" />
-                                        ) : (
-                                            <div className="w-full h-full flex items-center justify-center text-white/20"><FileText size={24} /></div>
-                                        )}
-                                    </div>
-
-                                    {/* Order Info */}
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <span className="text-xs font-black text-cyan-400 uppercase tracking-widest">Order {order.orderId}</span>
-                                            <span className="text-xs font-bold text-gray-500 truncate max-w-[120px]">{order.customerName}</span>
-                                        </div>
-                                        
-                                        {/* Model Input Area */}
-                                        <div className="relative group">
-                                            <div className={`absolute left-3 top-1/2 -translate-y-1/2 transition-colors ${isMissing ? 'text-rose-400' : 'text-gray-500'}`}>
-                                                <Edit3 size={14} />
+                {/* Main Content: Spreadsheet Table */}
+                <div className="flex-1 overflow-auto p-0 custom-scrollbar relative">
+                    <table className="w-full text-left border-collapse min-w-[800px]">
+                        <thead className="sticky top-0 z-20 bg-[#151515] border-b border-white/10 text-[10px] uppercase tracking-widest text-gray-400 font-bold dropdown-blur">
+                            <tr>
+                                <th className="p-4 w-12 text-center">X</th>
+                                <th className="p-4">Item</th>
+                                <th className="p-4">Order ID</th>
+                                <th className="p-4">Customer</th>
+                                <th className="p-4 w-[280px]">Device Model (Editable)</th>
+                                <th className="p-4 text-center">Contact</th>
+                                <th className="p-4 text-right">COGS</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-white/5 text-sm">
+                            {editedOrders.map((order, idx) => {
+                                const isMissing = !order.model || order.model.trim() === '' || order.model.toLowerCase() === 'unknown model';
+                                return (
+                                    <tr key={`${order.orderId}_${order.sku}_${idx}`} className={`hover:bg-white/5 transition-colors group ${isMissing ? 'bg-rose-500/5' : ''}`}>
+                                        <td className="p-4 text-center">
+                                            <button 
+                                                onClick={() => handleDeleteRow(idx)}
+                                                className="text-gray-500 hover:text-red-400 transition-colors p-1"
+                                                title="Delete Row"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="w-10 h-10 rounded-lg bg-black/40 overflow-hidden border border-white/10 shrink-0 shadow-inner">
+                                                {order.thumbnail ? (
+                                                    <img src={order.thumbnail} alt="" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center text-white/20"><FileText size={16} /></div>
+                                                )}
                                             </div>
-                                            <input 
-                                                type="text"
-                                                value={order.model === 'Unknown Model' ? '' : order.model}
-                                                onChange={(e) => handleModelUpdate(idx, e.target.value)}
-                                                placeholder="Type Device Model (e.g. iPhone 15 Pro)"
-                                                className={`w-full bg-black/40 border ${isMissing ? 'border-rose-500/30 focus:border-rose-500' : 'border-white/10 focus:border-cyan-500'} rounded-2xl py-3 pl-10 pr-4 text-sm font-bold text-white placeholder-white/20 transition-all outline-none shadow-inner`}
-                                            />
-                                            {isMissing && <div className="absolute right-3 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-rose-500 animate-ping"></div>}
-                                        </div>
-                                    </div>
-
-                                    {/* Instant Contact Actions */}
-                                    <div className="flex flex-col gap-2 shrink-0">
-                                        <button 
-                                            onClick={() => handleCall(order.shippingDetails?.phone)}
-                                            className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500 hover:text-white transition-all shadow-lg active:scale-95"
-                                        >
-                                            <Phone size={18} />
-                                        </button>
-                                        <button 
-                                            onClick={() => handleWhatsApp(order.shippingDetails?.phone, order.customerName)}
-                                            className="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-2xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500 hover:text-white transition-all shadow-lg active:scale-95"
-                                        >
-                                            <MessageSquare size={18} />
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        );
-                    })}
+                                        </td>
+                                        <td className="p-4 font-mono font-bold text-cyan-400">
+                                            {order.orderId}
+                                        </td>
+                                        <td className="p-4 text-gray-300 font-bold truncate max-w-[150px]">
+                                            {order.customerName}
+                                        </td>
+                                        <td className="p-4 relative">
+                                            <div className="relative group/input">
+                                                <div className={`absolute left-3 top-1/2 -translate-y-1/2 transition-colors ${isMissing ? 'text-rose-400' : 'text-gray-500'}`}>
+                                                    <Edit3 size={14} />
+                                                </div>
+                                                <input 
+                                                    type="text"
+                                                    value={order.model === 'Unknown Model' ? '' : order.model}
+                                                    onChange={(e) => handleModelUpdate(idx, e.target.value)}
+                                                    placeholder="Device Model..."
+                                                    className={`w-full bg-black/40 border ${isMissing ? 'border-rose-500/50 focus:border-rose-400' : 'border-white/10 focus:border-cyan-500'} rounded-xl py-2 pl-9 pr-3 text-sm font-bold text-white placeholder-white/20 transition-all outline-none focus:ring-1 focus:ring-cyan-500/50`}
+                                                />
+                                                {isMissing && <div className="absolute right-3 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-rose-500 animate-ping"></div>}
+                                            </div>
+                                            <div className="text-[10px] text-gray-500 mt-1 uppercase truncate max-w-[200px]">{order.category}</div>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="flex items-center justify-center gap-2">
+                                                <button 
+                                                    onClick={() => handleCall(order.shippingDetails?.phone)}
+                                                    className="w-8 h-8 flex items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500 hover:text-white transition-all shadow-sm"
+                                                    title="Call Customer"
+                                                >
+                                                    <Phone size={14} />
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleWhatsApp(order.shippingDetails?.phone, order.customerName)}
+                                                    className="w-8 h-8 flex items-center justify-center rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500 hover:text-white transition-all shadow-sm"
+                                                    title="WhatsApp Customer"
+                                                >
+                                                    <MessageSquare size={14} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                        <td className="p-4 text-right font-bold text-white font-mono">
+                                            ₹{order.cogs || 0}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
                 </div>
 
                 {/* Footer Actions */}
