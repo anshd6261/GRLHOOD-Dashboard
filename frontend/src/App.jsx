@@ -1,42 +1,43 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import DatePicker from 'react-datepicker';
 import "react-datepicker/dist/react-datepicker.css";
-import { Package, Smartphone, IndianRupee, Download, RefreshCw, Settings, Search, Mail, UploadCloud, ChevronRight, ChevronDown, ChevronUp, Box, BarChart2, MessageSquare, Users, History, Plus, Trash2, Save, X, Grid, ExternalLink, Truck, Calendar, CheckSquare, XOctagon, AlertTriangle, Edit3 } from 'lucide-react';
+import {
+  Package, Smartphone, IndianRupee, Download, RefreshCw, Search,
+  UploadCloud, ChevronDown, ChevronUp, Box, MessageSquare,
+  Trash2, ExternalLink, Calendar, CheckSquare,
+  AlertTriangle, Edit3, X, Settings, LayoutDashboard, ClipboardCheck,
+  TrendingUp, Phone, XOctagon
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import SupplierDashboard from './pages/SupplierDashboard';
-import FinancialDashboard from './pages/FinancialDashboard';
-import HomeAnalytics from './pages/HomeAnalytics';
-import ProductAnalysis from './pages/ProductAnalysis';
+import DottedBackground from './components/DottedBackground';
+import GlowBlobs from './components/GlowBlobs';
 import CsvEditorModal from './components/CsvEditorModal';
 import EditOrderModal from './components/EditOrderModal';
+import AestheticDetailModal from './components/AestheticDetailModal';
+import Login from './Login';
+import { useAuth } from './AuthContext';
+import { LogOut } from 'lucide-react'; // Added LogOut
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
 
+/* ═══════════════════════════════════════════
+   ERROR BOUNDARY
+   ═══════════════════════════════════════════ */
 class ErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props);
-    this.state = { hasError: false, error: null };
-  }
-
-  static getDerivedStateFromError(error) {
-    return { hasError: true, error };
-  }
-
-  componentDidCatch(error, errorInfo) {
-    console.error("Uncaught Error:", error, errorInfo);
-  }
-
+  constructor(props) { super(props); this.state = { hasError: false, error: null }; }
+  static getDerivedStateFromError(error) { return { hasError: true, error }; }
+  componentDidCatch(error, errorInfo) { console.error("Uncaught Error:", error, errorInfo); }
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen bg-black text-white flex flex-col items-center justify-center p-8">
-          <h1 className="text-3xl font-bold text-red-500 mb-4">Something went wrong.</h1>
-          <pre className="text-xs bg-gray-900 p-4 rounded text-red-300 max-w-2xl overflow-auto">
+        <div className="min-h-screen bg-[#0e0e11] text-white flex flex-col items-center justify-center p-8">
+          <h1 className="text-3xl font-bold text-red-400 mb-4">Something went wrong.</h1>
+          <pre className="text-xs bg-black/40 p-4 rounded-2xl text-red-300 max-w-2xl overflow-auto border border-red-500/20">
             {this.state.error?.toString()}
           </pre>
-          <button onClick={() => window.location.reload()} className="mt-6 bg-white text-black px-6 py-3 rounded-xl font-bold">Reload Page</button>
+          <button onClick={() => window.location.reload()} className="mt-6 glass-btn-accent px-8 py-3 rounded-2xl font-bold">Reload</button>
         </div>
       );
     }
@@ -44,315 +45,300 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+/* ═══════════════════════════════════════════
+   SPOTLIGHT CARD
+   ═══════════════════════════════════════════ */
+function SpotlightCard({ children, className = '' }) {
+  const cardRef = useRef(null);
+  const handleMouseMove = (e) => {
+    if (!cardRef.current) return;
+    const rect = cardRef.current.getBoundingClientRect();
+    cardRef.current.style.setProperty('--spotlight-x', `${e.clientX - rect.left}px`);
+    cardRef.current.style.setProperty('--spotlight-y', `${e.clientY - rect.top}px`);
+  };
+  return (
+    <div ref={cardRef} onMouseMove={handleMouseMove} className={`spotlight-card glass-card ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   SETTINGS TAB
+   ═══════════════════════════════════════════ */
+function SettingsTab({ historyData, onHistorySelect }) {
+  const connectedAPIs = [
+    { name: 'Shopify Admin', status: 'connected', desc: 'Order sync & management' },
+    { name: 'RapidShyp', status: 'connected', desc: 'Shipping & RTO data' },
+    { name: 'Dropbox', status: 'connected', desc: 'CSV backup storage' },
+  ];
+
+  return (
+    <div className="space-y-8 max-w-3xl mx-auto">
+      {/* Connected APIs */}
+      <div>
+        <h3 className="text-sm font-bold text-[rgba(245,245,245,0.4)] uppercase tracking-[0.15em] mb-4">Connected APIs</h3>
+        <div className="space-y-3">
+          {connectedAPIs.map(api => (
+            <div key={api.name} className="glass-card-sm p-4 flex items-center justify-between">
+              <div>
+                <div className="text-sm font-bold text-white">{api.name}</div>
+                <div className="text-xs text-[rgba(245,245,245,0.3)] mt-0.5">{api.desc}</div>
+              </div>
+              <span className="text-[9px] font-bold uppercase tracking-wider px-3 py-1 rounded-full bg-[rgba(227,207,216,0.1)] text-[#e3cfd8] border border-[rgba(227,207,216,0.15)]">
+                {api.status}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* History */}
+      <div>
+        <h3 className="text-sm font-bold text-[rgba(245,245,245,0.4)] uppercase tracking-[0.15em] mb-4">Download History</h3>
+        {historyData.length === 0 ? (
+          <div className="glass-card-sm p-6 text-center text-[rgba(245,245,245,0.25)] text-sm">No history yet</div>
+        ) : (
+          <div className="space-y-3">
+            {historyData.map(batch => (
+              <div key={batch.id} className="glass-card-sm p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold bg-[rgba(227,207,216,0.08)] text-[#e3cfd8]`}>
+                    {batch.type === 'DOWNLOAD' ? 'DL' : 'EM'}
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-white">{batch.count} Orders</div>
+                    <div className="text-[10px] text-[rgba(245,245,245,0.25)]">{new Date(batch.timestamp).toLocaleString()} • {batch.id}</div>
+                  </div>
+                </div>
+                <button onClick={() => onHistorySelect(batch)} className="glass-btn px-4 py-2 rounded-xl text-xs font-bold">View</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Version */}
+      <div>
+        <h3 className="text-sm font-bold text-[rgba(245,245,245,0.4)] uppercase tracking-[0.15em] mb-4">Dashboard</h3>
+        <div className="glass-card-sm p-4">
+          <div className="text-sm font-bold text-white">GRLHOOD Dashboard</div>
+          <div className="text-xs text-[rgba(245,245,245,0.3)] mt-1">Version 3.0 — Dark Neumorphic</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   MAIN APP
+   ═══════════════════════════════════════════ */
 function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const { user, logout } = useAuth();
+  const [activeTab, setActiveTab] = useState('fulfill');
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
-  const [historyData, setHistoryData] = useState([]);
-  const [error, setError] = useState(null);
+  // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
-  const [editingBatch, setEditingBatch] = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInputRef = useRef(null);
+  const [searchOptionsOpen, setSearchOptionsOpen] = useState(false);
+  const [searchedOrderOptions, setSearchedOrderOptions] = useState(null);
+  const [detailModalOrder, setDetailModalOrder] = useState(null);
+  const [cancellingOrder, setCancellingOrder] = useState(null); // State for cancellation modal/loading
 
-  // Date Picker State
-  const [dateRange, setDateRange] = useState([new Date(new Date().setDate(new Date().getDate() - 3)), new Date()]);
+  // Auto-sync on Fulfill mount
+  const hasInitialized = useRef(false);
+  useEffect(() => {
+    if (activeTab === 'fulfill' && !hasInitialized.current && user) {
+      handleSync();
+      hasInitialized.current = true;
+    }
+  }, [activeTab, user]);
+
+  // Date Picker
+  const [dateRange, setDateRange] = useState([
+    new Date(new Date().setDate(new Date().getDate() - 3)),
+    new Date()
+  ]);
   const [startDate, endDate] = dateRange;
 
-  const [workflowStatus, setWorkflowStatus] = useState('idle');
-  const [walletPopup, setWalletPopup] = useState(null);
-
-  // Selection State
+  // Selection
   const [selectedOrders, setSelectedOrders] = useState(new Set());
   const [showCsvEditor, setShowCsvEditor] = useState(false);
   const [csvPreviewData, setCsvPreviewData] = useState([]);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [editingOrder, setEditingOrder] = useState(null);
 
-  // Accordion State
+  // Accordion
   const [expandedOrders, setExpandedOrders] = useState(new Set());
   const toggleOrderExpanded = (id) => {
     setExpandedOrders(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
+      if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
   };
 
-  // Long-Press Selection Logic
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [editingOrder, setEditingOrder] = useState(null);
+  // Filters
+  const [activeFilter, setActiveFilter] = useState('All');
 
-  useEffect(() => {
-    if (selectedOrders.size === 0) setSelectionMode(false);
-  }, [selectedOrders.size]);
-
-  const handlePressStart = (id) => {
-    window.pressTimer = setTimeout(() => {
-      setSelectionMode(true);
-      toggleSelectRow(id);
-      if ("vibrate" in navigator) navigator.vibrate(50);
-    }, 600); // 600ms hold
-  };
-  const handlePressEnd = () => {
-    if (window.pressTimer) clearTimeout(window.pressTimer);
-  };
-
-  const handleSaveEdit = (updatedItemsArray) => {
-    if (!data?.orders) return;
-    if (!updatedItemsArray || !Array.isArray(updatedItemsArray)) return;
-
-    const newOrders = [...data.orders];
-
-    // For each item edited in the modal, find it in the master list and overwrite it
-    updatedItemsArray.forEach(editedItem => {
-      const idx = newOrders.findIndex(o => o.id === editedItem.id);
-      if (idx > -1) {
-        newOrders[idx] = { ...newOrders[idx], ...editedItem };
-      }
-    });
-
-    setData({ ...data, orders: newOrders });
-    setToast({ message: "Order Updated Successfully!", type: "success" });
-    setEditingOrder(null);
-  };
-
-  // RTO Click Modal State (kept for Place Order tab)
-  const [openRtoRiskId, setOpenRtoRiskId] = useState(null);
-
-  // Fulfillment Filters & Calling State
-  const [activeFilter, setActiveFilter] = useState('All'); // 'All', 'High Risk', 'Missing Device', 'Multiple Orders'
-
-  useEffect(() => { if (activeTab === 'history') fetchHistory(); }, [activeTab]);
-
-  /* --- NEW TOAST & UI STATE --- */
-  const [toast, setToast] = useState(null); // { message, type: 'success'|'error'|'info' }
+  // Toast
+  const [toast, setToast] = useState(null);
   useEffect(() => { if (toast) setTimeout(() => setToast(null), 3000); }, [toast]);
+  useEffect(() => { if (selectedOrders.size === 0) setSelectionMode(false); }, [selectedOrders.size]);
 
-  const handleGenerateLabels = async () => {
-    // QUICK ACTION: Instant feedback, no native confirm
-    setLoading('Starting...');
-
-    try {
-      const res = await axios.post(`${API_URL}/shiprocket/generate-labels`);
-
-      if (res.data.jobId) {
-        const jobId = res.data.jobId;
-        const poll = setInterval(async () => {
-          try {
-            const statusRes = await axios.get(`${API_URL}/shiprocket/job/${jobId}`);
-            const job = statusRes.data;
-
-            if (['STARTING', 'FETCHING_DETAILS', 'CHECKING_WALLET', 'PROCESSING_SHIPROCKET', 'GENERATING_LABELS'].includes(job.status)) {
-              setLoading(job.progress ? `Processing: ${job.progress}` : `Status: ${job.status.replace('_', ' ')}`);
-            }
-            else if (job.status === 'REQUIRES_MONEY') {
-              clearInterval(poll);
-              setLoading(false);
-              setWalletPopup(job);
-            }
-            else if (job.status === 'COMPLETED') {
-              clearInterval(poll);
-              if (job.labelUrl) {
-                // Auto-open if possible, but popups might block.
-                // Better to show the Success Modal.
-              }
-              setData(prev => ({ ...prev, labelUrl: job.labelUrl, highRiskUrl: job.highRiskUrl, failedUrl: job.failedUrl }));
-              setLoading('success_label');
-              setToast({ message: "Labels Generated Successfully!", type: 'success' });
-            }
-            else if (job.status === 'FAILED') {
-              clearInterval(poll);
-              setLoading(false);
-              setToast({ message: 'Job Failed: ' + job.error, type: 'error' });
-            }
-          } catch (e) {
-            // Ignore poll error
-          }
-        }, 1500); // Faster polling (1.5s)
-      } else {
-        setToast({ message: 'Failed to start job: ' + (res.data.error || 'Unknown'), type: 'error' });
-        setLoading(false);
-      }
-    } catch (e) {
-      setToast({ message: 'Network Error: ' + e.message, type: 'error' });
-      setLoading(false);
-    }
-  };
+  // History
+  const [historyData, setHistoryData] = useState([]);
+  useEffect(() => { if (activeTab === 'settings') fetchHistory(); }, [activeTab]);
 
   const fetchHistory = async () => {
     try { const res = await axios.get(`${API_URL}/history`); setHistoryData(res.data); } catch (e) { }
   };
 
-  const handleSync = async () => {
-    setLoading(true); setWorkflowStatus('processing');
-    setSelectedOrders(new Set()); // Clear selection on sync
+  // Focus search on open
+  useEffect(() => {
+    if (searchOpen && searchInputRef.current) searchInputRef.current.focus();
+  }, [searchOpen]);
 
+  // Long-press selection
+  const handlePressStart = (id) => {
+    window.pressTimer = setTimeout(() => {
+      setSelectionMode(true);
+      toggleSelectRow(id);
+      if ("vibrate" in navigator) navigator.vibrate(50);
+    }, 600);
+  };
+  const handlePressEnd = () => { if (window.pressTimer) clearTimeout(window.pressTimer); };
+
+  /* ─── API HANDLERS ─── */
+
+  const handleGlobalSearch = async (e) => {
+    if (e.key === 'Enter' && searchTerm.trim() !== '') {
+      setLoading(true);
+      try {
+        const res = await axios.get(`${API_URL}/orders/search?q=${encodeURIComponent(searchTerm)}`);
+        if (res.data.success && res.data.orders.length > 0) {
+          const freshOrders = res.data.orders;
+          setActiveTab('fulfill');
+          setData({ ...data, orders: freshOrders });
+          
+          // Show options based on the first matched order
+          setSearchedOrderOptions(freshOrders[0]);
+          setSearchOptionsOpen(true);
+        } else {
+          setToast({ message: 'No orders found', type: 'error' });
+          setSearchOptionsOpen(false);
+        }
+      } catch (err) {
+         setToast({ message: 'Search error', type: 'error' });
+      } finally { setLoading(false); }
+    }
+  };
+
+  const handleSaveEdit = (updatedItemsArray) => {
+    if (!data?.orders || !updatedItemsArray || !Array.isArray(updatedItemsArray)) return;
+    const newOrders = [...data.orders];
+    updatedItemsArray.forEach(editedItem => {
+      const idx = newOrders.findIndex(o => o.id === editedItem.id);
+      if (idx > -1) newOrders[idx] = { ...newOrders[idx], ...editedItem };
+    });
+    setData({ ...data, orders: newOrders });
+    setToast({ message: "Order Updated!", type: "success" });
+    setEditingOrder(null);
+  };
+
+  const handleDownloadLabel = async (orderIds) => {
+    if (!orderIds || orderIds.length === 0) return;
+    setLoading(true);
     try {
-      let startStr = '';
-      let endStr = '';
+      const res = await axios.post(`${API_URL}/rapidshyp/label`, { orderIds });
+      if (res.data && res.data.label_pdf_url) {
+        window.open(res.data.label_pdf_url, '_blank');
+        setToast({ message: "Label Generated!", type: "success" });
+      } else {
+         throw new Error("Label URL missing from response");
+      }
+    } catch (e) {
+      setToast({ message: e.response?.data?.error || e.message || 'Label failed', type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  const handleSync = async () => {
+    setLoading(true);
+    setSelectedOrders(new Set());
+    try {
+      let startStr = '', endStr = '';
       if (startDate instanceof Date && !isNaN(startDate)) {
-        const startClone = new Date(startDate);
-        startClone.setHours(0, 0, 0, 0);
-        startStr = startClone.toISOString();
+        const s = new Date(startDate); s.setHours(0, 0, 0, 0); startStr = s.toISOString();
       }
       if (endDate instanceof Date && !isNaN(endDate)) {
-        const endClone = new Date(endDate);
-        endClone.setHours(23, 59, 59, 999);
-        endStr = endClone.toISOString();
+        const e = new Date(endDate); e.setHours(23, 59, 59, 999); endStr = e.toISOString();
       }
-
-      console.log('Syncing with:', { startStr, endStr });
-
       const res = await axios.get(`${API_URL}/orders?status=unfulfilled&startDate=${startStr}&endDate=${endStr}`);
-
-      if (res.headers['content-type']?.includes('text/html')) {
-        throw new Error('Server returned HTML (500/404). Check Server Logs.');
-      }
-
+      if (res.headers['content-type']?.includes('text/html')) throw new Error('Server returned HTML. Check logs.');
       if (!res.data || !Array.isArray(res.data.orders)) {
-        console.warn('Invalid API Response:', res.data);
         setData({ ...res.data, orders: res.data?.orders || [] });
       } else {
         setData(res.data);
       }
-
-      setWorkflowStatus('review');
-    }
-    catch (e) {
-      console.error("Sync Error:", e);
-      setError(e.message);
-      alert(`Sync Failed: ${e.message}`);
-      setWorkflowStatus('idle');
-    }
-    finally { setLoading(false); }
-  };
-
-  const executeDownload = async ({ rows, type = 'all', skipHistory = false }) => {
-    if (!rows || !rows.length) return;
-    let target = rows;
-    if (type === 'prepaid') target = rows.filter(r => r.payment === 'Prepaid');
-    if (type === 'cod') target = rows.filter(r => r.payment === 'Cash on Delivery');
-
-    try {
-      const res = await axios.post(`${API_URL}/download`, { rows: target, skipHistory }, { responseType: 'blob' });
-      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
-      const a = document.createElement('a');
-      a.href = url;
-
-      const contentDisposition = res.headers['content-disposition'];
-      let filename = `Orders_${type}_${Date.now()}.csv`;
-      if (contentDisposition) {
-        const match = contentDisposition.match(/filename="?([^"]+)"?/);
-        if (match && match[1]) filename = match[1];
-      }
-      if (res.headers['x-filename']) filename = res.headers['x-filename'];
-
-      a.download = filename;
-      a.click();
     } catch (e) {
-      console.error('Download execution failed:', e);
-      alert('Download failed: ' + (e.message || 'Unknown error'));
-    }
+      console.error("Sync Error:", e);
+      setToast({ message: `Sync Failed: ${e.message}`, type: 'error' });
+    } finally { setLoading(false); }
   };
 
-  const handleDownloadDashboard = (t) => {
-    if (!data?.orders) return;
-    let target = data.orders;
-    if (t === 'prepaid') target = data.orders.filter(r => r.payment === 'Prepaid');
-    if (t === 'cod') target = data.orders.filter(r => r.payment === 'Cash on Delivery');
-    setCsvPreviewData(target);
-    setShowCsvEditor(true);
-  };
-  const handleSendEmail = async () => { if (data?.orders) { setLoading(true); try { await axios.post(`${API_URL}/email-approval`, { rows: data.orders }); alert('Sent'); } catch (e) { } finally { setLoading(false) } } };
   const handleUploadPortal = async (ordersToUpload) => {
     const targetOrders = (ordersToUpload && ordersToUpload.length > 0) ? ordersToUpload : data?.orders;
     if (!targetOrders || targetOrders.length === 0) return;
-
-    setLoading('Processing Order & Saving to Dropbox...');
-    try {
-      // 1. Send to Portal (Manufacturer) Note: Bypassed securely on Vercel automatically
-      await axios.post(`${API_URL}/upload-portal`, { rows: targetOrders });
-      
-      // 2. Direct Backup to Dropbox (No Shiprocket/RapidShyp Courier Assignment)
-      await axios.post(`${API_URL}/dropbox/upload`, { orders: targetOrders });
-
-      setToast({ message: 'Order Placed & Saved safely to Dropbox!', type: 'success' });
-
-      // Clean up UI & Sync to remove processed orders
-      setShowCsvEditor(false);
-      handleSync();
-      
-    } catch (e) {
-      alert('Upload Sequence Failed: ' + (e.response?.data?.error || e.message));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const saveHistory = async () => {
-    if (!editingBatch) return;
-    await axios.put(`${API_URL}/history/${editingBatch.id}`, { rows: editingBatch.rows });
-    setCsvPreviewData(editingBatch.rows);
-    setShowCsvEditor(true);
-    await fetchHistory(); setEditingBatch(null);
-  };
-
-  const handleCreateSku = async (productId) => {
-    if (!confirm('Generate and assign new SKU to this product?')) return;
     setLoading(true);
     try {
-      const res = await axios.post(`${API_URL}/products/${productId}/assign-sku`);
-      if (res.data.success) {
-        alert(`Assigned SKU: ${res.data.sku}`);
-        handleSync();
-      }
-    } catch (e) { alert('Failed: ' + (e.response?.data?.error || e.message)); }
-    finally { setLoading(false); }
+      await axios.post(`${API_URL}/upload-portal`, { rows: targetOrders });
+      await axios.post(`${API_URL}/dropbox/upload`, { orders: targetOrders });
+      setToast({ message: 'Order Placed & Saved!', type: 'success' });
+      setShowCsvEditor(false);
+      handleSync();
+    } catch (e) {
+      alert('Upload Failed: ' + (e.response?.data?.error || e.message));
+    } finally { setLoading(false); }
   };
 
   const handleCancelOrder = async (row) => {
-    if (!row?.id || !row?.orderId) {
-      alert("Missing order details for cancellation.");
+    if (!row?.id || !row?.orderId) return alert("Missing order details.");
+    
+    // Set cancelling state to show aesthetic loading/confirming screen
+    setCancellingOrder(row);
+    if (!confirm(`Are you absolutely sure you want to cancel and DELETE order ${row.orderId} from Shopify and RapidShyp?`)) {
+      setCancellingOrder(null);
       return;
     }
-    const confirmed = window.confirm(`Are you sure you want to PERMANENTLY cancel order ${row.orderId} on both Shopify and Shiprocket?`);
-    if (!confirmed) return;
 
-    setLoading(`Cancelling ${row.orderId}...`);
+    setLoading(true);
     try {
       const res = await axios.post(`${API_URL}/orders/${row.id}/cancel`, { orderName: row.orderId });
       if (res.data.success) {
-        alert(res.data.message);
-        // Remove the order from local state
+        setToast({ message: `Order ${row.orderId} Cancelled Successfully`, type: 'success' });
         const newOrders = data.orders.filter(o => o.orderId !== row.orderId);
         setData({ ...data, orders: newOrders });
-        setSelectedOrders(prev => {
-          const next = new Set(prev);
-          next.delete(row.orderId);
-          return next;
-        });
+        setSelectedOrders(prev => { const next = new Set(prev); next.delete(row.orderId); return next; });
       }
-    } catch (e) {
-      alert('Cancellation failed: ' + (e.response?.data?.error || e.message));
-    } finally {
-      setLoading(false);
+    } catch (e) { 
+      setToast({ message: 'Cancel failed: ' + (e.response?.data?.error || e.message), type: 'error' });
+    }
+    finally { 
+      setLoading(false); 
+      setCancellingOrder(null);
     }
   };
 
-  // Selection Logic
-  const toggleSelectAll = () => {
-    if (!data?.orders) return;
-    if (selectedOrders.size === data.orders.length) {
-      setSelectedOrders(new Set());
-    } else {
-      setSelectedOrders(new Set(data.orders.map(o => o.orderId)));
-    }
-  };
+  /* ─── SELECTION ─── */
 
   const toggleSelectRow = (id) => {
     if (!id) return;
     const newSet = new Set(selectedOrders);
-    if (newSet.has(id)) newSet.delete(id);
-    else newSet.add(id);
+    if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
     setSelectedOrders(newSet);
   };
 
@@ -365,631 +351,701 @@ function App() {
 
   const handleDeleteSelected = () => {
     if (selectedOrders.size === 0 || !data?.orders) return;
-    if (!confirm(`Remove ${selectedOrders.size} orders from this list? (Does not delete from Shopify)`)) return;
-
-    const remaining = data.orders.filter(o => !selectedOrders.has(o.orderId));
-    setData({ ...data, orders: remaining });
+    if (!confirm(`Remove ${selectedOrders.size} orders from this list?`)) return;
+    setData({ ...data, orders: data.orders.filter(o => !selectedOrders.has(o.orderId)) });
     setSelectedOrders(new Set());
   };
 
-  // Re-use Logic
-  const filteredOrders = React.useMemo(() => {
+  /* ─── FILTERING & GROUPING ─── */
+
+  const filteredOrders = useMemo(() => {
     if (!data?.orders || !Array.isArray(data.orders)) return [];
     return data.orders.filter(r => {
       if (!r) return false;
       const s = searchTerm.toLowerCase();
       const oid = r.orderId ? r.orderId.toString().toLowerCase() : '';
       const name = r.customerName ? r.customerName.toLowerCase() : '';
-      const matchesSearch = !searchTerm || oid.includes(s) || name.includes(s);
-
+      const phone = r.shippingDetails?.phone ? r.shippingDetails.phone.toLowerCase() : '';
+      const matchesSearch = !searchTerm || oid.includes(s) || name.includes(s) || phone.includes(s);
       let matchesFilter = true;
-      if (activeFilter === 'High Risk') matchesFilter = r.rtoRisk === 'High';
       if (activeFilter === 'Missing Device') matchesFilter = !r.model || r.model.trim() === '' || r.model.toLowerCase() === 'unknown model';
-      if (activeFilter === 'Multiple Orders') matchesFilter = (r.customerOrdersCount || 1) > 1;
-
+      if (activeFilter === 'Repeat Orders') matchesFilter = (r.customerOrdersCount || 1) > 1;
       return matchesSearch && matchesFilter;
     });
   }, [data, searchTerm, activeFilter]);
 
-  // Group line items into parent Orders
-  const groupedFilteredOrders = React.useMemo(() => {
+  const groupedFilteredOrders = useMemo(() => {
     const groups = {};
     filteredOrders.forEach(o => {
       if (!groups[o.orderId]) {
         groups[o.orderId] = {
-          orderId: o.orderId,
-          customerName: o.customerName,
-          payment: o.payment,
-          rtoRisk: o.rtoRisk,
-          hasCopiedNumberDifferentName: o.hasCopiedNumberDifferentName,
-          customerOrdersCount: o.customerOrdersCount,
-          shippingDetails: o.shippingDetails,
-          orderLink: o.orderLink,
-          shiprocketId: o.shiprocketId,
-          items: [],
-          totalCogs: 0,
-          totalItemsPrice: 0,
-          createdAt: o.createdAt
+          orderId: o.orderId, customerName: o.customerName, payment: o.payment,
+          customerOrdersCount: o.customerOrdersCount, shippingDetails: o.shippingDetails,
+          orderLink: o.orderLink, items: [],
+          totalCogs: 0, createdAt: o.createdAt
         };
       }
       groups[o.orderId].items.push(o);
       groups[o.orderId].totalCogs += (o.cogs || 0);
-      groups[o.orderId].totalItemsPrice += (o.price || 0);
     });
-    return Object.values(groups).sort((a, b) => {
-      const idA = parseInt(a.orderId) || 0;
-      const idB = parseInt(b.orderId) || 0;
-      return idB - idA; // Highest to lowest
-    });
+    return Object.values(groups).sort((a, b) => (parseInt(b.orderId) || 0) - (parseInt(a.orderId) || 0));
   }, [filteredOrders]);
 
+  const filterCounts = useMemo(() => {
+    if (!data?.orders) return {};
+    const all = data.orders;
+    return {
+      'All': all.length,
+      'Missing Device': all.filter(r => !r.model || r.model.trim() === '' || r.model.toLowerCase() === 'unknown model').length,
+      'Repeat Orders': all.filter(r => (r.customerOrdersCount || 1) > 1).length,
+    };
+  }, [data]);
+
+  const tabs = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'fulfill', label: 'Fulfill', icon: ClipboardCheck },
+    { id: 'finance', label: 'Finance', icon: TrendingUp },
+  ];
+
+  /* ─── RENDER ─── */
+
+  if (!user) return <Login />;
+
+  const isSupplier = user?.role === 'supplier';
+  
+  // Filter tabs for supplier
+  const visibleTabs = tabs.filter(t => {
+    if (isSupplier) return t.id === 'fulfill';
+    return true;
+  });
+
   return (
-    <div className="mobile-container pb-24 text-white font-sans flex flex-col">
-      {/* STICKY TOP APP BAR (Global Controls) */}
-      <div className="sticky top-0 z-50 bg-[#0A0A0A]/85 backdrop-blur-2xl border-b border-white/5 px-4 pt-[calc(env(safe-area-inset-top)+0.75rem)] pb-3 flex justify-between items-center shadow-[0_4px_30px_rgba(0,0,0,0.6)]">
+    <div className="min-h-screen relative font-sans text-[#f5f5f5]">
+      <DottedBackground />
+      <GlowBlobs />
 
-        {/* Global Nav Controls */}
-        <div className="flex items-center gap-3 w-full max-w-[400px]">
-          {/* Glowing Date Picker Pill */}
-          <div className="relative group w-full flex-1">
-            <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/50 to-purple-500/50 rounded-2xl blur-lg opacity-40 group-hover:opacity-100 transition-opacity duration-300"></div>
-            <div className="relative flex items-center justify-center gap-2 bg-[#0A0A0A]/80 hover:bg-[#0A0A0A] transition-colors px-4 py-2.5 rounded-2xl border border-white/20 backdrop-blur-3xl shadow-[0_4px_20px_rgba(0,0,0,0.5)] w-full text-center">
-              <Calendar size={16} className="text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)] absolute left-4" />
-              <DatePicker
-                selectsRange={true}
-                startDate={startDate}
-                endDate={endDate}
-                onChange={(update) => setDateRange(update)}
-                className="bg-transparent text-sm font-black text-white outline-none w-full text-center placeholder-white/50 cursor-pointer ml-4"
-                placeholderText="Select Date"
-              />
+      <div className="relative z-10 flex flex-col min-h-screen">
+
+        {/* ═══ TOP BAR ═══ */}
+        <header className="sticky top-0 z-50 glass-topbar px-5 lg:px-8 py-3">
+          <div className="max-w-[1400px] mx-auto flex items-center justify-between gap-4">
+
+            {/* Left: Date Picker */}
+            <div className="shrink-0 w-[220px]">
+              <div className="relative flex items-center gap-2.5 glass-card-sm px-4 py-2">
+                <Calendar size={14} className="text-[#e3cfd8] opacity-50 shrink-0" />
+                <DatePicker
+                  selectsRange={true}
+                  startDate={startDate}
+                  endDate={endDate}
+                  onChange={(update) => setDateRange(update)}
+                  className="bg-transparent text-[13px] font-semibold text-white outline-none w-full placeholder-[rgba(245,245,245,0.25)] cursor-pointer"
+                  placeholderText="Select dates"
+                />
+              </div>
             </div>
-          </div>
 
-          {/* Sync Button */}
-          <button onClick={handleSync} disabled={loading} className="relative group flex items-center justify-center focus:outline-none shrink-0">
-            <div className="absolute inset-0 bg-cyan-500/50 rounded-2xl blur-lg opacity-40 group-hover:opacity-100 transition-opacity duration-300"></div>
-            <div className="relative p-3 rounded-2xl bg-[#0A0A0A]/80 border border-white/20 hover:bg-[#0A0A0A] transition-colors shadow-[0_4px_20px_rgba(0,0,0,0.5)] backdrop-blur-3xl">
-              <RefreshCw size={18} className={loading ? 'animate-spin text-cyan-400' : 'text-cyan-400 drop-shadow-[0_0_8px_rgba(6,182,212,0.8)]'} />
-            </div>
-          </button>
-        </div>
-      </div>
+            {/* Center: Tabs */}
+            <nav className="absolute left-1/2 -translate-x-1/2 flex items-center gap-4">
+              {visibleTabs.map(tab => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`flex items-center gap-2 px-3 py-2 text-sm font-bold tracking-widest uppercase transition-all ${
+                      isActive
+                        ? 'text-[#e3cfd8] drop-shadow-[0_0_8px_rgba(227,207,216,0.3)]'
+                        : 'text-[rgba(245,245,245,0.3)] hover:text-[rgba(245,245,245,0.7)]'
+                    }`}
+                  >
+                    <Icon size={15} />
+                    <span className="hidden sm:inline">{tab.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
 
-      <main className="flex-1 p-4 w-full relative">
-        <AnimatePresence mode="wait">
-          {activeTab === 'dashboard' && (
-            <motion.div key="dashboard" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
-              <HomeAnalytics startDate={startDate} endDate={endDate} onNavigateToProductAnalysis={() => setActiveTab('product_analysis')} />
-            </motion.div>
-          )}
-
-          {activeTab === 'product_analysis' && (
-            <motion.div key="product_analysis" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
-              <ProductAnalysis startDate={startDate} endDate={endDate} />
-            </motion.div>
-          )}
-
-          {activeTab === 'place_order' && (
-            <motion.div key="place_order" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
-              {/* FULFILL METRICS 2x2 GRID */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="glass-card p-4 relative overflow-hidden flex flex-col justify-between h-32">
-                  <div className="absolute -top-10 -right-10 w-24 h-24 bg-cyan-500/10 blur-2xl rounded-full z-0"></div>
-                  <div className="flex justify-between items-start relative z-10">
-                    <div className="text-[10px] font-bold text-gray-400 tracking-wider">TOTAL ORDERS</div>
-                    <Package size={16} className="text-cyan-400" />
-                  </div>
-                  <div className="relative z-10">
-                    <div className="text-3xl font-bold text-white tracking-tight">{data?.stats?.totalOrders || 0}</div>
-                    <div className="text-[10px] text-gray-400 uppercase mt-1">Pending Sync</div>
-                  </div>
-                </div>
-
-                <div className="glass-card p-4 relative overflow-hidden flex flex-col justify-between h-32">
-                  <div className="absolute -bottom-10 -left-10 w-24 h-24 bg-cyan-500/10 blur-2xl rounded-full z-0"></div>
-                  <div className="flex justify-between items-start relative z-10">
-                    <div className="text-[10px] font-bold text-gray-400 tracking-wider">TOTAL UNITS</div>
-                    <Smartphone size={16} className="text-cyan-400" />
-                  </div>
-                  <div className="relative z-10">
-                    <div className="text-3xl font-bold text-white tracking-tight">{data?.stats?.totalItems || 0}</div>
-                    <div className="text-[10px] text-gray-400 uppercase mt-1">SKUs</div>
-                  </div>
-                </div>
-
-                <div className="glass-card p-4 relative overflow-hidden flex flex-col justify-between h-32 col-span-2">
-                  <div className="absolute -top-10 -left-10 w-24 h-24 bg-cyan-500/10 blur-2xl rounded-full z-0"></div>
-                  <div className="flex justify-between items-start relative z-10">
-                    <div className="text-[10px] font-bold text-gray-400 tracking-wider">SUPPLIER INVOICE TOTAL</div>
-                    <IndianRupee size={16} className="text-cyan-400" />
-                  </div>
-                  <div className="relative z-10">
-                    <div className="text-2xl font-bold text-white tracking-tight">₹{data?.stats?.total?.toFixed(0) || 0}</div>
-                    <div className="text-[10px] text-gray-400 font-medium mt-1">
-                      Includes COGS + 18% GST (Calculated across pending orders)
+            {/* Right: Search + Refresh + Settings */}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Expandable Search */}
+              <div className="relative flex items-center">
+                <AnimatePresence>
+                  {searchOpen && (
+                    <div className="relative">
+                      <motion.div
+                        initial={{ width: 0, opacity: 0 }}
+                        animate={{ width: 220, opacity: 1 }}
+                        exit={{ width: 0, opacity: 0 }}
+                        transition={{ duration: 0.3, ease: 'easeInOut' }}
+                        className="overflow-hidden mr-1"
+                      >
+                        <input
+                          ref={searchInputRef}
+                          type="text"
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          onKeyDown={handleGlobalSearch}
+                          placeholder="Global search... (Enter)"
+                          className="glass-input w-full py-1.5 px-3 text-xs rounded-xl"
+                          onBlur={() => { 
+                            // Give time for option clicks before closing
+                            setTimeout(() => {
+                               if (!searchTerm) setSearchOpen(false);
+                               setSearchOptionsOpen(false);
+                            }, 200);
+                          }}
+                        />
+                      </motion.div>
+                      
+                      {/* Search Options Dropdown */}
+                      <AnimatePresence>
+                        {searchOptionsOpen && searchedOrderOptions && (
+                           <motion.div
+                             initial={{ opacity: 0, y: -10 }}
+                             animate={{ opacity: 1, y: 0 }}
+                             exit={{ opacity: 0, y: -10 }}
+                             className="absolute top-[4.5rem] right-0 w-64 glass-card p-2 rounded-2xl flex flex-col gap-1 z-[100]"
+                           >
+                              <div className="px-3 py-1.5 text-[10px] uppercase font-bold text-[rgba(245,245,245,0.4)] tracking-widest border-b border-[rgba(227,207,216,0.1)] mb-1">
+                                Options for {searchedOrderOptions.orderId}
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setDetailModalOrder(searchedOrderOptions);
+                                  setSearchOptionsOpen(false);
+                                }}
+                                className="w-full text-left px-3 py-2 text-xs font-bold text-white hover:bg-[rgba(227,207,216,0.08)] rounded-xl transition-colors"
+                              >
+                                1. Open Details
+                              </button>
+                              {!isSupplier && (
+                                <a
+                                  href={searchedOrderOptions.orderLink || '#'}
+                                  target="_blank"
+                                  className="w-full text-left px-3 py-2 text-xs font-bold text-white hover:bg-[rgba(227,207,216,0.08)] rounded-xl transition-colors block"
+                                >
+                                  2. Open in Shopify
+                                </a>
+                              )}
+                                <a
+                                  href={`https://seller.rapidshyp.com/orders?search=${searchedOrderOptions.orderId.replace('#', '')}`} 
+                                  target="_blank"
+                                  className="w-full text-left px-3 py-2 text-xs font-bold text-white hover:bg-[rgba(227,207,216,0.08)] rounded-xl transition-colors block"
+                                >
+                                  3. Open in RapidShyp
+                                </a>
+                           </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
-                  </div>
-                </div>
+                  )}
+                </AnimatePresence>
+                <button
+                  onClick={() => { 
+                    setSearchOpen(!searchOpen); 
+                    if (searchOpen) { 
+                      setSearchTerm(''); 
+                      setSearchOptionsOpen(false);
+                      handleSync(); 
+                    } 
+                  }}
+                  className="glass-icon-btn"
+                >
+                  {searchOpen ? <X size={15} /> : <Search size={15} />}
+                </button>
               </div>
 
+              {/* Refresh */}
+              <button onClick={handleSync} disabled={loading} className="glass-icon-btn" title="Refresh">
+                <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+              </button>
 
+              {/* Settings (Hidden for Supplier) */}
+              {!isSupplier && (
+                <button
+                  onClick={() => setActiveTab('settings')}
+                  className={`glass-icon-btn ${activeTab === 'settings' ? 'text-[#e3cfd8] bg-[rgba(227,207,216,0.08)]' : ''}`}
+                  title="Settings"
+                >
+                  <Settings size={15} />
+                </button>
+              )}
 
+              {/* Logout */}
+              <button
+                onClick={logout}
+                className="glass-icon-btn hover:text-[#ffb6c1] hover:bg-[rgba(255,182,193,0.1)] transition-colors ml-2"
+                title="Logout"
+              >
+                <LogOut size={15} />
+              </button>
+            </div>
+          </div>
+        </header>
 
-              <div className="glass-card min-h-[500px] p-4 md:p-6 mb-24 mt-6">
-                <div className="flex flex-col gap-4 mb-6 pt-2">
-                  <div className="flex justify-between items-center px-1">
-                    <h3 className="text-2xl font-black text-white glow-text tracking-wider uppercase flex items-center gap-3">
-                      Review Orders
-                      {selectedOrders.size > 0 && (
-                        <span className="text-xs font-bold bg-white/10 text-white px-2 py-0.5 rounded-full backdrop-blur-md border border-white/10">
-                          {selectedOrders.size}
-                        </span>
-                      )}
-                    </h3>
+        <main className="flex-1 px-5 lg:px-8 py-6 max-w-[1400px] mx-auto w-full">
 
-                    {data && data.orders && data.orders.length > 0 && selectedOrders.size === 0 && (
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => {
-                            setCsvPreviewData(data?.orders || []); setShowCsvEditor(true);
-                          }}
-                          className="w-10 h-10 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/20 hover:text-cyan-300 transition-all flex items-center justify-center shadow-[0_0_15px_rgba(34,211,238,0.2)]"
-                        >
-                          <Download size={18} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
+          <AnimatePresence mode="wait">
 
-                  {/* Quick Filter Pills */}
-                  <div className="flex justify-between items-center mt-2 px-1">
-                    <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar flex-1">
-                      {['All', 'High Risk', 'Missing Device', 'Multiple Orders'].map(f => (
-                        <button
-                          key={f}
-                          onClick={() => setActiveFilter(f)}
-                          className={`px-5 py-2.5 rounded-full text-xs font-bold whitespace-nowrap transition-all border shadow-sm tracking-wide ${activeFilter === f ? 'bg-white text-black border-white glow-text' : 'bg-white/5 text-gray-400 border-white/10 hover:bg-white/10 hover:text-white'} `}
-                        >
-                          {f} {activeFilter === f && `(${filteredOrders.length})`}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+            {/* ═══ DASHBOARD TAB ═══ */}
+            {activeTab === 'dashboard' && (
+              <motion.div key="dashboard" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                <div className="flex flex-col items-center justify-center pt-48 pb-20">
+                  <img src="/logo.png" alt="GRLHOOD" className="w-[80vw] max-w-[500px] object-contain opacity-90 drop-shadow-[0_0_60px_rgba(227,207,216,0.08)] logo-tint" />
+                  <p className="text-sm text-[rgba(245,245,245,0.2)] mt-12 tracking-widest uppercase">Coming Soon</p>
                 </div>
+              </motion.div>
+            )}
 
-                {!data ? (
-                  <div className="flex flex-col items-center justify-center py-32 opacity-20">
-                    <Box size={64} />
-                    <div className="mt-4 font-medium">No Data Synced</div>
-                  </div>
-                ) : (
-                  <div className="space-y-6 pb-20">
-                    {groupedFilteredOrders.map((group, i) => {
-                      const isExpanded = expandedOrders.has(group.orderId);
-                      return (
-                        <div key={group.orderId} className={`glass-card overflow-hidden transition-all ${selectedOrders.has(group.orderId) ? 'ring-2 ring-cyan-500/50 bg-cyan-900/10' : ''}`}>
+            {/* ═══ FULFILL TAB ═══ */}
+            {activeTab === 'fulfill' && (
+              <motion.div key="fulfill" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
 
-                          {/* Parent Order Header (Always Visible) */}
-                          <div
-                            className="p-5 md:p-6 flex flex-col gap-4"
-                            onPointerDown={() => !selectionMode && handlePressStart(group.orderId)}
-                            onPointerUp={handlePressEnd}
-                            onPointerLeave={handlePressEnd}
+                {/* Hero: Logo only (before data) */}
+                {!data && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.6 }}
+                    className="flex flex-col items-center justify-center pt-32 pb-20"
+                  >
+                    <img src="/logo.png" alt="GRLHOOD" className="w-[80vw] max-w-[400px] object-contain opacity-90 drop-shadow-[0_0_60px_rgba(227,207,216,0.08)] logo-tint" />
+                  </motion.div>
+                )}
+
+                {data && (
+                  <>
+                    {/* BIG GRLHOOD LOGO INSIDE DASHBOARD */}
+                    <div className="flex justify-center mb-16 mt-12 w-full pt-4">
+                      <img src="/logo.png" alt="GRLHOOD" className="w-[80vw] max-w-[280px] object-contain drop-shadow-[0_0_25px_rgba(227,207,216,0.15)] opacity-90 logo-tint" />
+                    </div>
+
+                    {/* Stats Row */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-7">
+                      <SpotlightCard className="p-5 relative overflow-hidden">
+                        <div className="absolute -top-10 -right-10 w-24 h-24 bg-[rgba(227,207,216,0.04)] blur-3xl rounded-full" />
+                        <div className="flex justify-between items-start relative z-10 mb-3">
+                          <div className="text-[9px] font-bold text-[rgba(245,245,245,0.35)] tracking-[0.15em] uppercase">Orders</div>
+                          <div className="p-1.5 rounded-lg bg-[rgba(227,207,216,0.06)]"><Package size={14} className="text-[#e3cfd8]" /></div>
+                        </div>
+                        <div className="text-3xl font-black text-white tracking-tight">{data?.stats?.totalOrders || 0}</div>
+                      </SpotlightCard>
+
+                      <SpotlightCard className="p-5 relative overflow-hidden">
+                        <div className="absolute -bottom-10 -left-10 w-24 h-24 bg-[rgba(227,207,216,0.04)] blur-3xl rounded-full" />
+                        <div className="flex justify-between items-start relative z-10 mb-3">
+                          <div className="text-[9px] font-bold text-[rgba(245,245,245,0.35)] tracking-[0.15em] uppercase">Units</div>
+                          <div className="p-1.5 rounded-lg bg-[rgba(227,207,216,0.06)]"><Smartphone size={14} className="text-[#e3cfd8]" /></div>
+                        </div>
+                        <div className="text-3xl font-black text-white tracking-tight">{data?.stats?.totalItems || 0}</div>
+                      </SpotlightCard>
+
+                      <SpotlightCard className="p-5 relative overflow-hidden">
+                        <div className="absolute -top-10 -left-10 w-24 h-24 bg-[rgba(227,207,216,0.04)] blur-3xl rounded-full" />
+                        <div className="flex justify-between items-start relative z-10 mb-3">
+                          <div className="text-[9px] font-bold text-[rgba(245,245,245,0.35)] tracking-[0.15em] uppercase">Invoice Total (incl. GST)</div>
+                          <div className="p-1.5 rounded-lg bg-[rgba(227,207,216,0.06)]"><IndianRupee size={14} className="text-[#e3cfd8]" /></div>
+                        </div>
+                        <div className="text-3xl font-black text-white tracking-tight">₹{data?.stats?.total?.toFixed(0) || 0}</div>
+                      </SpotlightCard>
+                    </div>
+
+                    {/* Filter Bar */}
+                    <div className="flex items-center justify-between gap-4 mb-5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {['All', 'Missing Device', 'Repeat Orders'].map(f => (
+                          <button
+                            key={f}
+                            onClick={() => setActiveFilter(f)}
+                            className={`glass-pill text-[11px] font-bold tracking-wider cursor-pointer transition-all ${
+                              activeFilter === f
+                                ? 'glass-pill-active'
+                                : 'text-[rgba(245,245,245,0.35)] hover:text-[rgba(245,245,245,0.6)] hover:border-[rgba(227,207,216,0.12)]'
+                            }`}
                           >
-                            <div className="flex justify-between items-start">
-                              <div className="flex items-start gap-4 w-full max-w-[75%]">
-                                {selectionMode && (
-                                  <div
-                                    onClick={(e) => { e.stopPropagation(); toggleSelectRow(group.orderId); }}
-                                    className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 mt-1 cursor-pointer transition-colors ${selectedOrders.has(group.orderId) ? 'border-cyan-400 bg-cyan-500/20' : 'border-white/20 bg-black/20'}`}
-                                  >
-                                    {selectedOrders.has(group.orderId) && <div className="w-2.5 h-2.5 rounded-sm bg-cyan-400"></div>}
-                                  </div>
-                                )}
-                                <div className="min-w-0 flex-1 cursor-pointer" onClick={() => { if (selectionMode) { toggleSelectRow(group.orderId); } else { toggleOrderExpanded(group.orderId); } }}>
-                                  <div className="font-mono font-bold text-white text-lg lg:text-xl flex items-center gap-2">
-                                    {group.orderId}
-                                    <div className="p-1 rounded bg-white/5 text-gray-400">
-                                      {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                                    </div>
-                                  </div>
-                                  <div className="text-sm text-gray-400 font-medium truncate mt-1">{group.customerName}</div>
-                                  {group.createdAt && (
-                                    <div className="text-[10px] text-gray-500 font-medium mt-0.5">
-                                      {new Date(group.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} • {new Date(group.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
-                                    </div>
-                                  )}
+                            {f} {filterCounts[f] !== undefined && filterCounts[f] > 0 ? `(${filterCounts[f]})` : ''}
+                          </button>
+                        ))}
+                      </div>
 
-                                  {/* Order-level Tags (Aligned under text) */}
-                                  <div className="flex flex-wrap gap-2 mt-3">
-                                    <span className={`text-[10px] uppercase font-black px-2 py-0.5 rounded shadow-sm border whitespace-nowrap ${group.payment === 'Prepaid' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'}`}>
+                      {data.orders && data.orders.length > 0 && selectedOrders.size === 0 && (
+                        <button
+                          onClick={() => { setCsvPreviewData(data?.orders || []); setShowCsvEditor(true); }}
+                          className="glass-btn flex items-center gap-2 px-4 py-2 rounded-xl text-xs"
+                        >
+                          <Download size={13} className="text-[#e3cfd8]" />
+                          <span className="font-bold tracking-wider uppercase">Export All</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Order Count */}
+                    <div className="flex items-center justify-between mb-4 px-1">
+                      <div className="text-xs text-[rgba(245,245,245,0.25)] font-medium tracking-wider">
+                        {groupedFilteredOrders.length} order{groupedFilteredOrders.length !== 1 ? 's' : ''}
+                      </div>
+                    </div>
+
+                    {/* ═══ ORDER CARDS ═══ */}
+                    <div className="grid grid-cols-1 gap-5 pb-24">
+                      {groupedFilteredOrders.map((group) => {
+                        const isExpanded = expandedOrders.has(group.orderId);
+                        const isSelected = selectedOrders.has(group.orderId);
+                        const isRepeat = (group.customerOrdersCount || 1) > 1;
+                        const totalCogs = group.items.reduce((sum, item) => sum + (item.cogs || 0), 0);
+
+                        return (
+                          <motion.div
+                            key={group.orderId}
+                            initial={{ opacity: 0, y: 30 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            viewport={{ once: true, margin: "-10px" }}
+                            transition={{ duration: 0.5, ease: "easeOut" }}
+                          >
+                            <SpotlightCard
+                              className={`overflow-hidden transition-all ${isSelected ? 'ring-1 ring-[rgba(227,207,216,0.25)] bg-[rgba(227,207,216,0.02)]' : ''}`}
+                            >
+                            {/* Card Header */}
+                            <div
+                              className="p-5 cursor-pointer"
+                              onClick={() => { if (selectionMode) toggleSelectRow(group.orderId); else toggleOrderExpanded(group.orderId); }}
+                              onPointerDown={() => !selectionMode && handlePressStart(group.orderId)}
+                              onPointerUp={handlePressEnd}
+                              onPointerLeave={handlePressEnd}
+                            >
+                              <div className="flex justify-between items-start gap-4">
+                                <div className="min-w-0 flex-1">
+                                  {/* Order ID + Expand */}
+                                  <div className="flex items-center gap-2.5 mb-1.5">
+                                    {selectionMode && (
+                                      <div
+                                        onClick={(e) => { e.stopPropagation(); toggleSelectRow(group.orderId); }}
+                                        className={`w-4.5 h-4.5 rounded-md border-2 flex items-center justify-center shrink-0 cursor-pointer transition-all ${isSelected ? 'border-[#e3cfd8] bg-[rgba(227,207,216,0.15)]' : 'border-[rgba(245,245,245,0.12)]'}`}
+                                      >
+                                        {isSelected && <div className="w-2 h-2 rounded-sm bg-[#e3cfd8]" />}
+                                      </div>
+                                    )}
+                                    <span className="font-mono font-black text-base text-white">{group.orderId}</span>
+                                    <div className="p-0.5 rounded bg-[rgba(245,245,245,0.04)]">
+                                      {isExpanded ? <ChevronUp size={12} className="text-[rgba(245,245,245,0.3)]" /> : <ChevronDown size={12} className="text-[rgba(245,245,245,0.3)]" />}
+                                    </div>
+                                  </div>
+
+                                  {/* Customer Name */}
+                                  <div className="text-sm text-[rgba(245,245,245,0.45)] font-medium truncate">{group.customerName}</div>
+
+                                  {/* Tags: Payment + Repeat */}
+                                  <div className="flex items-center gap-1.5 mt-2.5">
+                                    <span className={`text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider ${group.payment === 'Prepaid' ? 'badge-prepaid' : 'badge-cod'}`}>
                                       {group.payment || 'Prepaid'}
                                     </span>
-                                    <span className={`flex items-center gap-1 text-[10px] uppercase font-black px-2 py-0.5 rounded shadow-sm border whitespace-nowrap ${group.rtoRisk === 'High' ? 'bg-red-500/10 text-red-400 border-red-500/20' : group.rtoRisk === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : group.rtoRisk === 'Low' ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-gray-500/10 text-gray-400 border-gray-500/20'}`}>
-                                      <AlertTriangle size={10} /> {group.rtoRisk || 'Unknown'} Risk
+                                    <span className="text-[9px] uppercase font-bold px-2.5 py-0.5 rounded-full tracking-wider bg-[rgba(245,245,245,0.04)] text-[rgba(245,245,245,0.35)] border border-[rgba(245,245,245,0.06)]">
+                                      {group.items.length} unit{group.items.length > 1 ? 's' : ''}
                                     </span>
-                                    <span className={`text-[10px] uppercase font-black px-2 py-0.5 rounded shadow-sm border whitespace-nowrap ${group.customerOrdersCount > 1 ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-gray-500/10 text-gray-400 border-gray-500/20'}`}>
-                                      {group.customerOrdersCount > 1 ? `Repeat (${group.customerOrdersCount})` : 'New Customer'}
-                                    </span>
-                                    {group.hasCopiedNumberDifferentName && (
-                                      <span className="flex items-center gap-1 text-[10px] uppercase font-black px-2 py-0.5 rounded shadow-sm border whitespace-nowrap bg-purple-500/10 text-purple-400 border-purple-500/20">
-                                        <AlertTriangle size={10} /> Copied #
+                                    {isRepeat && (
+                                      <span className="text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider bg-[rgba(99,102,241,0.08)] border border-[rgba(99,102,241,0.15)] text-indigo-400">
+                                        Repeat ({group.customerOrdersCount})
+                                      </span>
+                                    )}
+                                    {group.items[0].awb && (
+                                      <span className="text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider bg-[rgba(227,207,216,0.12)] border border-[rgba(227,207,216,0.25)] text-[#e3cfd8] glow-text">
+                                        Label Generated
                                       </span>
                                     )}
                                   </div>
                                 </div>
-                              </div>
 
-                              <div className="text-right shrink-0 flex flex-col items-end">
-                                <div className="text-[10px] text-gray-400 uppercase font-black tracking-widest leading-none mb-1 text-right">Total Invoice</div>
-                                <div className="text-xl font-black text-cyan-400 glow-text leading-none text-right">₹{group.items.reduce((sum, item) => sum + (item.cogs || 0) + (item.gst || 0), 0).toFixed(0)}</div>
-                                <div className="text-[10px] font-bold text-gray-500 mt-1 uppercase tracking-widest bg-white/5 px-2 py-0.5 rounded text-right">{group.items.length} Unit{group.items.length > 1 ? 's' : ''}</div>
+                                {/* COGS */}
+                                <div className="text-right shrink-0">
+                                  <div className="text-[9px] text-[rgba(245,245,245,0.25)] uppercase font-bold tracking-[0.12em] mb-1">COGS</div>
+                                  <div className="text-lg font-black text-[#e3cfd8] glow-text">₹{totalCogs}</div>
+                                </div>
                               </div>
                             </div>
-                          </div>
 
-                          {/* Expanded Area: Line Items & Footer Actions */}
-                          <AnimatePresence>
-                            {isExpanded && (
-                              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-                                <div className="border-t border-white/5 bg-black/20 p-4 md:p-5 flex flex-col gap-4">
+                            {/* Expanded */}
+                            <AnimatePresence>
+                              {isExpanded && (
+                                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                                  <div className="border-t border-[rgba(227,207,216,0.05)] bg-[rgba(0,0,0,0.12)] p-4 flex flex-col gap-2.5">
 
-                                  {/* Line Items List */}
-                                  <div className="space-y-3">
+                                    {/* Order Details Grid */}
+                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-[rgba(245,245,245,0.02)] p-3 rounded-xl border border-[rgba(227,207,216,0.05)] mb-2">
+                                      <div>
+                                        <div className="text-[9px] uppercase font-bold text-[rgba(245,245,245,0.3)] tracking-widest mb-1">Date</div>
+                                        <div className="text-xs font-medium text-[rgba(245,245,245,0.8)]">{new Date(group.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                                      </div>
+                                      <div>
+                                        <div className="text-[9px] uppercase font-bold text-[rgba(245,245,245,0.3)] tracking-widest mb-1">Phone</div>
+                                        <div className="text-xs font-mono text-[rgba(245,245,245,0.8)]">{group.shippingDetails?.phone || group.customer?.phone || 'N/A'}</div>
+                                      </div>
+                                      <div className="col-span-2">
+                                        <div className="text-[9px] uppercase font-bold text-[rgba(245,245,245,0.3)] tracking-widest mb-1">Shipping Address</div>
+                                        <div className="text-xs font-medium text-[rgba(245,245,245,0.6)] truncate">
+                                          {group.shippingDetails?.address1}, {group.shippingDetails?.city}, {group.shippingDetails?.zip}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Line Items */}
                                     {group.items.map((item, idx) => (
-                                      <div key={idx} className="bg-black/30 rounded-xl p-3 border border-white/5 flex gap-3">
+                                      <div key={idx} className="glass-card-sm p-3 flex gap-3">
                                         {item.thumbnail ? (
-                                          <img src={item.thumbnail} className="w-12 h-12 rounded-lg object-cover bg-white/5" />
+                                          <img src={item.thumbnail} className="w-10 h-10 rounded-xl object-cover border border-[rgba(227,207,216,0.05)]" />
                                         ) : (
-                                          <div className="w-12 h-12 rounded-lg bg-white/5 flex items-center justify-center shrink-0">
-                                            <Package size={20} className="text-gray-500" />
+                                          <div className="w-10 h-10 rounded-xl bg-[rgba(227,207,216,0.03)] flex items-center justify-center shrink-0">
+                                            <Package size={16} className="text-[rgba(245,245,245,0.12)]" />
                                           </div>
                                         )}
                                         <div className="flex-1 min-w-0">
-                                          <div className="font-bold text-white text-sm line-clamp-1">{item.category || 'Unknown Product'}</div>
-                                          <div className="text-xs text-gray-400 mt-1 truncate">{item.model || 'Unknown Model'} {item.sku && `• ${item.sku}`}</div>
+                                          <div className="font-bold text-[#f5f5f5] text-sm truncate">{item.category || 'Unknown'}</div>
+                                          <div className="text-xs text-[rgba(245,245,245,0.3)] mt-0.5 truncate">{item.model || 'Unknown Model'} {item.sku && `• ${item.sku}`}</div>
                                         </div>
-                                        <div className="text-right flex flex-col justify-end shrink-0 pl-2">
-                                          <div className="text-[10px] text-gray-500 uppercase font-black tracking-widest">COGS</div>
-                                          <div className="font-bold text-cyan-400 text-sm">₹{item.cogs || 0}</div>
+                                        <div className="text-right shrink-0">
+                                          <div className="text-[8px] text-[rgba(245,245,245,0.2)] uppercase font-bold tracking-wider">COGS</div>
+                                          <div className="font-bold text-[#e3cfd8] text-sm">₹{item.cogs || 0}</div>
                                         </div>
                                       </div>
                                     ))}
-                                  </div>
 
-                                  {/* Action Footer */}
-                                  <div className="pt-2 mt-1 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
-                                    <div className="flex items-center gap-2">
-                                      {group.shiprocketId && (
-                                        <a href={`https://app.shiprocket.in/seller/orders/details/${group.shiprocketId}`} target="_blank" className="p-2 rounded-xl bg-white/5 text-indigo-400 hover:bg-white/10 transition-colors border border-white/5 shrink-0">
-                                          <Truck size={16} />
+                                    {/* Actions */}
+                                    <div className="pt-2 mt-1 border-t border-[rgba(227,207,216,0.05)] flex flex-wrap items-center justify-between gap-2">
+                                      <div className="flex items-center gap-1.5">
+                                        <a href={group.orderLink || '#'} target="_blank" className="glass-icon-btn-sm">
+                                          <ExternalLink size={13} />
                                         </a>
-                                      )}
-                                      <a href={group.orderLink || '#'} target="_blank" className="p-2 rounded-xl bg-white/5 text-gray-400 hover:text-white transition-colors border border-white/5 shrink-0">
-                                        <ExternalLink size={16} />
-                                      </a>
-                                      <button
-                                        onClick={() => {
-                                          if (group.shippingDetails?.phone) {
-                                            window.location.href = `tel:${group.shippingDetails.phone}`;
-                                          }
-                                          setEditingOrder(group.items);
-                                        }}
-                                        className="p-2 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 hover:bg-green-500/20 transition-colors flex items-center gap-2 font-bold text-xs shrink-0"
-                                      >
-                                        <Smartphone size={16} /> Call {group.shippingDetails?.phone ? '' : '(Add)'}
-                                      </button>
-                                      {group.shippingDetails?.phone && (
                                         <a
-                                          href={`https://wa.me/${group.shippingDetails.phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${group.customerName}, this is GRLHOOD! 🌸\n\nWe noticed you forgot to mention your Phone Model in your recent order. Could you please share it so we can dispatch your order soon? 📱✨`)}`}
+                                          href={`https://seller.rapidshyp.com/orders?search=${group.orderId.replace('#', '')}`}
                                           target="_blank"
-                                          className="p-2 rounded-xl bg-[#25D366]/10 border border-[#25D366]/20 text-[#25D366] hover:bg-[#25D366]/20 transition-colors shrink-0"
-                                          title="WhatsApp - Ask Phone Model"
+                                          className="glass-icon-btn-sm"
+                                          title="Open in RapidShyp"
                                         >
-                                          <MessageSquare size={16} />
+                                          <ExternalLink size={13} />
                                         </a>
-                                      )}
-                                    </div>
-
-                                    <div className="flex gap-2">
-                                      <button onClick={() => setEditingOrder(group.items)} className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-white text-xs font-bold transition-colors flex items-center gap-2">
-                                        <Edit3 size={14} /> Edit
-                                      </button>
-                                      <button onClick={() => handleCancelOrder(group.items[0])} className="px-4 py-2 rounded-xl bg-red-500/10 text-red-400 text-xs font-bold border border-red-500/20 hover:bg-red-500/20 flex items-center gap-2 transition-colors">
-                                        <XOctagon size={14} /> Cancel
-                                      </button>
+                                        <button
+                                          onClick={() => {
+                                            const phone = group.shippingDetails?.phone || group.customer?.phone;
+                                            if (phone) window.location.href = `tel:${phone}`;
+                                          }}
+                                          className="glass-icon-btn-sm text-[#e3cfd8]"
+                                        >
+                                          <Phone size={13} />
+                                        </button>
+                                        {(() => {
+                                          const phone = group.shippingDetails?.phone || group.customer?.phone;
+                                          return phone ? (
+                                            <a
+                                              href={`https://wa.me/${phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${group.customerName}, this is GRLHOOD! 🌸\n\nWe noticed you forgot to mention your Phone Model in your recent order. Could you please share it so we can dispatch your order soon? 📱✨`)}`}
+                                              target="_blank"
+                                              className="glass-icon-btn-sm text-[#25D366]"
+                                            >
+                                              <MessageSquare size={13} />
+                                            </a>
+                                          ) : null;
+                                        })()}
+                                      </div>
+                                      <div className="flex gap-1.5">
+                                        {group.items[0].awb && (
+                                          <button 
+                                            onClick={() => handleDownloadLabel([group.items[0].shiprocketId])} 
+                                            className="glass-btn px-3.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 bg-[rgba(227,207,216,0.1)] text-[#e3cfd8] border-[rgba(227,207,216,0.3)] hover:brightness-125"
+                                          >
+                                            <FileText size={12} /> Label
+                                          </button>
+                                        )}
+                                        <button onClick={() => setEditingOrder(group.items)} className="glass-btn px-3.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5">
+                                          <Edit3 size={12} /> Edit
+                                        </button>
+                                        <button onClick={() => handleCancelOrder(group.items[0])} className="px-3.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 risk-high border-none cursor-pointer hover:brightness-125 transition-all">
+                                          <XOctagon size={12} /> Cancel
+                                        </button>
+                                      </div>
                                     </div>
                                   </div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </SpotlightCard>
+                        </motion.div>
+                        );
+                      })}
+                    </div>
 
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
-
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          )}
-
-          {activeTab === 'history' && (
-            <motion.div key="history" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }} className="space-y-8">
-              <div className="panel-dark">
-                <h2 className="text-2xl font-bold mb-8">History</h2>
-                <div className="space-y-4">
-                  {historyData.map(batch => (
-                    <div key={batch.id} className="flex items-center justify-between p-4 bg-[#1A1A1A] rounded-2xl border border-white/5 hover:border-white/10 transition-colors">
-                      <div className="flex items-center gap-4">
-                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl font-bold ${batch.type === 'DOWNLOAD' ? 'bg-cyan-500/10 text-cyan-400' : 'bg-purple-500/10 text-purple-400'}`}>
-                          {batch.type === 'DOWNLOAD' ? 'DL' : 'EM'}
-                        </div>
-                        <div>
-                          <div className="font-bold">{batch.count} Orders</div>
-                          <div className="text-xs text-gray-500">{new Date(batch.timestamp).toLocaleString()} • ID: {batch.id}</div>
-                        </div>
+                    {groupedFilteredOrders.length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-24 opacity-25">
+                        <Box size={48} />
+                        <div className="mt-4 font-medium tracking-wider text-sm">No matching orders</div>
                       </div>
-                      <button onClick={() => setEditingBatch(JSON.parse(JSON.stringify(batch)))} className="px-5 py-2 rounded-lg bg-black/40 border border-white/10 hover:bg-white/10 transition-colors font-bold text-sm">Edit</button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {activeTab === 'supplier' && (
-            <motion.div key="supplier" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <SupplierDashboard />
-            </motion.div>
-          )}
-
-          {activeTab === 'financials' && (
-            <motion.div key="financials" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-              <FinancialDashboard />
-            </motion.div>
-          )}
-
-        </AnimatePresence>
-
-        {/* Edit Order Modal */}
-        <EditOrderModal
-          isOpen={!!editingOrder}
-          onClose={() => setEditingOrder(null)}
-          order={editingOrder}
-          onSave={handleSaveEdit}
-        />        <AnimatePresence>
-          {editingBatch && (
-            <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-xl flex items-center justify-center p-8">
-              <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-[#111111] w-full max-w-6xl h-[90vh] rounded-3xl border border-white/10 flex flex-col overflow-hidden shadow-2xl">
-                <div className="p-6 border-b border-white/5 flex justify-between items-center bg-[#151515]">
-                  <h3 className="font-bold text-lg">Editing Batch {editingBatch.id}</h3>
-                  <div className="flex gap-3">
-                    <button onClick={() => {
-                      const newRow = { orderId: 'NEW', category: '', model: '', customerName: '', cogs: 0, sku: '', payment: 'Prepaid' };
-                      setEditingBatch({ ...editingBatch, rows: [newRow, ...editingBatch.rows] });
-                    }} className="px-4 py-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-lg hover:bg-blue-500/20 font-bold text-sm flex items-center gap-2"><Plus size={16} /> Add Row</button>
-                    <button onClick={() => setEditingBatch(null)} className="px-4 py-2 hover:bg-white/5 rounded-lg text-gray-400">Cancel</button>
-                    <button onClick={saveHistory} className="px-6 py-2 bg-white text-black font-bold rounded-lg flex items-center gap-2 hover:bg-gray-200"><Save size={16} /> Save & Download</button>
-                  </div>
-                </div>
-                <div className="flex-1 overflow-auto p-0">
-                  <table className="w-full text-left">
-                    <thead className="sticky top-0 bg-[#0F0F0F] z-10 text-xs text-gray-500 uppercase font-bold">
-                      <tr>
-                        <th className="p-4">Action</th>
-                        <th className="p-4">ID</th>
-                        <th className="p-4">Category</th>
-                        <th className="p-4">Model</th>
-                        <th className="p-4">SKU</th>
-                        <th className="p-4">Customer</th>
-                        <th className="p-4 text-right">COGS</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5">
-                      {editingBatch.rows.map((r, i) => (
-                        <tr key={i} className="hover:bg-white/5">
-                          <td className="p-4"><button onClick={() => { const n = [...editingBatch.rows]; n.splice(i, 1); setEditingBatch({ ...editingBatch, rows: n }) }} className="text-red-500 opacity-50 hover:opacity-100"><Trash2 size={16} /></button></td>
-                          <td className="p-4"><input value={r.orderId} onChange={(e) => { const n = [...editingBatch.rows]; n[i].orderId = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-20 text-cyan-400 font-mono" /></td>
-                          <td className="p-4"><input value={r.category} onChange={(e) => { const n = [...editingBatch.rows]; n[i].category = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-white" /></td>
-                          <td className="p-4"><input value={r.model} onChange={(e) => { const n = [...editingBatch.rows]; n[i].model = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-gray-400 focus:text-lime-400" /></td>
-                          <td className="p-4"><input value={r.sku || ''} onChange={(e) => { const n = [...editingBatch.rows]; n[i].sku = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-24 text-gray-500 font-mono text-xs" placeholder="SKU" /></td>
-                          <td className="p-4"><input value={r.customerName || ''} onChange={(e) => { const n = [...editingBatch.rows]; n[i].customerName = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-full text-gray-300" placeholder="Customer" /></td>
-                          <td className="p-4 text-right"><input value={r.cogs} type="number" onChange={(e) => { const n = [...editingBatch.rows]; n[i].cogs = e.target.value; setEditingBatch({ ...editingBatch, rows: n }) }} className="bg-transparent outline-none w-20 text-right text-gray-300" /></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
-
-        <AnimatePresence>
-          {walletPopup && (
-            <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-8">
-              <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="bg-[#1A1A1A] w-full max-w-md rounded-3xl border border-white/10 p-8 flex flex-col items-center text-center shadow-2xl relative">
-                {/* Close Button */}
-                <button
-                  onClick={() => setWalletPopup(null)}
-                  className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-gray-400 hover:text-white transition-all"
-                >
-                  <X size={16} />
-                </button>
-
-                <div className="w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center text-red-500 mb-6">
-                  <IndianRupee size={32} />
-                </div>
-                <h3 className="text-2xl font-bold text-white mb-2">Insufficient Funds</h3>
-                <p className="text-gray-400 text-sm mb-6">
-                  Your Shiprocket wallet doesn't have enough balance to process{' '}
-                  <b className="text-white">{walletPopup.orderCount || 0} orders</b>.
-                </p>
-
-                {/* Balance Breakdown */}
-                <div className="bg-black/40 rounded-xl p-4 w-full mb-4 border border-white/5">
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-gray-500">Current Balance</span>
-                    <span className="text-white font-mono">₹{walletPopup.currentBalance}</span>
-                  </div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span className="text-gray-500">Required (Est.)</span>
-                    <span className="text-orange-400 font-mono">₹{walletPopup.estimatedCost}</span>
-                  </div>
-                  <div className="h-px bg-white/10 my-2"></div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-gray-400 font-semibold">You Need to Add</span>
-                    <span className="text-red-400 font-mono font-bold">₹{walletPopup.shortfall || (walletPopup.estimatedCost - walletPopup.currentBalance)}</span>
-                  </div>
-                </div>
-
-                {/* Cost Breakdown */}
-                {walletPopup.avgCostPerOrder && (
-                  <div className="bg-blue-500/10 rounded-lg p-3 w-full mb-6 border border-blue-500/20">
-                    <div className="text-xs text-blue-300 mb-1">Estimate Breakdown</div>
-                    <div className="text-sm text-white">
-                      {walletPopup.orderCount} orders × ₹{walletPopup.avgCostPerOrder} avg. = ₹{walletPopup.estimatedCost}
-                    </div>
-                    <div className="text-xs text-gray-400 mt-1">
-                      Based on your historical shipping costs + 10% safety margin
-                    </div>
-                  </div>
+                    )}
+                  </>
                 )}
+              </motion.div>
+            )}
 
-                <div className="flex gap-3 w-full">
-                  <button
-                    onClick={() => setWalletPopup(null)}
-                    className="flex-1 bg-gray-800 text-white py-3 rounded-xl font-bold hover:bg-gray-700 transition-colors border border-white/10"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => setWalletPopup(null)}
-                    className="flex-1 bg-white text-black py-3 rounded-xl font-bold hover:bg-gray-200 transition-colors"
-                  >
-                    I've Added Funds
-                  </button>
-                </div>
-                <div className="mt-4 text-xs text-gray-600">
-                  Add ₹{walletPopup.shortfall || 0}+ to your Shiprocket wallet and try again.
+            {/* ═══ FINANCE TAB ═══ */}
+            {activeTab === 'finance' && (
+              <motion.div key="finance" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                <div className="flex flex-col items-center justify-center py-28">
+                  <img src="/logo.png" alt="GRLHOOD" className="w-56 h-56 object-contain opacity-80 drop-shadow-[0_0_60px_rgba(227,207,216,0.08)]" />
+                  <p className="text-sm text-[rgba(245,245,245,0.2)] mt-8 tracking-widest uppercase">Coming Soon</p>
                 </div>
               </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
+            )}
 
-        <AnimatePresence>
-          {loading === 'success_label' && (
-            <div className="fixed inset-0 z-[200] bg-black/90 backdrop-blur-xl flex items-center justify-center p-8">
-              <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="bg-[#1A1A1A] w-full max-w-md rounded-3xl border border-white/10 p-8 flex flex-col items-center text-center shadow-2xl">
-                <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center text-green-500 mb-6">
-                  <Truck size={32} />
-                </div>
-                <h3 className="text-2xl font-bold text-white mb-2">Labels Generated!</h3>
-                <div className="space-y-4 w-full mt-4">
-                  {data?.labelUrl && (
-                    <a href={data.labelUrl} target="_blank" className="block w-full bg-indigo-600 text-white p-4 rounded-xl font-bold hover:bg-indigo-500 transition-colors">
-                      Download Labels (PDF)
-                    </a>
-                  )}
-                  {data?.highRiskUrl && (
-                    <a href={data.highRiskUrl} download="HIGH_RISK.csv" className="block w-full bg-red-900/40 text-red-200 border border-red-500/40 p-4 rounded-xl font-bold hover:bg-red-900/60 transition-colors">
-                      Download High Risk Report
-                    </a>
-                  )}
-                  <button onClick={() => { setLoading(false); setData(d => ({ ...d, labelUrl: null, highRiskUrl: null })); }} className="text-sm text-gray-500 hover:text-white mt-4">Close</button>
-                </div>
+            {/* ═══ SETTINGS TAB ═══ */}
+            {activeTab === 'settings' && (
+              <motion.div key="settings" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                <SettingsTab
+                  historyData={historyData}
+                  onHistorySelect={(batch) => {
+                    setCsvPreviewData(batch.rows || []);
+                    setShowCsvEditor(true);
+                  }}
+                />
               </motion.div>
+            )}
+
+          </AnimatePresence>
+        </main>
+      </div>
+
+      {/* ═══ MODALS & OVERLAYS ═══ */}
+
+      <AnimatePresence>
+        {cancellingOrder && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[400] bg-black/90 flex flex-col items-center justify-center p-8 backdrop-blur-xl"
+          >
+             <motion.div 
+               animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
+               transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+               className="mb-8"
+             >
+                <XOctagon size={80} className="text-[#e3cfd8] drop-shadow-[0_0_30px_rgba(227,207,216,0.4)]" />
+             </motion.div>
+             <h2 className="text-2xl font-black text-white tracking-widest uppercase mb-4">Cancelling Order {cancellingOrder.orderId}</h2>
+             <div className="flex items-center gap-3">
+                <RefreshCw size={18} className="animate-spin text-[#e3cfd8]" />
+                <span className="text-xs font-bold text-[rgba(245,245,245,0.4)] tracking-widest uppercase">Deleting from Shopify & RapidShyp...</span>
+             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {detailModalOrder && (
+          <AestheticDetailModal 
+            order={detailModalOrder} 
+            onClose={() => setDetailModalOrder(null)} 
+          />
+        )}
+      </AnimatePresence>
+
+      <EditOrderModal
+        isOpen={!!editingOrder}
+        onClose={() => setEditingOrder(null)}
+        order={editingOrder}
+        onSave={handleSaveEdit}
+        isSupplier={user?.role === 'supplier'}
+      />
+
+      {/* Toast */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            initial={{ opacity: 0, y: 50, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className={`fixed bottom-8 right-8 z-[300] px-5 py-3 rounded-2xl shadow-2xl border flex items-center gap-3 backdrop-blur-xl bg-[rgba(26,26,30,0.9)] border-[rgba(227,207,216,0.2)] text-[#f5f5f5]`}
+          >
+            {toast.type === 'error' ? <X size={16} className="text-[#e3cfd8] opacity-60" /> : <CheckSquare size={16} className="text-[#e3cfd8]" />}
+            <span className="font-bold text-sm">{toast.message}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* CSV Editor Modal */}
+      <AnimatePresence>
+        {showCsvEditor && (
+          <CsvEditorModal
+            orders={csvPreviewData}
+            isSelection={selectedOrders.size > 0 && selectedOrders.size === csvPreviewData.length}
+            onClose={() => setShowCsvEditor(false)}
+            onSaveOnly={() => setToast({ message: 'Files downloaded!', type: 'success' })}
+            onUploadPortal={handleUploadPortal}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Selection FAB */}
+      <AnimatePresence>
+        {selectedOrders.size > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 40, scale: 0.9 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 40, scale: 0.9 }}
+            transition={{ type: 'spring', damping: 22, stiffness: 300 }}
+            className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[150] glass-card px-5 py-3.5 flex items-center gap-5"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-[rgba(227,207,216,0.1)] flex items-center justify-center text-[#e3cfd8] font-black text-sm border border-[rgba(227,207,216,0.15)]">
+                {selectedOrders.size}
+              </div>
+              <span className="text-xs font-bold text-[rgba(245,245,245,0.4)] tracking-wider uppercase">Selected</span>
             </div>
-          )}
-        </AnimatePresence>
-        <AnimatePresence>
-          {toast && (
-            <motion.div
-              initial={{ opacity: 0, y: 50, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.2 } }}
-              className={`fixed bottom-24 right-4 z-[300] px-6 py-4 rounded-xl shadow-2xl border flex items-center gap-3 backdrop-blur-md ${toast.type === 'error' ? 'bg-red-500/10 border-red-500/50 text-red-200' : 'bg-green-500/10 border-green-500/50 text-green-200'}`}
-            >
-              {toast.type === 'error' ? <X size={20} className="text-red-500" /> : <CheckSquare size={20} className="text-green-500" />}
-              <span className="font-bold">{toast.message}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
-        <AnimatePresence>
-          {showCsvEditor && (
-            <CsvEditorModal
-              orders={csvPreviewData}
-              onClose={() => setShowCsvEditor(false)}
-              onSaveOnly={() => setToast({ message: 'Files downloaded successfully', type: 'success' })}
-              onUploadPortal={handleUploadPortal}
-            />
-          )}
-        </AnimatePresence>
-        <AnimatePresence>
-          {selectedOrders.size > 0 && activeTab === 'place_order' && (
-            <motion.div
-              initial={{ opacity: 0, y: 50, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 50, scale: 0.9 }}
-              transition={{ type: 'spring', damping: 20, stiffness: 300 }}
-              className="fixed bottom-[90px] left-4 right-4 z-[150] bg-black/80 backdrop-blur-2xl border border-white/20 p-4 rounded-[28px] shadow-[0_20px_60px_rgba(0,0,0,0.8)] flex items-center justify-between"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-cyan-500/20 flex items-center justify-center text-cyan-400 font-black shadow-[0_0_15px_rgba(34,211,238,0.3)] border border-cyan-500/30">
-                  {selectedOrders.size}
-                </div>
-                <span className="text-sm font-bold text-white tracking-widest uppercase">Selected</span>
-              </div>
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 ml-auto">
+              {/* Unselect All */}
+              <button
+                onClick={() => setSelectedOrders(new Set())}
+                className="glass-icon-btn"
+                title="Unselect all"
+              >
+                <X size={14} />
+              </button>
+
+              {/* Download Labels (Bulk) */}
+              {Array.from(selectedOrders).some(id => data.orders.find(o => o.orderId === id && o.awb)) && (
                 <button
-                  onClick={handleDeleteSelected}
-                  className="px-4 py-3 rounded-2xl bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:text-red-300 transition-all font-bold text-xs uppercase tracking-widest flex items-center gap-2"
+                  onClick={() => {
+                    const idsToDownload = Array.from(selectedOrders)
+                      .map(id => data.orders.find(o => o.orderId === id))
+                      .filter(o => o && o.awb && o.shiprocketId)
+                      .map(o => o.shiprocketId);
+                    if (idsToDownload.length > 0) handleDownloadLabel(idsToDownload);
+                  }}
+                  className="glass-btn px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 tracking-wider uppercase text-[#e3cfd8] border-[rgba(227,207,216,0.2)] hover:bg-[rgba(227,207,216,0.05)]"
                 >
-                  <Trash2 size={16} />
+                  <FileText size={13} /> Labels
                 </button>
-                <button
-                  onClick={handleDownloadSelected}
-                  className="px-5 py-3 rounded-2xl bg-white text-black font-black uppercase tracking-widest text-xs shadow-[0_0_20px_rgba(255,255,255,0.2)] hover:bg-gray-200 hover:-translate-y-1 transition-all flex items-center gap-2"
-                >
-                  <Download size={16} />
-                  Action
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              )}
 
-      </main>
+              {/* Download */}
+              <button
+                onClick={handleDownloadSelected}
+                className="glass-btn-accent px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 tracking-wider uppercase btn-shine-effect"
+              >
+                <Download size={13} /> Export
+              </button>
 
-      {/* BOTTOM TAB BAR (Sexy Glassmorphism Style) */}
-      <nav className="fixed bottom-0 w-full max-w-[500px] z-[100] flex justify-around items-center p-3 pb-[env(safe-area-inset-bottom,20px)] border-t border-white/10 bg-[#0A0A0A]/70 backdrop-blur-3xl rounded-t-[32px] shadow-[0_-20px_40px_rgba(0,0,0,0.8)] before:absolute before:inset-0 before:bg-gradient-to-t before:from-white/5 before:to-transparent before:rounded-t-[32px] before:pointer-events-none">
-        <button onClick={() => setActiveTab('dashboard')} className={`relative flex flex-col items-center gap-1.5 p-2 transition-all duration-300 ${activeTab === 'dashboard' ? 'text-cyan-400 translate-y-[-4px] drop-shadow-[0_0_15px_rgba(6,182,212,0.8)]' : 'text-gray-500 hover:text-gray-300 hover:-translate-y-1'}`}>
-          <div className={`p-2.5 rounded-2xl transition-all duration-300 ${activeTab === 'dashboard' ? 'bg-cyan-500/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] border border-cyan-500/20' : 'bg-transparent border border-transparent'}`}><Grid size={22} /></div>
-          <span className="text-[10px] font-black tracking-widest uppercase">Home</span>
-        </button>
-        <button onClick={() => setActiveTab('place_order')} className={`relative flex flex-col items-center gap-1.5 p-2 transition-all duration-300 ${activeTab === 'place_order' ? 'text-purple-400 translate-y-[-4px] drop-shadow-[0_0_15px_rgba(168,85,247,0.8)]' : 'text-gray-500 hover:text-gray-300 hover:-translate-y-1'}`}>
-          <div className={`p-2.5 rounded-2xl transition-all duration-300 ${activeTab === 'place_order' ? 'bg-purple-500/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] border border-purple-500/20' : 'bg-transparent border border-transparent'}`}><CheckSquare size={22} /></div>
-          <span className="text-[10px] font-black tracking-widest uppercase">Fulfill</span>
-        </button>
-        <button onClick={() => setActiveTab('settings')} className={`relative flex flex-col items-center gap-1.5 p-2 transition-all duration-300 ${activeTab === 'settings' ? 'text-emerald-400 translate-y-[-4px] drop-shadow-[0_0_15px_rgba(16,185,129,0.8)]' : 'text-gray-500 hover:text-gray-300 hover:-translate-y-1'}`}>
-          <div className={`p-2.5 rounded-2xl transition-all duration-300 ${activeTab === 'settings' ? 'bg-emerald-500/20 shadow-[inset_0_1px_1px_rgba(255,255,255,0.4)] border border-emerald-500/20' : 'bg-transparent border border-transparent'}`}><Settings size={22} /></div>
-          <span className="text-[10px] font-black tracking-widest uppercase">Settings</span>
-        </button>
-      </nav>
-    </div >
+              {/* Delete */}
+              <button
+                onClick={handleDeleteSelected}
+                className="glass-icon-btn text-red-400 hover:bg-[rgba(239,68,68,0.1)]"
+                title="Delete selected"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 }
-
-const NavItem = ({ icon, active, onClick }) => (
-  <div onClick={onClick} className={`nav-item ${active ? 'nav-item-active' : ''}`}>
-    {icon}
-  </div>
-);
 
 export default function Root() {
   return (

@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
-const { getUnfulfilledOrders, assignSkuToProduct, getOrder } = require('./shopify');
+const { getUnfulfilledOrders, searchOrders, assignSkuToProduct, getOrder } = require('./shopify');
 const { processOrders } = require('./processor');
 const shiprocket = require('./shiprocket');
 const rapidshyp = require('./rapidshyp');
@@ -39,6 +39,24 @@ app.get('/api/status', (req, res) => {
     });
 });
 
+// 1.5 Auth / Login Endpoint
+app.post('/api/login', (req, res) => {
+    let { username, password } = req.body;
+    username = (username || '').trim();
+    password = (password || '').trim();
+    
+    // Hardcoded credentials as per user request
+    if (username === 'Anshd6261@' && password === 'Anshd62616@') {
+        return res.json({ success: true, role: 'admin', token: 'mock-jwt-admin-token-7x9' });
+    }
+    
+    if (username === 'nextbige101' && password === 'nextbige101') {
+        return res.json({ success: true, role: 'supplier', token: 'mock-jwt-supplier-token-2a4' });
+    }
+    
+    return res.status(401).json({ success: false, error: 'Invalid credentials' });
+});
+
 // 2. Fetch & Process Orders
 app.get('/api/orders', async (req, res) => {
     try {
@@ -69,7 +87,9 @@ app.get('/api/orders', async (req, res) => {
                     const rtoEntry = {
                         risk: rsOrder.rto_prediction || "Unknown",
                         reason: rsOrder.rto_reason || "",
-                        shiprocketId: rsOrder.order_id // RS MongoDB ID for linking
+                        shiprocketId: rsOrder.order_id, // RS MongoDB ID for linking
+                        rsStatus: rsOrder.order_status || "",
+                        awb: rsOrder.awb_number || ""
                     };
                     if (sellerId) rtoMap[sellerId] = rtoEntry;
                     if (cleanId) {
@@ -142,6 +162,31 @@ app.get('/api/orders', async (req, res) => {
     }
 });
 
+// 2.5 Search ALL Orders
+app.get('/api/orders/search', async (req, res) => {
+    try {
+        const query = req.query.q;
+        if (!query) return res.status(400).json({ success: false, error: 'Missing query' });
+
+        console.log(`[API] Searching ALL orders for: ${query}`);
+        const rawOrders = await searchOrders(query);
+
+        // Fetch RTO info for these specific orders from RapidShyp & Shiprocket
+        // (For a highly optimized V3 search, we'll try to get their specific RTO from RapidShyp if possible)
+        // For now, we process them as safe to display in the UI quickly.
+        const gstRate = parseFloat(process.env.GST_RATE || 18);
+        const processedRows = processOrders(rawOrders, gstRate, {}); // Empty RTO map for speed on search
+
+        res.json({
+            success: true,
+            orders: processedRows
+        });
+    } catch (e) {
+        console.error('[API] Error in /api/orders/search:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // 3. Download CSV
 app.post('/api/download', async (req, res) => {
     try {
@@ -164,13 +209,14 @@ app.post('/api/download', async (req, res) => {
 
         let csvContent, filename;
         const datePrefix = getFormattedDate();
+        const middleFix = req.body.isSelected ? ' Selected Order' : ' Order';
 
         if (req.body.type === 'financial') {
             csvContent = generateFinancialCSV(rows, gstRate);
-            filename = `${datePrefix} Order - Financial report.csv`;
+            filename = `${datePrefix}${middleFix} - Financial Report.csv`;
         } else {
             csvContent = generateSupplierCSV(rows);
-            filename = `${datePrefix} Order.csv`;
+            filename = `${datePrefix}${middleFix}.csv`;
         }
 
         res.setHeader('Content-Type', 'text/csv');
@@ -311,6 +357,28 @@ app.post('/api/orders/:id/cancel', async (req, res) => {
     } catch (e) {
         console.error('[API] Cancellation Error:', e);
         res.status(500).json({ success: false, error: e.message || 'Failed to cancel order' });
+    }
+});
+
+// 7.5 Generate Label (RapidShyp)
+app.post('/api/rapidshyp/label', async (req, res) => {
+    try {
+        const { orderIds } = req.body; // Expects an array of RS order IDs
+        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+            return res.status(400).json({ error: 'Missing or invalid orderIds array' });
+        }
+
+        console.log(`[API] Generating labels for RapidShyp IDs:`, orderIds);
+        const result = await rapidshyp.generateLabel(orderIds);
+
+        if (result.success) {
+            res.json(result.data); // Return the actual RS API payload (contains PDF link)
+        } else {
+            res.status(500).json({ error: result.message });
+        }
+    } catch (e) {
+        console.error('[API] Label Gen Error:', e);
+        res.status(500).json({ error: e.message });
     }
 });
 

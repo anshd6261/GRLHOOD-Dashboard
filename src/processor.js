@@ -51,8 +51,9 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
         // Extract RTO Risk from Shiprocket Data Map
         // Shiprocket `channel_order_id` might be `#1001` or `1001`. We'll try both.
         let rtoRisk = "Unknown";
-        let rtoReason = "No reason provided.";
         let shiprocketId = null;
+        let rsStatus = "";
+        let awb = "";
 
         const srMatch = rtoMap[order.name] || rtoMap[displayOrderId] || rtoMap[parseInt(displayOrderId, 10)];
         if (srMatch) {
@@ -62,18 +63,24 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
             else if (rawRisk === "low") rtoRisk = "Low";
             else rtoRisk = "Unknown"; // E.g. prepaid orders or empty
 
-            if (srMatch.reason) {
-                rtoReason = srMatch.reason;
-            }
-            if (srMatch.shiprocketId) {
-                shiprocketId = srMatch.shiprocketId;
-            }
+            if (srMatch.reason) rtoReason = srMatch.reason;
+            if (srMatch.shiprocketId) shiprocketId = srMatch.shiprocketId;
+            if (srMatch.rsStatus) rsStatus = srMatch.rsStatus;
+            if (srMatch.awb) awb = srMatch.awb;
         } else {
             // Fallback to tags if Shiprocket data wasn't found in the 14 day fetch
             const tags = Array.isArray(order.tags) ? order.tags : [];
             if (tags.some(t => t.toLowerCase() === 'flexassure:highrisk')) rtoRisk = "High";
             else if (tags.some(t => t.toLowerCase() === 'flexassure:mediumrisk')) rtoRisk = "Medium";
             else if (tags.some(t => t.toLowerCase() === 'flexassure:lowrisk')) rtoRisk = "Low";
+        }
+
+        // Shopify AWB Fallback
+        if (!awb && order.fulfillments?.length > 0) {
+            const f = order.fulfillments[0];
+            if (f.trackingInfo?.length > 0) {
+                awb = f.trackingInfo[0].url || f.trackingInfo[0].number || "";
+            }
         }
 
         // Determine payment method
@@ -235,6 +242,8 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
                     rtoRisk,
                     rtoReason,
                     shiprocketId,
+                    rsStatus,
+                    awb,
                     hasCopiedNumberDifferentName,
                     orderId: displayOrderId, // Display ID (1001)
                     orderLink,
@@ -243,7 +252,8 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
                     previewUrl,
                     cogs: cogs,
                     price: price,
-                    fulfillmentStatus: order.displayFulfillmentStatus || 'UNFULFILLED'
+                    fulfillmentStatus: order.displayFulfillmentStatus || 'UNFULFILLED',
+                    createdAt: order.createdAt
                 });
             }
         }

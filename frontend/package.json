@@ -14,13 +14,16 @@
     "@capacitor/ios": "^8.2.0",
     "@tailwindcss/postcss": "^4.1.18",
     "axios": "^1.13.4",
+    "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "framer-motion": "^12.30.0",
     "lucide-react": "^0.563.0",
     "react": "^19.2.0",
     "react-datepicker": "^9.1.0",
     "react-dom": "^19.2.0",
-    "recharts": "^3.8.0"
+    "recharts": "^3.8.0",
+    "tailwind-merge": "^3.5.0",
+    "three": "^0.183.2"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.2.0",

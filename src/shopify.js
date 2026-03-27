@@ -259,6 +259,12 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
               numberOfOrders
               phone # Customer Profile Phone
             }
+            fulfillments(first: 1) {
+              trackingInfo {
+                number
+                url
+              }
+            }
             lineItems(first: 100) {
               edges {
                 node {
@@ -394,6 +400,74 @@ const getOrder = async (id) => {
   return data.order;
 };
 
+const searchOrders = async (searchQuery) => {
+  const query = `
+    query SearchOrders($query: String!) {
+      orders(first: 20, query: $query, sortKey: CREATED_AT, reverse: true) {
+        edges {
+          node {
+            id
+            name
+            phone
+            createdAt
+            cancelledAt
+            tags
+            riskLevel
+            displayFinancialStatus
+            displayFulfillmentStatus
+            paymentGatewayNames
+            shippingAddress {
+              name
+              phone
+              address1
+              city
+              zip
+              country
+            }
+            customer {
+              id
+              numberOfOrders
+              phone
+            }
+            fulfillments(first: 1) {
+              trackingInfo {
+                number
+                url
+              }
+            }
+            lineItems(first: 50) {
+              edges {
+                node {
+                  title
+                  variantTitle
+                  sku
+                  quantity
+                  originalUnitPrice
+                  customAttributes { key value }
+                  variant {
+                    id
+                    title
+                    sku
+                    image { url }
+                    selectedOptions { name value }
+                    inventoryItem { id unitCost { amount } }
+                  }
+                  product { id onlineStoreUrl handle productType }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  // Provide exactly what user typed. Shopify handles `name:1001` or just `1001`.
+  // We limit to 20 to be super fast and responsive.
+  const data = await graphqlRequest(query, { query: searchQuery.trim() });
+  return data.orders.edges.map(e => e.node);
+};
+
 const cancelOrder = async (id) => {
   const globalId = id.toString().includes('gid://') ? id : `gid://shopify/Order/${id}`;
   const query = `
@@ -412,8 +486,29 @@ const cancelOrder = async (id) => {
   return true;
 };
 
+const deleteOrder = async (id) => {
+  const globalId = id.toString().includes('gid://') ? id : `gid://shopify/Order/${id}`;
+  const query = `
+    mutation orderDelete($id: ID!) {
+      orderDelete(id: $id) {
+        deletedId
+        userErrors {
+          field
+          message
+        }
+      }
+    }
+  `;
+  const data = await graphqlRequest(query, { id: globalId });
+  if (data.orderDelete && data.orderDelete.userErrors && data.orderDelete.userErrors.length > 0) {
+    throw new Error(data.orderDelete.userErrors[0].message);
+  }
+  return true;
+};
+
 module.exports = {
   getUnfulfilledOrders,
+  searchOrders,
   assignSkuToProduct,
   getOrder,
   graphqlRequest,

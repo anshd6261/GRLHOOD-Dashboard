@@ -125,6 +125,7 @@ const fetchOrdersWithRTO = async (status = 'ALL', maxPages = 10) => {
                 total_order_value: order.total_order_value,
                 store_name: order.store_name,
                 created_on: order.created_on,
+                awb_number: order.awb_number || "",
 
                 // Keep original id for backward compat
                 id: order.order_id
@@ -216,12 +217,34 @@ const trackOrder = async (awb) => {
     }
 };
 
+/**
+ * Generate Shipping Label(s)
+ * @param {Array<string>} orderIds - Array of RapidShyp internal order IDs
+ */
+const generateLabel = async (orderIds) => {
+    try {
+        const headers = getPublicHeaders();
+        console.log(`[RAPIDSHYP] Generating label for orders:`, orderIds);
+        const response = await rsApi.post(`${PUBLIC_API_BASE}/generate_label`, {
+            orderId: orderIds
+        }, { headers });
+        
+        console.log(`[RAPIDSHYP] Label API Response:`, response.data);
+        return { success: true, data: response.data };
+    } catch (e) {
+        const errMsg = e.response?.data?.message || e.response?.data || e.message;
+        console.error(`[RAPIDSHYP] Label Generation Failed:`, errMsg);
+        return { success: false, message: typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg) };
+    }
+};
+
 module.exports = {
     getSessionHeaders,
     getPublicHeaders,
     fetchOrdersWithRTO,
     cancelOrder,
     trackOrder,
+    generateLabel,
     mapRTORisk,
     buildRTOReason
 };
