@@ -10,6 +10,7 @@ import HomeAnalytics from './pages/HomeAnalytics';
 import ProductAnalysis from './pages/ProductAnalysis';
 import CsvEditorModal from './components/CsvEditorModal';
 import EditOrderModal from './components/EditOrderModal';
+import FulfillmentWizard from './components/FulfillmentWizard';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
@@ -79,6 +80,7 @@ function App() {
   // Long-Press Selection Logic
   const [selectionMode, setSelectionMode] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
+  const [showFulfillWizard, setShowFulfillWizard] = useState(false);
 
   useEffect(() => {
     if (selectedOrders.size === 0) setSelectionMode(false);
@@ -513,8 +515,16 @@ function App() {
                 </div>
               </div>
 
-
-
+              {/* Fulfill Orders Button */}
+              {data?.orders?.length > 0 && (
+                <button
+                  onClick={() => setShowFulfillWizard(true)}
+                  className="wiz-fulfill-btn mt-6"
+                  disabled={!data?.orders?.length}
+                >
+                  <Truck size={20} /> Fulfill Orders ({data?.stats?.totalOrders || data?.orders?.length || 0})
+                </button>
+              )}
 
               <div className="glass-card min-h-[500px] p-4 md:p-6 mb-24 mt-6">
                 <div className="flex flex-col gap-4 mb-6 pt-2">
@@ -920,6 +930,20 @@ function App() {
           )}
         </AnimatePresence>
 
+        <AnimatePresence>
+          {showFulfillWizard && data?.orders && (
+            <FulfillmentWizard
+              orders={data.orders}
+              onClose={() => setShowFulfillWizard(false)}
+              onComplete={(result) => {
+                setShowFulfillWizard(false);
+                setToast({ message: `${result?.orders?.length || 0} orders fulfilled!`, type: 'success' });
+                handleSync();
+              }}
+              isSupplierView={false}
+            />
+          )}
+        </AnimatePresence>
         <AnimatePresence>
           {showCsvEditor && (
             <CsvEditorModal

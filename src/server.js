@@ -18,6 +18,7 @@ const { getAggregatedPandL, getDailyPandL, getCashPosition } = require('./calcul
 const { getAllAlerts } = require('./alerts');
 const { syncPayUApi } = require('./sync_payu');
 const { uploadOrderPayload } = require('./dropbox');
+const rtoModel = require('./rtoModel');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -105,6 +106,25 @@ app.get('/api/orders', async (req, res) => {
 
         // Process orders with the RTO map
         const processedRows = processOrders(rawOrders, gstRate, rtoMap);
+
+        // Enrich each order with XGBoost RTO model prediction
+        processedRows.forEach(row => {
+            try {
+                const prediction = rtoModel.predictRTO(row);
+                row.rtoModelScore = prediction.score;
+                row.rtoModelRisk = prediction.risk;
+                row.rtoModelReasons = prediction.reasons;
+                row.rtoModelFeatures = prediction.features;
+                // Override rtoRisk if model gives a stronger signal
+                if (prediction.risk === 'High' && row.rtoRisk !== 'High') {
+                    row.rtoRisk = 'High';
+                    row.rtoReason = prediction.reasons.join('; ');
+                }
+            } catch (e) {
+                // Model prediction failed, keep existing rtoRisk
+            }
+        });
+
         const totalCOGS = processedRows.reduce((sum, row) => sum + (row.cogs || 0), 0);
         const totalRevenue = processedRows.reduce((sum, row) => sum + (row.price || 0), 0);
         const gstAmount = totalCOGS * (gstRate / 100);
@@ -860,6 +880,185 @@ async function processLabelGenerationJob(jobId) {
     }
 }
 
+
+// ==========================================
+// FULFILLMENT WIZARD API ENDPOINTS (RapidShyp)
+// ==========================================
+
+// Wallet Balance (RapidShyp)
+app.get('/api/wallet/balance', async (req, res) => {
+    try {
+        const result = await rapidshyp.getWalletBalance();
+        res.json({ success: result.success, balance: result.balance });
+    } catch (e) {
+        console.error('[WALLET] Balance check failed:', e.message);
+        res.status(500).json({ success: false, error: e.message, balance: 0 });
+    }
+});
+
+// Get AWB for a specific order (from RapidShyp)
+app.get('/api/orders/:orderId/awb', async (req, res) => {
+    try {
+        const { orderId } = req.params;
+        const cleanId = orderId.toString().replace('#', '');
+
+        // Search RapidShyp orders to find this order's AWB
+        const rsRes = await rapidshyp.fetchOrdersWithRTO('ALL', 5);
+        if (rsRes.success && rsRes.data) {
+            const match = rsRes.data.find(o =>
+                o.channel_order_id === cleanId ||
+                o.seller_order_id === `#${cleanId}` ||
+                o.seller_order_id === cleanId
+            );
+
+            if (match) {
+                // Track order to get AWB details
+                let awb = null;
+                let courier = null;
+                let status = match.order_status || null;
+
+                // If order has shipment data, try tracking
+                if (match.order_id) {
+                    try {
+                        // Try to get AWB from order details
+                        const headers = rapidshyp.getSessionHeaders();
+                        const detailRes = await axios.post('https://api.rapidshyp.com/session/orders/get_orders', {
+                            search: cleanId,
+                            page: 1,
+                            limit: 5
+                        }, { headers });
+
+                        const records = detailRes.data?.records || [];
+                        const detail = records.find(r =>
+                            r.seller_order_id === `#${cleanId}` || r.seller_order_id === cleanId
+                        );
+
+                        if (detail) {
+                            awb = detail.awb || detail.awb_number || null;
+                            courier = detail.courier_name || detail.courier || null;
+                            status = detail.order_status || status;
+                        }
+                    } catch (trackErr) {
+                        console.warn('[AWB] Detail lookup failed:', trackErr.message);
+                    }
+                }
+
+                res.json({ success: true, awb, courier, status, rapidshypOrderId: match.order_id });
+            } else {
+                res.json({ success: true, awb: null, message: 'Order not found in RapidShyp' });
+            }
+        } else {
+            res.json({ success: true, awb: null, message: 'Could not fetch RapidShyp orders' });
+        }
+    } catch (e) {
+        console.error('[AWB] Lookup failed:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Download label for a single order (RapidShyp)
+app.post('/api/orders/:orderId/label', async (req, res) => {
+    try {
+        const { orderId } = req.params;
+        const { shipmentId } = req.body;
+
+        if (!shipmentId) {
+            return res.status(400).json({ success: false, error: 'shipmentId is required' });
+        }
+
+        const labelRes = await rapidshyp.generateLabel([shipmentId]);
+        if (labelRes.success && labelRes.labels && labelRes.labels.length > 0) {
+            res.json({ success: true, url: labelRes.labels[0].labelURL });
+        } else {
+            res.status(500).json({ success: false, error: labelRes.error || 'Label generation failed' });
+        }
+    } catch (e) {
+        console.error('[LABEL] Single label failed:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Bulk ship orders via RapidShyp Wrapper API
+app.post('/api/fulfillment/bulk-ship', async (req, res) => {
+    try {
+        const { orders } = req.body;
+        if (!orders || !Array.isArray(orders) || orders.length === 0) {
+            return res.status(400).json({ success: false, error: 'No orders provided' });
+        }
+
+        // Deduplicate by orderId - wrapper works per order, not per line item
+        const uniqueOrders = [];
+        const seen = new Set();
+        for (const order of orders) {
+            const id = (order.orderId || '').toString().replace('#', '');
+            if (!seen.has(id) && id) {
+                seen.add(id);
+                uniqueOrders.push(order);
+            }
+        }
+
+        console.log(`[BULK-SHIP] Shipping ${uniqueOrders.length} unique orders via RapidShyp Wrapper...`);
+        const result = await rapidshyp.bulkShipOrders(uniqueOrders);
+
+        res.json({
+            success: true,
+            assigned: result.successful.length,
+            failed: result.failed.length,
+            results: result.successful,
+            failedDetails: result.failed
+        });
+    } catch (e) {
+        console.error('[BULK-SHIP] Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Bulk download labels from RapidShyp + save to Dropbox
+app.post('/api/fulfillment/bulk-labels', async (req, res) => {
+    try {
+        const { shipmentIds, orders } = req.body;
+        if (!shipmentIds || !Array.isArray(shipmentIds) || shipmentIds.length === 0) {
+            return res.status(400).json({ success: false, error: 'No shipment IDs provided' });
+        }
+
+        console.log(`[BULK-LABELS] Generating labels for ${shipmentIds.length} shipments via RapidShyp...`);
+        const labelRes = await rapidshyp.generateLabel(shipmentIds);
+
+        if (!labelRes.success) {
+            return res.json({ success: false, error: labelRes.error });
+        }
+
+        // Collect all label URLs
+        const labelUrls = (labelRes.labels || []).map(l => l.labelURL).filter(Boolean);
+        const firstLabelUrl = labelUrls[0] || null;
+
+        // Save label PDF + CSVs to Dropbox
+        let dropboxPath = null;
+        try {
+            let standardCsv = null;
+            let financialCsv = null;
+            if (orders && orders.length > 0) {
+                standardCsv = generateSupplierCSV(orders);
+                financialCsv = generateFinancialCSV(orders, parseFloat(process.env.GST_RATE || 18));
+            }
+            // Upload first label URL (or null) + CSVs
+            dropboxPath = await uploadOrderPayload(firstLabelUrl, standardCsv, financialCsv);
+        } catch (dbErr) {
+            console.error('[BULK-LABELS] Dropbox upload failed:', dbErr.message);
+        }
+
+        res.json({
+            success: true,
+            labels: labelRes.labels,
+            labelUrls,
+            dropboxPath,
+            labelCount: labelUrls.length
+        });
+    } catch (e) {
+        console.error('[BULK-LABELS] Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
 
 // 9.5 RapidShyp/Shiprocket Direct Bulk Workflows
 app.post('/api/rapidshyp/bulk-assign', async (req, res) => {
