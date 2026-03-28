@@ -741,6 +741,18 @@ function App() {
                                     <span className={`text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider ${group.payment === 'Prepaid' ? 'badge-prepaid' : 'badge-cod'}`}>
                                       {group.payment || 'Prepaid'}
                                     </span>
+                                    {group.items[0].aiRiskLevel && (
+                                      <span
+                                        onClick={(e) => { e.stopPropagation(); setDetailModalOrder(group.items[0]); }}
+                                        className={`cursor-pointer text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider hover:brightness-125 transition-all ${
+                                          group.items[0].aiRiskLevel === 'High' ? 'bg-[rgba(255,20,147,0.15)] border border-[rgba(255,20,147,0.3)] text-[#ff1493] drop-shadow-[0_0_8px_rgba(255,20,147,0.4)]' :
+                                          group.items[0].aiRiskLevel === 'Medium' ? 'bg-[rgba(227,207,216,0.1)] border border-[rgba(227,207,216,0.2)] text-[#e3cfd8]' :
+                                          'bg-[rgba(245,245,245,0.05)] border border-[rgba(245,245,245,0.1)] text-[rgba(245,245,245,0.5)]'
+                                        }`}
+                                      >
+                                        AI Risk: {group.items[0].aiRiskLevel}
+                                      </span>
+                                    )}
                                     <span className="text-[9px] uppercase font-bold px-2.5 py-0.5 rounded-full tracking-wider bg-[rgba(245,245,245,0.04)] text-[rgba(245,245,245,0.35)] border border-[rgba(245,245,245,0.06)]">
                                       {group.items.length} unit{group.items.length > 1 ? 's' : ''}
                                     </span>

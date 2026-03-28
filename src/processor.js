@@ -53,6 +53,7 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
         // Extract RTO Risk from Shiprocket Data Map
         // Shiprocket `channel_order_id` might be `#1001` or `1001`. We'll try both.
         let rtoRisk = "Unknown";
+        let rtoReason = "";
         let shiprocketId = null;
         let rsStatus = "";
         let awb = "";

@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Package, Truck, User, MapPin, Calendar, Smartphone, FileText, Link as LinkIcon, ExternalLink } from 'lucide-react';
+import { X, Package, Truck, User, MapPin, Calendar, Smartphone, FileText, Link as LinkIcon, ExternalLink, AlertTriangle } from 'lucide-react';
 
 export default function AestheticDetailModal({ order, onClose }) {
   if (!order) return null;
@@ -105,6 +105,40 @@ export default function AestheticDetailModal({ order, onClose }) {
                 <div className="mt-2 text-xs font-bold text-[#e3cfd8] bg-[rgba(227,207,216,0.1)] px-3 py-1.5 rounded-lg inline-block">
                   Loyalty: Repeat Customer ({order.customerOrdersCount} Orders)
                 </div>
+              )}
+            </div>
+          </div>
+
+          {/* AI Risk Analysis */}
+          <div className="glass-card-sm p-5 space-y-4">
+            <h3 className="text-[10px] uppercase tracking-widest text-[rgba(245,245,245,0.4)] font-bold flex items-center gap-2 mb-2">
+              <AlertTriangle size={14} /> AI Risk Analysis
+            </h3>
+            
+            <div className="flex items-center gap-4 border-b border-[rgba(227,207,216,0.1)] pb-4 mb-4">
+              <div className="text-4xl font-black text-white">{order.aiRiskScore || 'N/A'}</div>
+              <div>
+                <div className={`px-3 py-1 text-xs font-bold uppercase tracking-wider rounded-xl inline-block ${
+                  order.aiRiskLevel === 'High' ? 'bg-[rgba(255,20,147,0.15)] border border-[rgba(255,20,147,0.3)] text-[#ff1493]' :
+                  order.aiRiskLevel === 'Medium' ? 'bg-[rgba(227,207,216,0.1)] border border-[rgba(227,207,216,0.2)] text-[#e3cfd8]' :
+                  'bg-[rgba(245,245,245,0.05)] border border-[rgba(245,245,245,0.1)] text-[rgba(245,245,245,0.5)]'
+                }`}>
+                  {order.aiRiskLevel || 'Unknown'} Risk
+                </div>
+                <div className="text-[10px] text-[rgba(245,245,245,0.4)] uppercase font-bold tracking-widest mt-1">XGBoost Model</div>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <span className="text-[10px] uppercase text-[rgba(245,245,245,0.3)] font-bold mb-1 block">Detected Risk Factors</span>
+              {order.aiRiskReasons && order.aiRiskReasons.length > 0 ? (
+                <ul className="text-sm text-[rgba(245,245,245,0.8)] space-y-1.5 list-disc pl-4 marker:text-[rgba(227,207,216,0.5)]">
+                  {order.aiRiskReasons.map((reason, idx) => (
+                    <li key={idx}>{reason}</li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="text-sm text-[rgba(245,245,245,0.4)] italic">No specific risk factors detected.</div>
               )}
             </div>
           </div>
