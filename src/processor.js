@@ -1,3 +1,5 @@
+const { predictOrderRisk } = require('./rto_predictor');
+
 const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
     // 1. Pre-process to find duplicated phone numbers with different names
     const phoneToNamesMap = {};
@@ -95,6 +97,9 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
             gateways.includes('paypal')) {
             payment = 'Prepaid';
         }
+
+        // --- NEW: AI RTO Prediction ---
+        const aiRtoResult = predictOrderRisk({ ...order, paymentMethod: payment });
 
         // Process line items
         const orderRows = [];
@@ -253,7 +258,11 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
                     cogs: cogs,
                     price: price,
                     fulfillmentStatus: order.displayFulfillmentStatus || 'UNFULFILLED',
-                    createdAt: order.createdAt
+                    createdAt: order.createdAt,
+                    // AI Risk Data
+                    aiRiskScore: aiRtoResult.score,
+                    aiRiskLevel: aiRtoResult.level,
+                    aiRiskReasons: aiRtoResult.reasons,
                 });
             }
         }

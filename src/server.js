@@ -6,12 +6,16 @@ require('dotenv').config();
 
 const { getUnfulfilledOrders, searchOrders, assignSkuToProduct, getOrder } = require('./shopify');
 const { processOrders } = require('./processor');
+const { loadModel } = require('./rto_predictor');
 const shiprocket = require('./shiprocket');
 const rapidshyp = require('./rapidshyp');
 const riskValidator = require('./riskValidator'); // Fixed Import
 const { v4: uuidv4 } = require('uuid');
 const { generateSupplierCSV, generateFinancialCSV, getFormattedDate, saveCSV } = require('./csv_generator');
 const { generateExcel } = require('./excel');
+
+// Pre-load the AI model
+loadModel();
 const { getHistory, saveBatch, updateBatch } = require('./history');
 const emailService = require('./email');
 const { getAggregatedPandL, getDailyPandL, getCashPosition } = require('./calculations');
