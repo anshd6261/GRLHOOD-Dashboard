@@ -7,7 +7,6 @@ require('dotenv').config();
 const { getUnfulfilledOrders, searchOrders, assignSkuToProduct, getOrder } = require('./shopify');
 const { processOrders } = require('./processor');
 const { loadModel } = require('./rto_predictor');
-const shiprocket = require('./shiprocket');
 const rapidshyp = require('./rapidshyp');
 const riskValidator = require('./riskValidator'); // Fixed Import
 const { v4: uuidv4 } = require('uuid');
@@ -74,11 +73,10 @@ app.get('/api/orders', async (req, res) => {
 
         console.log(`[API] Fetching orders... Options:`, { daysLookback, startDate, endDate, statusMode });
 
-        // Fetch from Shopify, Shiprocket, and RapidShyp concurrently
-        const [rawOrders, rsRes, srRes] = await Promise.all([
+        // Fetch from Shopify and RapidShyp concurrently
+        const [rawOrders, rsRes] = await Promise.all([
             getUnfulfilledOrders(daysLookback, startDate, endDate, statusMode),
             rapidshyp.fetchOrdersWithRTO('ALL', 10), // Fetch all orders with RTO risk data
-            shiprocket.getOrdersForSync(daysLookback, startDate, endDate) // Override Risk with Shiprocket's Predictions
         ]);
 
         // Build shipping data map from RapidShyp (AWB, status, IDs only — RTO risk comes from our XGBoost model)
@@ -104,19 +102,6 @@ app.get('/api/orders', async (req, res) => {
                 }
             });
             console.log(`[API] Built shipping map with ${Object.keys(rtoMap).length} entries from RapidShyp (RTO from XGBoost AI).`);
-        }
-
-        // Merge Shiprocket shipping data (AWB, status) — NOT their RTO predictions
-        if (srRes && srRes.data) {
-            srRes.data.forEach(srOrder => {
-                const cleanId = srOrder.channel_order_id;
-                if (!cleanId) return;
-                if (!rtoMap[cleanId]) rtoMap[cleanId] = { risk: "Unknown", reason: "", shiprocketId: null };
-                // Only take shipping metadata, skip RTO prediction fields
-                if (srOrder.shiprocket_order_id) rtoMap[cleanId].shiprocketId = srOrder.shiprocket_order_id;
-                rtoMap[`#${cleanId}`] = rtoMap[cleanId];
-            });
-            console.log(`[API] Merged Shiprocket shipping data (RTO predictions handled by XGBoost AI).`);
         }
 
         // Process orders with the RTO map
@@ -318,9 +303,9 @@ app.post('/api/orders/:id/cancel', async (req, res) => {
             return res.status(400).json({ error: 'Missing numeric ID or orderName' });
         }
 
-        console.log(`[API] Processing Triple Cancellation for Order ${orderName} (${numericId})...`);
+        console.log(`[API] Processing Cancellation for Order ${orderName} (${numericId})...`);
 
-        // 1. Cancel in RapidShyp first
+        // 1. Cancel in RapidShyp
         let rsResult = { success: false, message: 'Skipped' };
         try {
             rsResult = await rapidshyp.cancelOrder(orderName);
@@ -329,25 +314,16 @@ app.post('/api/orders/:id/cancel', async (req, res) => {
             rsResult.message = e.message;
         }
 
-        // 2. Cancel in Shiprocket
-        let srResult = { success: false, message: 'Skipped' };
-        try {
-            srResult = await shiprocket.cancelOrderByChannelId(orderName);
-        } catch (e) {
-            console.warn(`[API] Shiprocket Cancel Warning:`, e.message);
-            srResult.message = e.message;
-        }
+        // 2. Cancel in Shopify
+        const { cancelOrder: shopifyCancelOrder } = require('./shopify');
+        await shopifyCancelOrder(numericId);
 
-        // 3. Cancel in Shopify
-        await shopify.cancelOrder(numericId);
-
-        console.log(`[API] Triple Cancel Success: ${orderName}`);
+        console.log(`[API] Cancel Success: ${orderName}`);
 
         res.json({
             success: true,
-            message: `Order ${orderName} cancelled successfully on all platforms.`,
+            message: `Order ${orderName} cancelled successfully.`,
             rapidshyp: rsResult,
-            shiprocket: srResult
         });
 
     } catch (e) {
@@ -378,6 +354,80 @@ app.post('/api/rapidshyp/label', async (req, res) => {
     }
 });
 
+// ==========================================
+// RAPIDSHYP FULFILLMENT ENDPOINTS
+// ==========================================
+
+// Bulk Assign AWB
+app.post('/api/rapidshyp/bulk-assign', async (req, res) => {
+    try {
+        const { orderNames } = req.body;
+        if (!orderNames || !Array.isArray(orderNames) || orderNames.length === 0) {
+            return res.status(400).json({ error: 'Missing or invalid orderNames array' });
+        }
+
+        console.log(`[API] Bulk assigning AWB for ${orderNames.length} orders...`);
+        const result = await rapidshyp.bulkAssignAWB(orderNames);
+        res.json(result);
+    } catch (e) {
+        console.error('[API] Bulk Assign Error:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Get Wallet Balance
+app.get('/api/rapidshyp/wallet', async (req, res) => {
+    try {
+        const result = await rapidshyp.getWalletBalance();
+        res.json(result);
+    } catch (e) {
+        console.error('[API] Wallet Error:', e);
+        res.status(500).json({ success: false, balance: 0, error: e.message });
+    }
+});
+
+// Bulk Generate Labels + Upload to Dropbox
+app.post('/api/rapidshyp/bulk-labels-dropbox', async (req, res) => {
+    try {
+        const { orderIds, orders } = req.body;
+        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+            return res.status(400).json({ error: 'Missing or invalid orderIds array' });
+        }
+
+        console.log(`[API] Generating labels for ${orderIds.length} orders + Dropbox upload...`);
+
+        // Generate labels
+        const labelResult = await rapidshyp.bulkGenerateLabels(orderIds);
+        if (!labelResult.success) {
+            return res.status(500).json({ success: false, error: labelResult.message || 'Label generation failed' });
+        }
+
+        const labelUrl = labelResult.labelUrl;
+
+        // Upload labels PDF to Dropbox if we have a URL
+        let dropboxPath = null;
+        if (labelUrl) {
+            try {
+                const { uploadOrderPayload } = require('./dropbox');
+                dropboxPath = await uploadOrderPayload(labelUrl, null, null);
+                console.log(`[API] Labels uploaded to Dropbox: ${dropboxPath}`);
+            } catch (dbxErr) {
+                console.warn('[API] Dropbox label upload failed (non-blocking):', dbxErr.message);
+            }
+        }
+
+        res.json({
+            success: true,
+            labelUrl,
+            labels: labelResult.labels,
+            dropboxPath
+        });
+    } catch (e) {
+        console.error('[API] Bulk Labels+Dropbox Error:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // 8. History Endpoints
 app.get('/api/history', (req, res) => {
     res.json(getHistory());
@@ -393,89 +443,6 @@ app.put('/api/history/:id', (req, res) => {
     }
 });
 
-// ==========================================
-// SHIPROCKET STATS ENDPOINT (COD & RTO Tracking)
-// ==========================================
-app.get('/api/shiprocket/stats', async (req, res) => {
-    try {
-        const { startDate, endDate } = req.query;
-        if (!startDate || !endDate) return res.status(400).json({ error: 'Missing start or end date' });
-
-        const rs = await shiprocket.fetchOrdersByDate(startDate, endDate);
-        if (!rs.success) {
-            return res.status(500).json({ error: 'Failed to fetch tracking stats.' });
-        }
-
-        const orders = rs.data || [];
-
-        let totalOrders = orders.length;
-        let rtoOrdersCount = 0;
-        let rtoLossValue = 0;
-        let rtoProductsCount = 0;
-        let pendingCodValue = 0;
-        let pendingCodCount = 0;
-        let collectedCodValue = 0;
-        let collectedCodCount = 0;
-        let validOrdersCount = 0;
-
-        const RTO_CODES = [12, 13, 14, 15, 16, 55]; // RTO statuses
-        const CANCELED_CODES = [5];
-        const DELIVERED_CODES = [7];
-
-        orders.forEach(o => {
-            const status = parseInt(o.status_code);
-            const total = parseFloat(o.total) || 0;
-            const pm = (o.payment_method || '').toLowerCase();
-            const isRTO = RTO_CODES.includes(status);
-            const isCanceled = CANCELED_CODES.includes(status);
-            const isDelivered = DELIVERED_CODES.includes(status);
-
-            if (!isCanceled) validOrdersCount++;
-
-            // RTO Tracking
-            if (isRTO) {
-                rtoOrdersCount++;
-                rtoLossValue += total;
-                if (o.products && Array.isArray(o.products)) {
-                    rtoProductsCount += o.products.reduce((acc, p) => acc + (parseInt(p.quantity) || 1), 0);
-                }
-            }
-
-            // Expected COD Pipeline (Active, COD, Not RTO, Not Canceled, Not Delivered)
-            // It could be NEW (1), READY TO SHIP (3), IN TRANSIT (20), OUT FOR DELIVERY (19), UNDELIVERED (36) etc.
-            if (pm === 'cod') {
-                if (isDelivered) {
-                    collectedCodValue += total;
-                    collectedCodCount++;
-                } else if (!isRTO && !isCanceled) {
-                    pendingCodValue += total;
-                    pendingCodCount++;
-                }
-            }
-        });
-
-        const rtoPercentage = validOrdersCount > 0 ? ((rtoOrdersCount / validOrdersCount) * 100).toFixed(1) : 0;
-
-        res.json({
-            success: true,
-            rtoStats: {
-                percentage: parseFloat(rtoPercentage),
-                lossValue: rtoLossValue,
-                ordersCount: rtoOrdersCount,
-                itemsCount: rtoProductsCount
-            },
-            codStats: {
-                pendingValue: pendingCodValue,
-                pendingCount: pendingCodCount,
-                collectedValue: collectedCodValue,
-                collectedCount: collectedCodCount
-            }
-        });
-    } catch (e) {
-        console.error('[API] Shiprocket Stats Error:', e);
-        res.status(500).json({ error: e.message });
-    }
-});
 
 // ==========================================
 // NEW FINANCIAL DASHBOARD ENDPOINTS

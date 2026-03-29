@@ -16,6 +16,7 @@ import CsvEditorModal from './components/CsvEditorModal';
 import EditOrderModal from './components/EditOrderModal';
 import AestheticDetailModal from './components/AestheticDetailModal';
 import ShipOrdersModal from './components/ShipOrdersModal';
+import FulfillOrdersWizard from './components/FulfillOrdersWizard';
 import Login from './Login';
 import { useAuth } from './AuthContext';
 
@@ -170,6 +171,7 @@ function App() {
   const [selectionMode, setSelectionMode] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
   const [shippingOrders, setShippingOrders] = useState(null);
+  const [showFulfillWizard, setShowFulfillWizard] = useState(false);
 
   // Accordion
   const [expandedOrders, setExpandedOrders] = useState(new Set());
@@ -643,13 +645,14 @@ function App() {
                         <div className="text-3xl font-black text-white tracking-tight">{data?.stats?.totalItems || 0}</div>
                       </SpotlightCard>
 
-                      <SpotlightCard className="p-5 relative overflow-hidden">
-                        <div className="absolute -top-10 -left-10 w-24 h-24 bg-[rgba(227,207,216,0.04)] blur-3xl rounded-full" />
+                      <SpotlightCard className="p-5 relative overflow-hidden cursor-pointer group" onClick={() => setShowFulfillWizard(true)}>
+                        <div className="absolute -top-10 -left-10 w-24 h-24 bg-[rgba(52,211,153,0.04)] blur-3xl rounded-full group-hover:bg-[rgba(52,211,153,0.08)] transition-all" />
                         <div className="flex justify-between items-start relative z-10 mb-3">
-                          <div className="text-[9px] font-bold text-[rgba(245,245,245,0.35)] tracking-[0.15em] uppercase">Invoice Total (incl. GST)</div>
-                          <div className="p-1.5 rounded-lg bg-[rgba(227,207,216,0.06)]"><IndianRupee size={14} className="text-[#e3cfd8]" /></div>
+                          <div className="text-[9px] font-bold text-[rgba(245,245,245,0.35)] tracking-[0.15em] uppercase">Fulfill Orders</div>
+                          <div className="p-1.5 rounded-lg bg-[rgba(52,211,153,0.08)]"><CheckSquare size={14} className="text-emerald-400" /></div>
                         </div>
-                        <div className="text-3xl font-black text-white tracking-tight">₹{data?.stats?.total?.toFixed(0) || 0}</div>
+                        <div className="text-lg font-black text-white tracking-tight">Ready to Ship</div>
+                        <div className="text-[10px] text-[rgba(245,245,245,0.3)] mt-1 group-hover:text-[rgba(245,245,245,0.5)] transition-colors">Click to start fulfillment →</div>
                       </SpotlightCard>
                     </div>
 
@@ -968,6 +971,17 @@ function App() {
               setShippingOrders(null);
               handleSync();
             }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showFulfillWizard && data?.orders && (
+          <FulfillOrdersWizard
+            orders={data.orders}
+            onClose={() => setShowFulfillWizard(false)}
+            onOrdersUpdate={(updatedOrders) => setData(prev => ({ ...prev, orders: updatedOrders }))}
+            isSupplier={user?.role === 'supplier'}
           />
         )}
       </AnimatePresence>

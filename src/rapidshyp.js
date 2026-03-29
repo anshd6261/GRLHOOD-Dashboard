@@ -238,6 +238,129 @@ const generateLabel = async (orderIds) => {
     }
 };
 
+/**
+ * Bulk assign AWB to multiple orders by their Shopify order names.
+ * Looks up each order in RapidShyp, then assigns AWB.
+ * @param {string[]} orderNames - Array of Shopify order names (e.g., ["3419", "3420"])
+ * @returns {{ success: boolean, results: Array }}
+ */
+const bulkAssignAWB = async (orderNames) => {
+    const sessionHeaders = getSessionHeaders();
+    const publicHeaders = getPublicHeaders();
+    const results = [];
+
+    for (const name of orderNames) {
+        const cleanId = name.toString().replace('#', '');
+        try {
+            // Look up the RS order
+            const searchRes = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, {
+                search: cleanId,
+                page: 1,
+                limit: 10
+            }, { headers: sessionHeaders });
+
+            const records = searchRes.data?.records || [];
+            const match = records.find(r =>
+                r.seller_order_id === `#${cleanId}` ||
+                r.seller_order_id === cleanId
+            );
+
+            if (!match) {
+                results.push({ orderId: cleanId, success: false, message: 'Not found in RapidShyp' });
+                continue;
+            }
+
+            if (match.awb_number) {
+                results.push({ orderId: cleanId, success: true, awb: match.awb_number, courier: match.courier_name || '', message: 'Already assigned' });
+                continue;
+            }
+
+            // Get the shipment_id from the order
+            const shipmentId = match.shipment_id || match.order_id;
+
+            // Assign AWB
+            const assignRes = await rsApi.post(`${PUBLIC_API_BASE}/assign_awb`, {
+                shipment_id: shipmentId
+            }, { headers: publicHeaders });
+
+            const data = assignRes.data;
+            results.push({
+                orderId: cleanId,
+                success: true,
+                awb: data.awb || '',
+                courier: data.courier_name || '',
+                shipmentId: data.shipment_id || shipmentId,
+                rsOrderId: match.order_id
+            });
+
+            console.log(`[RAPIDSHYP] Assigned AWB for ${cleanId}: ${data.awb}`);
+            await new Promise(r => setTimeout(r, 300)); // Rate limit buffer
+        } catch (e) {
+            const errMsg = e.response?.data?.message || e.response?.data?.remarks || e.message;
+            console.error(`[RAPIDSHYP] Assign AWB failed for ${cleanId}:`, errMsg);
+            results.push({ orderId: cleanId, success: false, message: typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg) });
+        }
+    }
+
+    const successCount = results.filter(r => r.success).length;
+    console.log(`[RAPIDSHYP] Bulk AWB: ${successCount}/${orderNames.length} assigned.`);
+    return { success: successCount > 0, results };
+};
+
+/**
+ * Get wallet balance from RapidShyp session API.
+ * @returns {{ success: boolean, balance: number }}
+ */
+const getWalletBalance = async () => {
+    try {
+        const headers = getSessionHeaders();
+        // Try the session wallet endpoint
+        const res = await rsApi.post(`${SESSION_API_BASE}/wallet/get_balance`, {}, { headers });
+        const balance = res.data?.balance ?? res.data?.available_balance ?? res.data?.wallet_balance ?? 0;
+        console.log(`[RAPIDSHYP] Wallet balance: ₹${balance}`);
+        return { success: true, balance: parseFloat(balance) || 0 };
+    } catch (e) {
+        // Fallback: try alternative endpoint
+        try {
+            const headers = getSessionHeaders();
+            const res = await rsApi.get(`${SESSION_API_BASE}/wallet/balance`, { headers });
+            const balance = res.data?.balance ?? res.data?.available_balance ?? 0;
+            return { success: true, balance: parseFloat(balance) || 0 };
+        } catch (e2) {
+            console.error('[RAPIDSHYP] Wallet balance error:', e2.response?.data || e2.message);
+            return { success: false, balance: 0 };
+        }
+    }
+};
+
+/**
+ * Generate labels for multiple orders and return the PDF URL.
+ * @param {string[]} orderIds - Array of RapidShyp order IDs
+ * @returns {{ success: boolean, labelUrl: string, labels: Array }}
+ */
+const bulkGenerateLabels = async (orderIds) => {
+    try {
+        const headers = getPublicHeaders();
+        console.log(`[RAPIDSHYP] Generating labels for ${orderIds.length} orders...`);
+
+        const response = await rsApi.post(`${PUBLIC_API_BASE}/generate_label`, {
+            orderId: orderIds
+        }, { headers });
+
+        const data = response.data;
+        // The API returns label_pdf_url for bulk or an array of labels
+        const labelUrl = data.label_pdf_url || '';
+        const labels = data.labels || data.data || [];
+
+        console.log(`[RAPIDSHYP] Labels generated. URL: ${labelUrl || 'check individual labels'}`);
+        return { success: true, labelUrl, labels, data };
+    } catch (e) {
+        const errMsg = e.response?.data?.message || e.response?.data || e.message;
+        console.error(`[RAPIDSHYP] Bulk label generation failed:`, errMsg);
+        return { success: false, labelUrl: '', labels: [], message: typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg) };
+    }
+};
+
 module.exports = {
     getSessionHeaders,
     getPublicHeaders,
@@ -245,6 +368,9 @@ module.exports = {
     cancelOrder,
     trackOrder,
     generateLabel,
+    bulkAssignAWB,
+    getWalletBalance,
+    bulkGenerateLabels,
     mapRTORisk,
     buildRTOReason
 };

@@ -275,9 +275,13 @@ export default function AestheticDetailModal({ order, onClose }) {
                 <div className="flex flex-col">
                   <span className="text-[10px] uppercase text-[rgba(245,245,245,0.3)] font-bold mb-0.5">AWB / Label</span>
                   {order.awb ? (
-                    <a href={order.awb} target="_blank" className="text-[#e3cfd8] font-bold font-mono text-sm flex items-center gap-1.5 hover:underline decoration-white/30 underline-offset-4 w-max">
-                      <ExternalLink size={13} /> View Shipping Label
-                    </a>
+                    order.awb.startsWith('http') ? (
+                      <a href={order.awb} target="_blank" className="text-[#e3cfd8] font-bold font-mono text-sm flex items-center gap-1.5 hover:underline decoration-white/30 underline-offset-4 w-max">
+                        <ExternalLink size={13} /> View Shipping Label
+                      </a>
+                    ) : (
+                      <span className="text-[#e3cfd8] font-bold font-mono text-sm">{order.awb}</span>
+                    )
                   ) : <span className="text-[rgba(245,245,245,0.4)] text-sm">Not generated yet</span>}
                 </div>
                 <div className="flex flex-col">
