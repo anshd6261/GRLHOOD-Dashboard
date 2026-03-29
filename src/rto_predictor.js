@@ -277,18 +277,19 @@ function calcCustomerRTORisk(phone, orderCount, paymentMethod) {
  * @returns {{ score: number, level: string, reasons: string[], features: Object }}
  */
 function predictOrderRisk(order) {
-  // Extract data
-  const pincode = order.shippingDetails?.zip || order.shippingDetails?.pincode || '';
-  const name = order.customer?.name || order.shippingDetails?.name || '';
-  const phone = order.customer?.phone || order.shippingDetails?.phone || '';
+  // Extract data from Shopify order (supports both shippingAddress and shippingDetails)
+  const shipping = order.shippingAddress || order.shippingDetails || {};
+  const pincode = shipping.zip || shipping.pincode || '';
+  const name = order.customer?.name || shipping.name || order.customerName || '';
+  const phone = order.customer?.phone || shipping.phone || '';
   const address = [
-    order.shippingDetails?.address1 || '',
-    order.shippingDetails?.address2 || '',
-    order.shippingDetails?.city || '',
-    order.shippingDetails?.province || ''
+    shipping.address1 || '',
+    shipping.address2 || '',
+    shipping.city || '',
+    shipping.province || ''
   ].filter(Boolean).join(', ');
-  const paymentMethod = order.paymentMethod || order.payment_method || '';
-  const orderCount = order.customer?.ordersCount || 1;
+  const paymentMethod = order.paymentMethod || order.payment_method || order.payment || '';
+  const orderCount = order.customer?.ordersCount || order.customer?.numberOfOrders || 1;
 
   // Calculate individual risks
   const pincodeRisk = calcPincodeRisk(pincode);

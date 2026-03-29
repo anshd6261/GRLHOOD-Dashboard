@@ -7,7 +7,7 @@ import {
   UploadCloud, ChevronDown, ChevronUp, Box, MessageSquare,
   Trash2, ExternalLink, Calendar, CheckSquare,
   AlertTriangle, Edit3, X, Settings, LayoutDashboard, ClipboardCheck,
-  TrendingUp, Phone, XOctagon
+  TrendingUp, Phone, XOctagon, Truck, FileText, LogOut
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import DottedBackground from './components/DottedBackground';
@@ -15,9 +15,9 @@ import GlowBlobs from './components/GlowBlobs';
 import CsvEditorModal from './components/CsvEditorModal';
 import EditOrderModal from './components/EditOrderModal';
 import AestheticDetailModal from './components/AestheticDetailModal';
+import ShipOrdersModal from './components/ShipOrdersModal';
 import Login from './Login';
 import { useAuth } from './AuthContext';
-import { LogOut } from 'lucide-react'; // Added LogOut
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
@@ -169,6 +169,7 @@ function App() {
   const [csvPreviewData, setCsvPreviewData] = useState([]);
   const [selectionMode, setSelectionMode] = useState(false);
   const [editingOrder, setEditingOrder] = useState(null);
+  const [shippingOrders, setShippingOrders] = useState(null);
 
   // Accordion
   const [expandedOrders, setExpandedOrders] = useState(new Set());
@@ -949,9 +950,24 @@ function App() {
 
       <AnimatePresence>
         {detailModalOrder && (
-          <AestheticDetailModal 
-            order={detailModalOrder} 
-            onClose={() => setDetailModalOrder(null)} 
+          <AestheticDetailModal
+            order={detailModalOrder}
+            onClose={() => setDetailModalOrder(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {shippingOrders && (
+          <ShipOrdersModal
+            orders={shippingOrders}
+            onClose={() => setShippingOrders(null)}
+            onSuccess={(dropboxPaths) => {
+              setToast({ message: 'Orders shipped successfully!', type: 'success' });
+              setSelectedOrders(new Set());
+              setShippingOrders(null);
+              handleSync();
+            }}
           />
         )}
       </AnimatePresence>
@@ -1032,6 +1048,19 @@ function App() {
                   className="glass-btn px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 tracking-wider uppercase text-[#e3cfd8] border-[rgba(227,207,216,0.2)] hover:bg-[rgba(227,207,216,0.05)]"
                 >
                   <FileText size={13} /> Labels
+                </button>
+              )}
+
+              {/* Ship Selected */}
+              {!isSupplier && (
+                <button
+                  onClick={() => {
+                    const ordersToShip = data.orders.filter(o => selectedOrders.has(o.orderId));
+                    if (ordersToShip.length > 0) setShippingOrders(ordersToShip);
+                  }}
+                  className="glass-btn px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 tracking-wider uppercase text-emerald-400 border-[rgba(52,211,153,0.2)] bg-[rgba(52,211,153,0.06)] hover:bg-[rgba(52,211,153,0.12)] transition-colors"
+                >
+                  <Truck size={13} /> Ship
                 </button>
               )}
 

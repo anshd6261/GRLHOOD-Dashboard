@@ -570,6 +570,40 @@ html, body {
   color: rgba(245, 245, 245, 0.9); 
 }
 
+/* ═══════════════════════════════════════════
+   GLASS PANEL (Modals)
+   ═══════════════════════════════════════════ */
+
+.glass-panel {
+  background: linear-gradient(
+    160deg,
+    rgba(30, 30, 35, 0.85) 0%,
+    rgba(20, 20, 25, 0.75) 100%
+  );
+  backdrop-filter: blur(32px) saturate(1.4);
+  -webkit-backdrop-filter: blur(32px) saturate(1.4);
+}
+
+/* ═══════════════════════════════════════════
+   STEP PROGRESS CONNECTOR
+   ═══════════════════════════════════════════ */
+
+@keyframes progressPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.step-shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(227,207,216,0.3) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
 .logo-tint {
   filter: sepia(100%) hue-rotate(296deg) saturate(180%) brightness(0.95) contrast(0.95);
 }

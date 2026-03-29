@@ -81,50 +81,42 @@ app.get('/api/orders', async (req, res) => {
             shiprocket.getOrdersForSync(daysLookback, startDate, endDate) // Override Risk with Shiprocket's Predictions
         ]);
 
-        // Build RTO Map from RapidShyp data (keyed by seller_order_id which is #3419 format)
+        // Build shipping data map from RapidShyp (AWB, status, IDs only — RTO risk comes from our XGBoost model)
         const rtoMap = {};
         if (rsRes.success && rsRes.data) {
             rsRes.data.forEach(rsOrder => {
                 const sellerId = rsOrder.seller_order_id; // e.g., "#3419"
                 const cleanId = rsOrder.channel_order_id; // e.g., "3419"
                 if (sellerId || cleanId) {
-                    const rtoEntry = {
-                        risk: rsOrder.rto_prediction || "Unknown",
-                        reason: rsOrder.rto_reason || "",
-                        shiprocketId: rsOrder.order_id, // RS MongoDB ID for linking
+                    // Only extract shipping metadata — NOT RTO risk (our AI handles that)
+                    const shippingEntry = {
+                        risk: "Unknown", // Ignored — XGBoost AI predictor is the sole RTO source
+                        reason: "",
+                        shiprocketId: rsOrder.order_id,
                         rsStatus: rsOrder.order_status || "",
                         awb: rsOrder.awb_number || ""
                     };
-                    if (sellerId) rtoMap[sellerId] = rtoEntry;
+                    if (sellerId) rtoMap[sellerId] = shippingEntry;
                     if (cleanId) {
-                        rtoMap[cleanId] = rtoEntry;
-                        rtoMap[`#${cleanId}`] = rtoEntry;
+                        rtoMap[cleanId] = shippingEntry;
+                        rtoMap[`#${cleanId}`] = shippingEntry;
                     }
                 }
             });
-            console.log(`[API] Built RTO map with ${Object.keys(rtoMap).length} entries from RapidShyp.`);
+            console.log(`[API] Built shipping map with ${Object.keys(rtoMap).length} entries from RapidShyp (RTO from XGBoost AI).`);
         }
 
-        // Override RTO Map with Shiprocket AI Predictions
+        // Merge Shiprocket shipping data (AWB, status) — NOT their RTO predictions
         if (srRes && srRes.data) {
-            let overrides = 0;
             srRes.data.forEach(srOrder => {
                 const cleanId = srOrder.channel_order_id;
                 if (!cleanId) return;
-
-                // Make sure we have the object in the map or create it
                 if (!rtoMap[cleanId]) rtoMap[cleanId] = { risk: "Unknown", reason: "", shiprocketId: null };
-                
-                // Shiprocket's prediction uses the exact same field names (rto_prediction, rto_reason)
-                if (srOrder.rto_prediction) {
-                    rtoMap[cleanId].risk = srOrder.rto_prediction;
-                    if (srOrder.rto_reason) rtoMap[cleanId].reason = srOrder.rto_reason;
-                    // Also update the hashed version just in case Shopify uses #
-                    rtoMap[`#${cleanId}`] = rtoMap[cleanId];
-                    overrides++;
-                }
+                // Only take shipping metadata, skip RTO prediction fields
+                if (srOrder.shiprocket_order_id) rtoMap[cleanId].shiprocketId = srOrder.shiprocket_order_id;
+                rtoMap[`#${cleanId}`] = rtoMap[cleanId];
             });
-            console.log(`[API] Overrode ${overrides} RTO predictions with Shiprocket's models.`);
+            console.log(`[API] Merged Shiprocket shipping data (RTO predictions handled by XGBoost AI).`);
         }
 
         // Process orders with the RTO map

@@ -50,32 +50,17 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
         const customerAdminId = rawCustomerId.split('/').pop();
         const customerProfileUrl = customerAdminId ? `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/customers/${customerAdminId}` : '';
 
-        // Extract RTO Risk from Shiprocket Data Map
-        // Shiprocket `channel_order_id` might be `#1001` or `1001`. We'll try both.
-        let rtoRisk = "Unknown";
-        let rtoReason = "";
+        // Extract shipping metadata from RapidShyp/Shiprocket map (AWB, status, IDs)
+        // RTO risk is handled solely by our XGBoost AI predictor below
         let shiprocketId = null;
         let rsStatus = "";
         let awb = "";
 
         const srMatch = rtoMap[order.name] || rtoMap[displayOrderId] || rtoMap[parseInt(displayOrderId, 10)];
         if (srMatch) {
-            const rawRisk = srMatch.risk ? srMatch.risk.toLowerCase() : "";
-            if (rawRisk === "high") rtoRisk = "High";
-            else if (rawRisk === "medium") rtoRisk = "Medium";
-            else if (rawRisk === "low") rtoRisk = "Low";
-            else rtoRisk = "Unknown"; // E.g. prepaid orders or empty
-
-            if (srMatch.reason) rtoReason = srMatch.reason;
             if (srMatch.shiprocketId) shiprocketId = srMatch.shiprocketId;
             if (srMatch.rsStatus) rsStatus = srMatch.rsStatus;
             if (srMatch.awb) awb = srMatch.awb;
-        } else {
-            // Fallback to tags if Shiprocket data wasn't found in the 14 day fetch
-            const tags = Array.isArray(order.tags) ? order.tags : [];
-            if (tags.some(t => t.toLowerCase() === 'flexassure:highrisk')) rtoRisk = "High";
-            else if (tags.some(t => t.toLowerCase() === 'flexassure:mediumrisk')) rtoRisk = "Medium";
-            else if (tags.some(t => t.toLowerCase() === 'flexassure:lowrisk')) rtoRisk = "Low";
         }
 
         // Shopify AWB Fallback
@@ -245,8 +230,6 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
                     customerOrdersCount,
                     customerProfileUrl,
                     shippingDetails,
-                    rtoRisk,
-                    rtoReason,
                     shiprocketId,
                     rsStatus,
                     awb,
