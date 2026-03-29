@@ -77,7 +77,7 @@ const sectionVariant = {
   }),
 };
 
-export default function AestheticDetailModal({ order, onClose }) {
+export default function AestheticDetailModal({ order, onClose, isSupplier }) {
   if (!order) return null;
 
   const phone = order.shippingDetails?.phone || '';
@@ -167,7 +167,7 @@ export default function AestheticDetailModal({ order, onClose }) {
                   </div>
                   <div className="text-right shrink-0">
                     <div className="text-xs text-white font-bold">₹{item.price || 0}</div>
-                    <div className="text-[10px] text-[#e3cfd8]">COGS ₹{item.cogs || 0}</div>
+                    {!isSupplier && <div className="text-[10px] text-[#e3cfd8]">COGS ₹{item.cogs || 0}</div>}
                   </div>
                 </div>
               </div>
@@ -329,7 +329,7 @@ export default function AestheticDetailModal({ order, onClose }) {
             </a>
           )}
           {order.shiprocketId && (
-            <a href={`https://seller.rapidshyp.com/orders/forward-orders?search=${order.orderId}`} target="_blank" className="glass-pill text-[10px] hover:bg-[rgba(245,245,245,0.08)] transition-colors inline-flex items-center gap-1.5">
+            <a href={`https://app.rapidshyp.com/orders/all?search=%23${order.orderId}`} target="_blank" className="glass-pill text-[10px] hover:bg-[rgba(245,245,245,0.08)] transition-colors inline-flex items-center gap-1.5">
               <ExternalLink size={10} /> RapidShyp
             </a>
           )}

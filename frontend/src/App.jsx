@@ -516,7 +516,9 @@ function App() {
                               </div>
                               <button
                                 onClick={() => {
-                                  setDetailModalOrder(searchedOrderOptions);
+                                  // Find all items for this order to show all units in detail modal
+                                  const allSearchItems = (data?.orders || []).filter(o => o.orderId === searchedOrderOptions.orderId);
+                                  setDetailModalOrder({ ...searchedOrderOptions, allItems: allSearchItems.length > 0 ? allSearchItems : [searchedOrderOptions] });
                                   setSearchOptionsOpen(false);
                                 }}
                                 className="w-full text-left px-3 py-2 text-xs font-bold text-white hover:bg-[rgba(227,207,216,0.08)] rounded-xl transition-colors"
@@ -533,7 +535,7 @@ function App() {
                                 </a>
                               )}
                                 <a
-                                  href={`https://seller.rapidshyp.com/orders?search=${searchedOrderOptions.orderId.replace('#', '')}`} 
+                                  href={`https://app.rapidshyp.com/orders/all?search=%23${searchedOrderOptions.orderId.replace('#', '')}`} 
                                   target="_blank"
                                   className="w-full text-left px-3 py-2 text-xs font-bold text-white hover:bg-[rgba(227,207,216,0.08)] rounded-xl transition-colors block"
                                 >
@@ -773,11 +775,13 @@ function App() {
                                   </div>
                                 </div>
 
-                                {/* COGS */}
+                                {/* COGS - admin only */}
+                                {!isSupplier && (
                                 <div className="text-right shrink-0">
                                   <div className="text-[9px] text-[rgba(245,245,245,0.25)] uppercase font-bold tracking-[0.12em] mb-1">COGS</div>
                                   <div className="text-lg font-black text-[#e3cfd8] glow-text">₹{totalCogs}</div>
                                 </div>
+                                )}
                               </div>
                             </div>
 
@@ -819,10 +823,12 @@ function App() {
                                           <div className="font-bold text-[#f5f5f5] text-sm truncate">{item.category || 'Unknown'}</div>
                                           <div className="text-xs text-[rgba(245,245,245,0.3)] mt-0.5 truncate">{item.model || 'Unknown Model'} {item.sku && `• ${item.sku}`}</div>
                                         </div>
+                                        {!isSupplier && (
                                         <div className="text-right shrink-0">
                                           <div className="text-[8px] text-[rgba(245,245,245,0.2)] uppercase font-bold tracking-wider">COGS</div>
                                           <div className="font-bold text-[#e3cfd8] text-sm">₹{item.cogs || 0}</div>
                                         </div>
+                                        )}
                                       </div>
                                     ))}
 
@@ -833,7 +839,7 @@ function App() {
                                           <ExternalLink size={13} />
                                         </a>
                                         <a
-                                          href={`https://seller.rapidshyp.com/orders?search=${group.orderId.replace('#', '')}`}
+                                          href={`https://app.rapidshyp.com/orders/all?search=%23${group.orderId.replace('#', '')}`}
                                           target="_blank"
                                           className="glass-icon-btn-sm"
                                           title="Open in RapidShyp"
@@ -956,6 +962,7 @@ function App() {
           <AestheticDetailModal
             order={detailModalOrder}
             onClose={() => setDetailModalOrder(null)}
+            isSupplier={isSupplier}
           />
         )}
       </AnimatePresence>

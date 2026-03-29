@@ -49,7 +49,7 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
         const customerProfileUrl = customerAdminId ? `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/customers/${customerAdminId}` : '';
 
         // Extract shipping metadata from RapidShyp/Shiprocket map (AWB, status, IDs)
-        // RTO risk is handled solely by our XGBoost AI predictor below
+        // RTO risk is handled by Shiprocket Sense API
         let shiprocketId = null;
         let rsStatus = "";
         let awb = "";
