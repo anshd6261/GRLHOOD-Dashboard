@@ -301,20 +301,20 @@ function predictOrderRisk(order) {
   const composite = (pincodeRisk + customerResult.score + addressResult.score + rtoHistoryResult.score) / 4;
 
   // Feature vector: [pincode_risk, customer_risk, customer_rto_risk, address_risk, composite]
-  // Normalize to roughly match the model's training distribution (0-1 scale for tree splits)
+  // Pass raw 1-10 scores directly — model was trained on this scale
   const features = [
-    pincodeRisk / 10,
-    customerResult.score / 10,
-    rtoHistoryResult.score / 10,
-    addressResult.score / 10,
-    composite / 10,
+    pincodeRisk,
+    customerResult.score,
+    rtoHistoryResult.score,
+    addressResult.score,
+    composite,
   ];
 
   // Run XGBoost inference
   let rawScore = predict(features);
 
-  // Scale to 1-10 range (model outputs ~0-1, we scale)
-  let finalScore = Math.max(1, Math.min(10, rawScore * 10));
+  // Clamp to 1-10 range
+  let finalScore = Math.max(1, Math.min(10, rawScore));
 
   // If model isn't loaded, use weighted average of features
   if (!MODEL) {

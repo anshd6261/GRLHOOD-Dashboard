@@ -49,7 +49,7 @@ class ErrorBoundary extends React.Component {
 /* ═══════════════════════════════════════════
    SPOTLIGHT CARD
    ═══════════════════════════════════════════ */
-function SpotlightCard({ children, className = '' }) {
+function SpotlightCard({ children, className = '', onClick }) {
   const cardRef = useRef(null);
   const handleMouseMove = (e) => {
     if (!cardRef.current) return;
@@ -58,7 +58,7 @@ function SpotlightCard({ children, className = '' }) {
     cardRef.current.style.setProperty('--spotlight-y', `${e.clientY - rect.top}px`);
   };
   return (
-    <div ref={cardRef} onMouseMove={handleMouseMove} className={`spotlight-card glass-card ${className}`}>
+    <div ref={cardRef} onMouseMove={handleMouseMove} onClick={onClick} className={`spotlight-card glass-card ${className}`}>
       {children}
     </div>
   );
@@ -747,7 +747,7 @@ function App() {
                                     </span>
                                     {group.items[0].aiRiskLevel && (
                                       <span
-                                        onClick={(e) => { e.stopPropagation(); setDetailModalOrder(group.items[0]); }}
+                                        onClick={(e) => { e.stopPropagation(); setDetailModalOrder({ ...group.items[0], allItems: group.items }); }}
                                         className={`cursor-pointer text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider hover:brightness-125 transition-all ${
                                           group.items[0].aiRiskLevel === 'High' ? 'bg-[rgba(255,20,147,0.15)] border border-[rgba(255,20,147,0.3)] text-[#ff1493] drop-shadow-[0_0_8px_rgba(255,20,147,0.4)]' :
                                           group.items[0].aiRiskLevel === 'Medium' ? 'bg-[rgba(227,207,216,0.1)] border border-[rgba(227,207,216,0.2)] text-[#e3cfd8]' :
