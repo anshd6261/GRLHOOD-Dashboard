@@ -12,7 +12,7 @@ const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
 
 const STEPS = [
   { id: 'REVIEW', label: 'Review Orders', icon: ClipboardCheck, desc: 'Reviewing order details' },
-  { id: 'AI_RISK', label: 'AI Risk Scan', icon: ShieldCheck, desc: 'Running XGBoost RTO analysis' },
+  { id: 'AI_RISK', label: 'AI Risk Scan', icon: ShieldCheck, desc: 'Running Shiprocket Sense RTO analysis' },
   { id: 'VERIFY', label: 'Verify Info', icon: UserCheck, desc: 'Validating customer & shipping data' },
   { id: 'ASSIGN', label: 'Assign Courier', icon: Truck, desc: 'Allocating best courier partner' },
   { id: 'LABELS', label: 'Gen Labels', icon: FileText, desc: 'Creating shipping labels' },

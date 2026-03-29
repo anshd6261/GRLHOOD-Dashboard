@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, ShieldCheck, Smartphone, ClipboardCheck, Download, Truck,
@@ -23,8 +23,7 @@ const STEPS = [
   { id: 'DONE', label: 'Done', icon: CheckCircle },
 ];
 
-function RiskBadge({ level, reasons }) {
-  const [hover, setHover] = useState(false);
+const RiskBadge = React.memo(function RiskBadge({ level }) {
   const config = {
     High: { bg: 'rgba(255,20,147,0.12)', border: 'rgba(255,20,147,0.3)', text: '#ff1493' },
     Medium: { bg: 'rgba(227,207,216,0.1)', border: 'rgba(227,207,216,0.2)', text: '#e3cfd8' },
@@ -32,37 +31,42 @@ function RiskBadge({ level, reasons }) {
   };
   const c = config[level] || config.Medium;
   return (
-    <span className="relative inline-block" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
-      <span className="text-[9px] uppercase font-black px-2 py-0.5 rounded-full tracking-wider cursor-default"
-        style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.text }}>
-        {level}
-      </span>
-      {hover && reasons?.length > 0 && (
-        <div className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-1.5 w-64 p-2.5 rounded-xl glass-panel border border-[rgba(255,255,255,0.1)] shadow-xl">
-          {reasons.map((r, i) => (
-            <div key={i} className="text-[10px] text-[rgba(245,245,245,0.6)] py-0.5 leading-tight">{r}</div>
-          ))}
-        </div>
-      )}
+    <span className="text-[9px] uppercase font-black px-2 py-0.5 rounded-full tracking-wider"
+      style={{ background: c.bg, border: `1px solid ${c.border}`, color: c.text }}>
+      {level}
     </span>
   );
-}
+});
 
-function OrderDetailCard({ group, onCancel, cancellingId, hideActions, hidePrice, showDate }) {
+const RiskReasonPills = React.memo(function RiskReasonPills({ reasons }) {
+  if (!reasons?.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1 mt-1.5">
+      {reasons.slice(0, 5).map((r, i) => (
+        <span key={i} className="text-[9px] px-2 py-0.5 rounded-md bg-[rgba(255,20,147,0.06)] border border-[rgba(255,20,147,0.12)] text-[rgba(245,245,245,0.5)] leading-tight">
+          {r}
+        </span>
+      ))}
+    </div>
+  );
+});
+
+const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, cancellingId, hideActions, hidePrice, showDate, showRiskDetail }) {
   const [open, setOpen] = useState(false);
   const phone = group.shippingDetails?.phone || '';
   const cleanPhone = phone.replace(/\D/g, '').slice(-10);
   const shopifyLink = group.items[0]?.id ? `https://${SHOPIFY_DOMAIN}/admin/orders/${group.items[0].id}` : group.orderLink || null;
+  const riskColor = group.aiRiskLevel === 'High' ? '#ff1493' : group.aiRiskLevel === 'Low' ? '#34d399' : '#e3cfd8';
   return (
-    <div className="glass-card-sm overflow-hidden">
-      <div className="p-3 flex items-center justify-between cursor-pointer" onClick={() => setOpen(!open)}>
+    <div className="glass-card-sm overflow-hidden" style={showRiskDetail ? { borderLeft: `2px solid ${riskColor}30` } : {}}>
+      <div className="p-3 flex items-center justify-between cursor-pointer select-none" onClick={() => setOpen(!open)}>
         <div className="flex items-center gap-3 min-w-0">
           {group.items[0]?.thumbnail && <img src={group.items[0].thumbnail} alt="" className="w-9 h-9 rounded-lg object-cover border border-[rgba(255,255,255,0.06)]" />}
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-bold text-white">#{group.orderId}</span>
               <span className="text-[10px] text-[rgba(245,245,245,0.3)]">{group.items.length} unit{group.items.length > 1 ? 's' : ''}</span>
-              {group.aiRiskLevel && <RiskBadge level={group.aiRiskLevel} reasons={group.aiRiskReasons} />}
+              {group.aiRiskLevel && <RiskBadge level={group.aiRiskLevel} />}
               {shopifyLink && <a href={shopifyLink} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[rgba(245,245,245,0.2)] hover:text-[#e3cfd8]"><ExternalLink size={10} /></a>}
             </div>
             <div className="text-[11px] text-[rgba(245,245,245,0.35)] truncate">
@@ -86,40 +90,61 @@ function OrderDetailCard({ group, onCancel, cancellingId, hideActions, hidePrice
           {open ? <ChevronUp size={14} className="text-[rgba(245,245,245,0.3)]" /> : <ChevronDown size={14} className="text-[rgba(245,245,245,0.3)]" />}
         </div>
       </div>
-      <AnimatePresence>
-        {open && (
-          <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
-            <div className="px-3 pb-3 space-y-2 border-t border-[rgba(255,255,255,0.04)]">
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1 pt-2 text-[11px]">
-                <div><span className="text-[rgba(245,245,245,0.3)]">Address:</span> <span className="text-[rgba(245,245,245,0.55)]">{group.shippingDetails?.address1}, {group.shippingDetails?.city} {group.shippingDetails?.zip}</span></div>
-                <div><span className="text-[rgba(245,245,245,0.3)]">Phone:</span> <span className="text-[rgba(245,245,245,0.55)]">{phone}</span></div>
-              </div>
-              <div className="space-y-1.5 pt-1">
-                {group.items.map((item, i) => (
-                  <div key={i} className="flex items-center gap-2.5 bg-[rgba(255,255,255,0.02)] rounded-lg p-2">
-                    {item.thumbnail && <img src={item.thumbnail} alt="" className="w-9 h-9 rounded-md object-cover" />}
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[11px] font-bold text-[#e3cfd8] truncate">{item.model || 'Unknown Model'}</div>
-                      <div className="text-[10px] text-[rgba(245,245,245,0.3)]">{item.category} · {item.sku}</div>
-                    </div>
-                    {!hidePrice && <div className="text-[11px] text-white font-bold shrink-0">₹{item.price || 0}</div>}
-                  </div>
+      {open && (
+        <div className="px-3 pb-3 space-y-2.5 border-t border-[rgba(255,255,255,0.04)]">
+          {/* Risk reasons as pills (shown in RTO step) */}
+          {showRiskDetail && group.aiRiskReasons?.length > 0 && (
+            <div className="pt-2">
+              <div className="text-[9px] uppercase font-bold text-[rgba(245,245,245,0.25)] tracking-wider mb-1.5">Risk Factors</div>
+              <div className="flex flex-wrap gap-1">
+                {group.aiRiskReasons.map((r, i) => (
+                  <span key={i} className="text-[9px] px-2 py-0.5 rounded-md border leading-tight"
+                    style={{ background: `${riskColor}08`, borderColor: `${riskColor}20`, color: `${riskColor}cc` }}>
+                    {r}
+                  </span>
                 ))}
               </div>
-              {group.awb && (
-                <div className="text-[11px] flex items-center gap-1.5">
-                  <span className="text-[rgba(245,245,245,0.3)]">AWB:</span>
-                  <a href={group.awb.startsWith('http') ? group.awb : `https://www.google.com/search?q=${group.awb}+tracking`} target="_blank"
-                    className="text-[#e3cfd8] font-mono hover:underline">{group.awb.startsWith('http') ? group.awb.match(/\d{10,}/)?.[0] || 'Label' : group.awb}</a>
-                </div>
-              )}
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          )}
+          {/* Customer & address info */}
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <div>
+              <div className="text-[9px] uppercase font-bold text-[rgba(245,245,245,0.25)] tracking-wider mb-0.5">Address</div>
+              <div className="text-[11px] text-[rgba(245,245,245,0.55)] leading-relaxed">
+                {group.shippingDetails?.address1}<br />
+                {group.shippingDetails?.city} {group.shippingDetails?.zip}
+              </div>
+            </div>
+            <div>
+              <div className="text-[9px] uppercase font-bold text-[rgba(245,245,245,0.25)] tracking-wider mb-0.5">Phone</div>
+              <div className="text-[11px] text-[rgba(245,245,245,0.55)] font-mono">{phone || 'N/A'}</div>
+            </div>
+          </div>
+          {/* Items */}
+          <div className="space-y-1.5 pt-1">
+            {group.items.map((item, i) => (
+              <div key={i} className="flex items-center gap-2.5 bg-[rgba(255,255,255,0.02)] rounded-lg p-2">
+                {item.thumbnail && <img src={item.thumbnail} alt="" className="w-9 h-9 rounded-md object-cover" />}
+                <div className="flex-1 min-w-0">
+                  <div className="text-[11px] font-bold text-[#e3cfd8] truncate">{item.model || 'Unknown Model'}</div>
+                  <div className="text-[10px] text-[rgba(245,245,245,0.3)]">{item.category} · {item.sku}</div>
+                </div>
+                {!hidePrice && <div className="text-[11px] text-white font-bold shrink-0">Rs{item.price || 0}</div>}
+              </div>
+            ))}
+          </div>
+          {group.awb && (
+            <div className="text-[11px] flex items-center gap-1.5">
+              <span className="text-[rgba(245,245,245,0.3)]">AWB:</span>
+              <a href={group.awb.startsWith('http') ? group.awb : `https://www.google.com/search?q=${group.awb}+tracking`} target="_blank"
+                className="text-[#e3cfd8] font-mono hover:underline">{group.awb.startsWith('http') ? group.awb.match(/\d{10,}/)?.[0] || 'Label' : group.awb}</a>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
-}
+});
 
 export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, isSupplier }) {
   const [step, setStep] = useState(0);
@@ -147,18 +172,23 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const goNext = () => { markDone(step); setStep(s => Math.min(s + 1, STEPS.length - 1)); };
   const goBack = () => setStep(s => Math.max(s - 1, 0));
 
-  const handleModelUpdate = (i, val) => {
-    const u = [...workingOrders]; u[i] = { ...u[i], model: val }; setWorkingOrders(u);
-    const o = u[i]; const k = `model_override_${o.orderId}_${o.sku}`;
-    val?.trim() ? localStorage.setItem(k, val) : localStorage.removeItem(k);
-  };
-  const handleDeleteRow = (i) => { const u = [...workingOrders]; u.splice(i, 1); setWorkingOrders(u); };
-  const handleCancel = async (id) => {
+  const handleModelUpdate = useCallback((i, val) => {
+    setWorkingOrders(prev => {
+      const u = [...prev]; u[i] = { ...u[i], model: val };
+      const o = u[i]; const k = `model_override_${o.orderId}_${o.sku}`;
+      val?.trim() ? localStorage.setItem(k, val) : localStorage.removeItem(k);
+      return u;
+    });
+  }, []);
+  const handleDeleteRow = useCallback((i) => {
+    setWorkingOrders(prev => { const u = [...prev]; u.splice(i, 1); return u; });
+  }, []);
+  const handleCancel = useCallback(async (id) => {
     setCancellingId(id);
     try { await axios.post(`${API_URL}/orders/${id}/cancel`); setWorkingOrders(p => p.filter(o => o.orderId !== id)); setToast({ msg: `#${id} cancelled` }); }
     catch (e) { setToast({ msg: `Cancel failed: ${e.response?.data?.error || e.message}`, err: true }); }
     finally { setCancellingId(null); }
-  };
+  }, []);
 
   const grouped = useMemo(() => {
     const m = {};
@@ -214,14 +244,15 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
 
   // ═══ STEP 1: RTO Sort ═══
   const codOrders = useMemo(() => grouped.filter(g => g.payment === 'COD' || g.payment === 'Cash on Delivery'), [grouped]);
+  const sortedCodOrders = useMemo(() => [...codOrders].sort((a, b) => (b.aiRiskScore || 0) - (a.aiRiskScore || 0)), [codOrders]);
   const renderRTOSort = () => (
     <div className="space-y-3">
       {codOrders.length === 0 ? (
-        <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="text-center py-12">
+        <div className="text-center py-12">
           <CheckCircle size={36} className="mx-auto text-emerald-400 mb-3" />
           <h3 className="text-base font-bold text-white mb-1">No COD Orders</h3>
           <p className="text-xs text-[rgba(245,245,245,0.3)]">All orders are prepaid</p>
-        </motion.div>
+        </div>
       ) : (
         <div className="space-y-2">
           {highRisk.length > 0 && (
@@ -230,10 +261,10 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
               <span className="text-xs font-bold text-[rgba(245,245,245,0.6)]">{highRisk.length} high-risk out of {codOrders.length} COD orders</span>
             </div>
           )}
-          {codOrders.sort((a, b) => (b.aiRiskScore || 0) - (a.aiRiskScore || 0)).map(g => (
+          {sortedCodOrders.map(g => (
             <div key={g.orderId} className="flex items-start gap-2">
-              <div className={`text-base font-black pt-2.5 w-10 text-center shrink-0 ${g.aiRiskLevel === 'High' ? 'text-[#ff1493]' : 'text-emerald-400'}`}>{g.aiRiskScore || 0}%</div>
-              <div className="flex-1"><OrderDetailCard group={g} onCancel={handleCancel} cancellingId={cancellingId} hidePrice={isSupplier} /></div>
+              <div className={`text-lg font-black pt-2.5 w-12 text-center shrink-0 ${g.aiRiskLevel === 'High' ? 'text-[#ff1493]' : g.aiRiskLevel === 'Low' ? 'text-emerald-400' : 'text-[#e3cfd8]'}`}>{g.aiRiskScore || 0}%</div>
+              <div className="flex-1"><OrderDetailCard group={g} onCancel={handleCancel} cancellingId={cancellingId} hidePrice={isSupplier} showRiskDetail /></div>
             </div>
           ))}
         </div>
@@ -545,7 +576,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-6 py-3">
           <AnimatePresence mode="wait">
-            <motion.div key={step} initial={{ opacity: 0, x: 15 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -15 }} transition={{ duration: 0.2 }}>
+            <motion.div key={step} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} transition={{ duration: 0.12, ease: 'easeOut' }}>
               {stepContent[step]?.()}
             </motion.div>
           </AnimatePresence>
