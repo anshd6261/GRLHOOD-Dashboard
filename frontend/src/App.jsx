@@ -853,7 +853,7 @@ function App() {
                                           const phone = group.shippingDetails?.phone || group.customer?.phone;
                                           return phone ? (
                                             <a
-                                              href={`https://wa.me/${phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${group.customerName}, this is GRLHOOD! 🌸\n\nWe noticed you forgot to mention your Phone Model in your recent order. Could you please share it so we can dispatch your order soon? 📱✨`)}`}
+                                              href={`https://wa.me/${phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(`Hi ${group.customerName}, this is GRLHOOD!\n\nWe noticed you forgot to mention your Phone Model in your recent order. Could you please share it so we can dispatch your order soon?`)}`}
                                               target="_blank"
                                               className="glass-icon-btn-sm text-[#25D366]"
                                             >
