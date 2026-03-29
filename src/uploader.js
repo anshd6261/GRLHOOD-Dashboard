@@ -1,7 +1,9 @@
-const puppeteer = require('puppeteer');
+let puppeteer;
+try { puppeteer = require('puppeteer'); } catch (e) { puppeteer = null; }
 require('dotenv').config();
 
 const uploadToPortal = async (filePath) => {
+    if (!puppeteer) throw new Error('Puppeteer not available in this environment');
     console.log('[PORTAL] Starting upload process...');
 
     if (!process.env.PORTAL_USERNAME || !process.env.PORTAL_PASSWORD) {

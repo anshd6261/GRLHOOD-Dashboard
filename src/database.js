@@ -1,4 +1,5 @@
-const Database = require('better-sqlite3');
+let Database;
+try { Database = require('better-sqlite3'); } catch (e) { Database = null; }
 const path = require('path');
 const fs = require('fs');
 
@@ -18,6 +19,7 @@ const getDb = () => {
         if (process.env.VERCEL) {
             console.warn('[DB] WARNING: Running on Vercel with ephemeral SQLite database. Data will be lost on next cold start. Consider migrating to Turso or an external database provider.');
         }
+        if (!Database) throw new Error('better-sqlite3 not available in this environment');
         db = new Database(DB_FILE, { verbose: console.log });
     }
     return db;
