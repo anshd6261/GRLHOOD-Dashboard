@@ -310,16 +310,10 @@ function predictOrderRisk(order) {
     composite,
   ];
 
-  // Run XGBoost inference
-  let rawScore = predict(features);
-
-  // Clamp to 1-10 range
-  let finalScore = Math.max(1, Math.min(10, rawScore));
-
-  // If model isn't loaded, use weighted average of features
-  if (!MODEL) {
-    finalScore = (pincodeRisk * 0.3) + (customerResult.score * 0.25) + (addressResult.score * 0.25) + (rtoHistoryResult.score * 0.2);
-  }
+  // Use weighted average of heuristic features for scoring
+  // The XGBoost model was trained on standardized features from a different dataset
+  // and doesn't match our feature scale, so we use the heuristic approach
+  let finalScore = (pincodeRisk * 0.3) + (customerResult.score * 0.25) + (addressResult.score * 0.25) + (rtoHistoryResult.score * 0.2);
 
   finalScore = Math.round(finalScore * 10) / 10; // 1 decimal
 

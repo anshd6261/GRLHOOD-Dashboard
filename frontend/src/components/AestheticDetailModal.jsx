@@ -292,15 +292,18 @@ export default function AestheticDetailModal({ order, onClose }) {
 
               <div className="pt-3 border-t border-[rgba(227,207,216,0.06)] space-y-3">
                 <div className="flex flex-col">
-                  <span className="text-[10px] uppercase text-[rgba(245,245,245,0.3)] font-bold mb-0.5">AWB / Label</span>
+                  <span className="text-[10px] uppercase text-[rgba(245,245,245,0.3)] font-bold mb-0.5">AWB / Tracking</span>
                   {order.awb ? (
-                    order.awb.startsWith('http') ? (
-                      <a href={order.awb} target="_blank" className="text-[#e3cfd8] font-bold font-mono text-sm flex items-center gap-1.5 hover:underline decoration-white/30 underline-offset-4 w-max">
-                        <ExternalLink size={13} /> {order.awb}
+                    <div className="flex items-center gap-2">
+                      <a href={order.awb.startsWith('http') ? order.awb : `https://www.google.com/search?q=${order.awb}+tracking`}
+                        target="_blank" className="text-[#e3cfd8] font-bold font-mono text-sm hover:underline decoration-white/30 underline-offset-4">
+                        {order.awb.startsWith('http') ? order.awb.match(/\d{10,}/)?.[0] || order.awb.split('/').pop() : order.awb}
                       </a>
-                    ) : (
-                      <span className="text-[#e3cfd8] font-bold font-mono text-sm">{order.awb}</span>
-                    )
+                      <a href={order.awb.startsWith('http') ? order.awb : '#'} target="_blank"
+                        className="p-1 rounded-md bg-[rgba(227,207,216,0.06)] border border-[rgba(227,207,216,0.1)] text-[#e3cfd8] hover:bg-[rgba(227,207,216,0.15)] transition-colors" title="Download Label">
+                        <Download size={11} />
+                      </a>
+                    </div>
                   ) : <span className="text-[rgba(245,245,245,0.4)] text-sm">Not generated yet</span>}
                 </div>
                 <div className="flex flex-col">
