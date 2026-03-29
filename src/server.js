@@ -157,7 +157,8 @@ app.get('/api/orders/search', async (req, res) => {
         // (For a highly optimized V3 search, we'll try to get their specific RTO from RapidShyp if possible)
         // For now, we process them as safe to display in the UI quickly.
         const gstRate = parseFloat(process.env.GST_RATE || 18);
-        const processedRows = processOrders(rawOrders, gstRate, {}); // Empty RTO map for speed on search
+        const senseRiskMap = await shiprocketSense.batchPredictRisk(rawOrders);
+        const processedRows = processOrders(rawOrders, gstRate, {}, senseRiskMap);
 
         res.json({
             success: true,

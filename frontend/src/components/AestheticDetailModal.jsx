@@ -1,10 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, Package, Truck, User, MapPin, Calendar, Smartphone, FileText, Download,
   ExternalLink, AlertTriangle, ShieldCheck, Phone, MessageSquare,
-  CreditCard, Hash, Tag, Sparkles, TrendingUp, Activity
+  CreditCard, Hash, Tag, Sparkles, TrendingUp, Activity, RefreshCw, Loader2
 } from 'lucide-react';
+import axios from 'axios';
+
+const API_BASE = import.meta.env.VITE_API_URL || '';
+const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
 
 function RiskGauge({ score, level }) {
   const pct = Math.min(score || 0, 100);
@@ -35,7 +39,7 @@ function RiskGauge({ score, level }) {
             transition={{ delay: 0.5, type: 'spring' }}
             className="text-2xl font-black text-white"
           >
-            {score ? `${score}%` : 'N/A'}
+            {score != null ? `${score}%` : 'N/A'}
           </motion.span>
         </div>
       </div>
@@ -50,7 +54,7 @@ function RiskGauge({ score, level }) {
           {level || 'Unknown'} Risk
         </motion.div>
         <div className="text-[10px] text-[rgba(245,245,245,0.35)] uppercase font-bold tracking-widest mt-1.5 flex items-center gap-1">
-          <Sparkles size={10} /> XGBoost AI Model
+          <Sparkles size={10} /> Shiprocket Sense
         </div>
       </div>
     </div>
@@ -78,10 +82,32 @@ const sectionVariant = {
 };
 
 export default function AestheticDetailModal({ order, onClose, isSupplier }) {
+  const [labelLoading, setLabelLoading] = useState(false);
+  const [labelError, setLabelError] = useState(null);
+
   if (!order) return null;
 
   const phone = order.shippingDetails?.phone || '';
   const cleanPhone = phone.replace(/[^0-9]/g, '');
+
+  const handleDownloadLabel = async () => {
+    if (!order.shiprocketId) return;
+    setLabelLoading(true);
+    setLabelError(null);
+    try {
+      const res = await axios.post(`${API_URL}/rapidshyp/label`, { orderIds: [order.shiprocketId] });
+      const url = res.data?.label_url || res.data?.labelUrl || res.data?.pdf_url;
+      if (url) {
+        window.open(url, '_blank');
+      } else {
+        setLabelError('No label URL returned');
+      }
+    } catch (e) {
+      setLabelError(e.response?.data?.error || e.message);
+    } finally {
+      setLabelLoading(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 sm:p-6 bg-black/70 backdrop-blur-xl">
@@ -310,6 +336,21 @@ export default function AestheticDetailModal({ order, onClose, isSupplier }) {
                   <span className={`text-sm font-bold ${order.rsStatus ? 'text-[#e3cfd8]' : 'text-[rgba(245,245,245,0.4)]'}`}>
                     {order.rsStatus || 'Awaiting Shipment'}
                   </span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] uppercase text-[rgba(245,245,245,0.3)] font-bold mb-1">Label</span>
+                  {order.shiprocketId ? (
+                    <button
+                      onClick={handleDownloadLabel}
+                      disabled={labelLoading}
+                      className="glass-btn px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 w-fit text-[#e3cfd8] hover:bg-[rgba(227,207,216,0.1)] transition-colors"
+                    >
+                      {labelLoading ? <><Loader2 size={12} className="animate-spin" /> Fetching...</> : <><Download size={12} /> Download Label</>}
+                    </button>
+                  ) : (
+                    <span className="text-[rgba(245,245,245,0.3)] text-xs">Ship order first to get label</span>
+                  )}
+                  {labelError && <span className="text-[#ff1493] text-[10px] mt-1">{labelError}</span>}
                 </div>
               </div>
             </div>
