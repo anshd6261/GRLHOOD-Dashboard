@@ -92,6 +92,30 @@ async function predictRisk(order, paymentMethod) {
 
         return defaultResult('API returned unsuccessful response');
     } catch (e) {
+        // Retry once on rate limit (429)
+        if (e.response?.status === 429) {
+            console.warn(`[SENSE] Rate limited, retrying after 2s...`);
+            await new Promise(r => setTimeout(r, 2000));
+            try {
+                const retry = await axios.post(SENSE_URL, payload, {
+                    headers: { 'Content-Type': 'application/json', 'Authorization': BASIC_AUTH },
+                    timeout: 10000,
+                });
+                if (retry.data?.success && retry.data?.data) {
+                    const d = retry.data.data;
+                    return {
+                        risk: d.risk || 'unknown',
+                        score: d.score || 0,
+                        probability: d.model_probability || 0,
+                        reasons: (d.reasons || []).map(r => r.reason),
+                        reasonCodes: (d.reasons || []).map(r => r.reason_code),
+                        riskTags: (d.risk_tags || []).map(t => ({ code: t.code, reason: t.reason })),
+                    };
+                }
+            } catch (retryErr) {
+                console.error(`[SENSE] Retry also failed:`, retryErr.message);
+            }
+        }
         const errMsg = e.response?.data?.errors?.[0]?.message || e.message;
         console.error(`[SENSE] Predict failed for order ${order.name || '?'}:`, errMsg);
         return defaultResult(errMsg);
@@ -144,9 +168,9 @@ async function batchPredictRisk(orders, paymentMap = {}) {
         results[orderId] = await predictRisk(order, payment);
         checked++;
 
-        // Small delay between API calls to avoid rate limiting
-        if (checked % 5 === 0) {
-            await new Promise(r => setTimeout(r, 200));
+        // Delay between API calls to avoid rate limiting
+        if (checked % 3 === 0) {
+            await new Promise(r => setTimeout(r, 500));
         }
     }
 
