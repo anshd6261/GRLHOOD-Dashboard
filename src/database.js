@@ -183,6 +183,40 @@ const initializeDatabase = () => {
             prepaid_orders INTEGER
         );
 
+        CREATE TABLE IF NOT EXISTS customer_queries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            external_id TEXT UNIQUE,
+            channel TEXT NOT NULL,
+            customer_name TEXT,
+            customer_handle TEXT,
+            subject TEXT,
+            last_message_text TEXT,
+            last_message_at TEXT,
+            status TEXT DEFAULT 'open',
+            category TEXT DEFAULT 'general',
+            priority TEXT DEFAULT 'normal',
+            linked_order_id TEXT,
+            linked_order_gid TEXT,
+            linked_awb TEXT,
+            notes TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS customer_messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            query_id INTEGER NOT NULL,
+            external_id TEXT UNIQUE,
+            channel TEXT NOT NULL,
+            direction TEXT NOT NULL,
+            sender_name TEXT,
+            sender_handle TEXT,
+            body TEXT,
+            timestamp TEXT,
+            attachments TEXT,
+            FOREIGN KEY (query_id) REFERENCES customer_queries(id)
+        );
+
         -- Create Indexes
         CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(order_date);
         CREATE INDEX IF NOT EXISTS idx_orders_pincode ON orders(pincode);
@@ -190,6 +224,10 @@ const initializeDatabase = () => {
         CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON order_items(order_id);
         CREATE INDEX IF NOT EXISTS idx_bank_tx_date ON bank_transactions(transaction_date);
         CREATE INDEX IF NOT EXISTS idx_metrics_date ON daily_metrics(date);
+        CREATE INDEX IF NOT EXISTS idx_queries_status ON customer_queries(status);
+        CREATE INDEX IF NOT EXISTS idx_queries_channel ON customer_queries(channel);
+        CREATE INDEX IF NOT EXISTS idx_queries_last_msg ON customer_queries(last_message_at);
+        CREATE INDEX IF NOT EXISTS idx_messages_query ON customer_messages(query_id);
     `;
 
     // Execute setup script

@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import DottedBackground from './components/DottedBackground';
 import GlowBlobs from './components/GlowBlobs';
 import CsvEditorModal from './components/CsvEditorModal';
+import CustomerCare from './pages/CustomerCare';
 import EditOrderModal from './components/EditOrderModal';
 import AestheticDetailModal from './components/AestheticDetailModal';
 import ShipOrdersModal from './components/ShipOrdersModal';
@@ -408,6 +409,7 @@ function App() {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'fulfill', label: 'Fulfill', icon: ClipboardCheck },
     { id: 'finance', label: 'Finance', icon: TrendingUp },
+    { id: 'customer-care', label: 'Care', icon: MessageSquare },
   ];
 
   /* ─── RENDER ─── */
@@ -907,6 +909,13 @@ function App() {
                   <img src="/logo.png" alt="GRLHOOD" className="w-56 h-56 object-contain opacity-80 drop-shadow-[0_0_60px_rgba(227,207,216,0.08)]" />
                   <p className="text-sm text-[rgba(245,245,245,0.2)] mt-8 tracking-widest uppercase">Coming Soon</p>
                 </div>
+              </motion.div>
+            )}
+
+            {/* ═══ CUSTOMER CARE TAB ═══ */}
+            {activeTab === 'customer-care' && (
+              <motion.div key="customer-care" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                <CustomerCare />
               </motion.div>
             )}
 

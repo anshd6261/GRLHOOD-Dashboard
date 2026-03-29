@@ -21,6 +21,9 @@ const { getAggregatedPandL, getDailyPandL, getCashPosition } = require('./calcul
 const { getAllAlerts } = require('./alerts');
 const { syncPayUApi } = require('./sync_payu');
 const { uploadOrderPayload } = require('./dropbox');
+const { syncInstagramDMs, sendInstagramReply } = require('./instagram_dm');
+const { syncGmailInbox, sendEmailReply } = require('./gmail_reader');
+const { getDb } = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -995,7 +998,293 @@ app.post('/api/rapidshyp/bulk-labels-dropbox', async (req, res) => {
     }
 });
 
-// 10. Catch-All for Frontend
+// ═══════════════════════════════════════════════════════════
+// 10. CUSTOMER CARE ENDPOINTS
+// ═══════════════════════════════════════════════════════════
+
+// 10.1 Sync Instagram DMs + Gmail
+app.post('/api/customer-care/sync', async (req, res) => {
+    try {
+        const [igResult, gmailResult] = await Promise.allSettled([
+            syncInstagramDMs(),
+            syncGmailInbox(req.body?.daysSince || 7)
+        ]);
+        res.json({
+            success: true,
+            instagram: igResult.status === 'fulfilled' ? igResult.value : { synced: 0, error: igResult.reason?.message },
+            email: gmailResult.status === 'fulfilled' ? gmailResult.value : { synced: 0, error: gmailResult.reason?.message }
+        });
+    } catch (e) {
+        console.error('[CUSTOMER-CARE] Sync error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 10.2 List queries with filters
+app.get('/api/customer-care/queries', (req, res) => {
+    try {
+        const db = getDb();
+        const { channel, status, category, priority, search, sort, startDate, endDate, page = 1, limit = 50 } = req.query;
+
+        let where = [];
+        let params = [];
+
+        if (channel && channel !== 'all') { where.push('channel = ?'); params.push(channel); }
+        if (status && status !== 'all') { where.push('status = ?'); params.push(status); }
+        if (category && category !== 'all') { where.push('category = ?'); params.push(category); }
+        if (priority && priority !== 'all') { where.push('priority = ?'); params.push(priority); }
+        if (search) { where.push('(customer_name LIKE ? OR customer_handle LIKE ? OR subject LIKE ? OR last_message_text LIKE ?)'); params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`); }
+        if (startDate) { where.push('last_message_at >= ?'); params.push(startDate); }
+        if (endDate) { where.push('last_message_at <= ?'); params.push(endDate); }
+
+        const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+
+        let orderBy = 'ORDER BY last_message_at DESC';
+        if (sort === 'oldest') orderBy = 'ORDER BY last_message_at ASC';
+        if (sort === 'priority') orderBy = "ORDER BY CASE priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 WHEN 'low' THEN 4 END, last_message_at DESC";
+
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+
+        const countStmt = db.prepare(`SELECT COUNT(*) as total FROM customer_queries ${whereClause}`);
+        const total = countStmt.get(...params).total;
+
+        const queryStmt = db.prepare(`SELECT * FROM customer_queries ${whereClause} ${orderBy} LIMIT ? OFFSET ?`);
+        const queries = queryStmt.all(...params, parseInt(limit), offset);
+
+        res.json({ success: true, queries, total, page: parseInt(page), limit: parseInt(limit) });
+    } catch (e) {
+        console.error('[CUSTOMER-CARE] List error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 10.3 Get single query with messages
+app.get('/api/customer-care/queries/:id', (req, res) => {
+    try {
+        const db = getDb();
+        const query = db.prepare('SELECT * FROM customer_queries WHERE id = ?').get(req.params.id);
+        if (!query) return res.status(404).json({ success: false, error: 'Query not found' });
+
+        const messages = db.prepare('SELECT * FROM customer_messages WHERE query_id = ? ORDER BY timestamp ASC').all(req.params.id);
+        res.json({ success: true, query, messages });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 10.4 Update query (status, category, priority, notes)
+app.patch('/api/customer-care/queries/:id', (req, res) => {
+    try {
+        const db = getDb();
+        const { status, category, priority, notes } = req.body;
+        const fields = [];
+        const params = [];
+
+        if (status) { fields.push('status = ?'); params.push(status); }
+        if (category) { fields.push('category = ?'); params.push(category); }
+        if (priority) { fields.push('priority = ?'); params.push(priority); }
+        if (notes !== undefined) { fields.push('notes = ?'); params.push(notes); }
+        fields.push('updated_at = CURRENT_TIMESTAMP');
+
+        if (fields.length === 1) return res.status(400).json({ success: false, error: 'No fields to update' });
+
+        params.push(req.params.id);
+        db.prepare(`UPDATE customer_queries SET ${fields.join(', ')} WHERE id = ?`).run(...params);
+
+        const updated = db.prepare('SELECT * FROM customer_queries WHERE id = ?').get(req.params.id);
+        res.json({ success: true, query: updated });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 10.5 Reply to a query
+app.post('/api/customer-care/queries/:id/reply', async (req, res) => {
+    try {
+        const db = getDb();
+        const query = db.prepare('SELECT * FROM customer_queries WHERE id = ?').get(req.params.id);
+        if (!query) return res.status(404).json({ success: false, error: 'Query not found' });
+
+        const { message } = req.body;
+        if (!message) return res.status(400).json({ success: false, error: 'Message required' });
+
+        let result;
+        if (query.channel === 'instagram') {
+            result = await sendInstagramReply(query.external_id, message);
+        } else if (query.channel === 'email') {
+            result = await sendEmailReply(
+                query.customer_handle,
+                query.subject || 'Re: Your inquiry',
+                message,
+                query.external_id,
+                query.external_id
+            );
+        } else {
+            return res.status(400).json({ success: false, error: 'Unknown channel' });
+        }
+
+        if (result.success || result.messageId) {
+            // Save outbound message
+            const msgId = result.messageId || `outbound-${Date.now()}`;
+            db.prepare(`
+                INSERT INTO customer_messages (query_id, external_id, channel, direction, sender_name, sender_handle, body, timestamp)
+                VALUES (?, ?, ?, 'outbound', 'GRLHOOD', ?, ?, CURRENT_TIMESTAMP)
+            `).run(query.id, msgId, query.channel, process.env.GMAIL_USER || 'admin', message);
+
+            // Update query
+            db.prepare(`UPDATE customer_queries SET last_message_text = ?, last_message_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP, status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END WHERE id = ?`)
+                .run(message.substring(0, 200), query.id);
+
+            res.json({ success: true, messageId: msgId });
+        } else {
+            res.status(500).json({ success: false, error: result.error || 'Failed to send' });
+        }
+    } catch (e) {
+        console.error('[CUSTOMER-CARE] Reply error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 10.6 Link a Shopify order to a query
+app.post('/api/customer-care/queries/:id/link-order', async (req, res) => {
+    try {
+        const db = getDb();
+        const query = db.prepare('SELECT * FROM customer_queries WHERE id = ?').get(req.params.id);
+        if (!query) return res.status(404).json({ success: false, error: 'Query not found' });
+
+        const { orderName } = req.body;
+        if (!orderName) return res.status(400).json({ success: false, error: 'orderName required' });
+
+        // Search for the order in Shopify
+        const results = await searchOrders(orderName);
+        if (!results || results.length === 0) {
+            return res.status(404).json({ success: false, error: `Order "${orderName}" not found in Shopify` });
+        }
+
+        const order = results[0];
+        const orderId = order.name || orderName;
+        const numericId = order.id?.toString().replace('gid://shopify/Order/', '') || '';
+
+        // Try to find AWB from RapidShyp
+        let awb = null;
+        try {
+            const rsOrders = await rapidshyp.fetchOrdersWithRTO([orderId.replace('#', '')]);
+            const rsOrder = rsOrders?.find(o => o.order_id === orderId.replace('#', '') || o.shopify_order_name === orderId);
+            if (rsOrder?.awb_number) awb = rsOrder.awb_number;
+        } catch (rsErr) {
+            console.warn('[CUSTOMER-CARE] RapidShyp lookup failed:', rsErr.message);
+        }
+
+        // Update the query with linked order info
+        db.prepare(`
+            UPDATE customer_queries SET linked_order_id = ?, linked_order_gid = ?, linked_awb = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+        `).run(orderId, numericId, awb, req.params.id);
+
+        const updated = db.prepare('SELECT * FROM customer_queries WHERE id = ?').get(req.params.id);
+        res.json({
+            success: true,
+            query: updated,
+            orderDetails: {
+                name: orderId,
+                numericId,
+                awb,
+                email: order.email,
+                phone: order.phone,
+                customer: order.shippingAddress?.name || order.customer?.firstName || '',
+                shopifyLink: `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/orders/${numericId}`,
+                trackingLink: awb ? `https://www.rapidshyp.com/track/${awb}` : null
+            }
+        });
+    } catch (e) {
+        console.error('[CUSTOMER-CARE] Link order error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 10.7 Escalate to Slack
+app.post('/api/customer-care/queries/:id/escalate', async (req, res) => {
+    try {
+        const db = getDb();
+        const query = db.prepare('SELECT * FROM customer_queries WHERE id = ?').get(req.params.id);
+        if (!query) return res.status(404).json({ success: false, error: 'Query not found' });
+
+        const webhookUrl = process.env.SLACK_CARE_WEBHOOK_URL;
+        if (!webhookUrl) {
+            return res.status(400).json({ success: false, error: 'SLACK_CARE_WEBHOOK_URL not configured' });
+        }
+
+        const { IncomingWebhook } = require('@slack/webhook');
+        const webhook = new IncomingWebhook(webhookUrl);
+
+        const numericId = query.linked_order_gid || '';
+        const shopifyLink = numericId ? `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/orders/${numericId}` : 'Not linked';
+        const trackingLink = query.linked_awb ? `https://www.rapidshyp.com/track/${query.linked_awb}` : 'No AWB';
+        const igLink = query.channel === 'instagram' ? `https://ig.me/m/${query.customer_handle}` : 'N/A';
+
+        await webhook.send({
+            text: `🚨 *Escalated Customer Query*`,
+            blocks: [
+                {
+                    type: 'header',
+                    text: { type: 'plain_text', text: '🚨 Escalated Customer Query' }
+                },
+                {
+                    type: 'section',
+                    fields: [
+                        { type: 'mrkdwn', text: `*Customer:*\n${query.customer_name || query.customer_handle}` },
+                        { type: 'mrkdwn', text: `*Channel:*\n${query.channel === 'instagram' ? '📸 Instagram DM' : '📧 Email'}` },
+                        { type: 'mrkdwn', text: `*Order:*\n${query.linked_order_id || 'Not linked'}` },
+                        { type: 'mrkdwn', text: `*AWB:*\n${query.linked_awb ? `<${trackingLink}|${query.linked_awb}>` : 'No AWB'}` },
+                        { type: 'mrkdwn', text: `*Category:*\n${query.category}` },
+                        { type: 'mrkdwn', text: `*Priority:*\n${query.priority}` }
+                    ]
+                },
+                {
+                    type: 'section',
+                    text: { type: 'mrkdwn', text: `*Last Message:*\n> ${query.last_message_text || 'N/A'}` }
+                },
+                {
+                    type: 'actions',
+                    elements: [
+                        ...(query.channel === 'instagram' ? [{ type: 'button', text: { type: 'plain_text', text: '💬 Open Instagram Chat' }, url: igLink }] : []),
+                        ...(numericId ? [{ type: 'button', text: { type: 'plain_text', text: '🛒 Open Shopify Order' }, url: shopifyLink }] : []),
+                        ...(query.linked_awb ? [{ type: 'button', text: { type: 'plain_text', text: '📦 Track Shipment' }, url: trackingLink }] : [])
+                    ]
+                }
+            ]
+        });
+
+        // Mark as escalated by setting priority to urgent
+        db.prepare(`UPDATE customer_queries SET priority = 'urgent', updated_at = CURRENT_TIMESTAMP WHERE id = ?`).run(req.params.id);
+
+        res.json({ success: true, message: 'Escalated to #care-desk' });
+    } catch (e) {
+        console.error('[CUSTOMER-CARE] Escalate error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 10.8 Stats
+app.get('/api/customer-care/stats', (req, res) => {
+    try {
+        const db = getDb();
+        const stats = {
+            open: db.prepare("SELECT COUNT(*) as c FROM customer_queries WHERE status = 'open'").get().c,
+            in_progress: db.prepare("SELECT COUNT(*) as c FROM customer_queries WHERE status = 'in_progress'").get().c,
+            resolved: db.prepare("SELECT COUNT(*) as c FROM customer_queries WHERE status = 'resolved'").get().c,
+            urgent: db.prepare("SELECT COUNT(*) as c FROM customer_queries WHERE priority = 'urgent'").get().c,
+            instagram: db.prepare("SELECT COUNT(*) as c FROM customer_queries WHERE channel = 'instagram' AND status != 'resolved'").get().c,
+            email: db.prepare("SELECT COUNT(*) as c FROM customer_queries WHERE channel = 'email' AND status != 'resolved'").get().c,
+            total: db.prepare("SELECT COUNT(*) as c FROM customer_queries WHERE status != 'resolved'").get().c,
+            byCategory: db.prepare("SELECT category, COUNT(*) as count FROM customer_queries WHERE status != 'resolved' GROUP BY category").all()
+        };
+        res.json({ success: true, stats });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// 11. Catch-All for Frontend
 app.get(/.*/, (req, res) => {
     res.sendFile(path.join(__dirname, '../frontend/dist', 'index.html'));
 });
