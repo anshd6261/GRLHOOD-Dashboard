@@ -78,7 +78,7 @@ function OrderDetailCard({ group, onCancel, cancellingId }) {
                 <div><span className="text-[rgba(245,245,245,0.25)]">Address:</span> <span className="text-[rgba(245,245,245,0.5)]">{group.shippingDetails?.address1}, {group.shippingDetails?.city} {group.shippingDetails?.zip}</span></div>
                 <div><span className="text-[rgba(245,245,245,0.25)]">Phone:</span> <span className="text-[rgba(245,245,245,0.5)]">{phone}</span></div>
                 <div><span className="text-[rgba(245,245,245,0.25)]">Payment:</span> <span className="text-[rgba(245,245,245,0.5)]">{group.payment || 'Unknown'}</span></div>
-                <div><span className="text-[rgba(245,245,245,0.25)]">Risk:</span> <span className="text-[rgba(245,245,245,0.5)]">{group.aiRiskScore || 'N/A'}/10</span></div>
+                <div><span className="text-[rgba(245,245,245,0.25)]">Risk:</span> <span className="text-[rgba(245,245,245,0.5)]">{group.aiRiskScore ? `${group.aiRiskScore}%` : 'N/A'}</span></div>
               </div>
               {group.aiRiskReasons?.length > 0 && (
                 <div className="text-[10px] text-[rgba(245,245,245,0.25)]">
@@ -228,7 +228,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           </div>
           {highRisk.map(g => (
             <div key={g.orderId} className="flex items-start gap-2">
-              <div className="text-xl font-black text-[#ff1493] pt-2 w-8 text-center shrink-0">{g.aiRiskScore}</div>
+              <div className="text-lg font-black text-[#ff1493] pt-2 w-10 text-center shrink-0">{g.aiRiskScore}%</div>
               <div className="flex-1"><OrderDetailCard group={g} onCancel={handleCancel} cancellingId={cancellingId} /></div>
             </div>
           ))}

@@ -7,8 +7,7 @@ import {
 } from 'lucide-react';
 
 function RiskGauge({ score, level }) {
-  const maxScore = 10;
-  const pct = Math.min((score || 0) / maxScore, 1) * 100;
+  const pct = Math.min(score || 0, 100);
   const color = level === 'High' ? '#ff1493' : level === 'Medium' ? '#e3cfd8' : '#34d399';
   const bgColor = level === 'High' ? 'rgba(255,20,147,0.1)' : level === 'Medium' ? 'rgba(227,207,216,0.08)' : 'rgba(52,211,153,0.08)';
 
@@ -36,7 +35,7 @@ function RiskGauge({ score, level }) {
             transition={{ delay: 0.5, type: 'spring' }}
             className="text-2xl font-black text-white"
           >
-            {score || 'N/A'}
+            {score ? `${score}%` : 'N/A'}
           </motion.span>
         </div>
       </div>
@@ -241,7 +240,7 @@ export default function AestheticDetailModal({ order, onClose }) {
           {/* AI Risk Analysis */}
           <motion.div custom={2} variants={sectionVariant} initial="hidden" animate="visible" className="glass-card-sm p-5 space-y-4">
             <h3 className="text-[10px] uppercase tracking-widest text-[rgba(245,245,245,0.4)] font-bold flex items-center gap-2">
-              <ShieldCheck size={14} /> AI Risk Analysis
+              <ShieldCheck size={14} /> RTO Risk (Shiprocket Sense)
             </h3>
 
             <RiskGauge score={order.aiRiskScore} level={order.aiRiskLevel} />

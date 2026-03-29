@@ -754,7 +754,7 @@ function App() {
                                           'bg-[rgba(245,245,245,0.05)] border border-[rgba(245,245,245,0.1)] text-[rgba(245,245,245,0.5)]'
                                         }`}
                                       >
-                                        AI Risk: {group.items[0].aiRiskLevel}
+                                        RTO: {group.items[0].aiRiskLevel}
                                       </span>
                                     )}
                                     <span className="text-[9px] uppercase font-bold px-2.5 py-0.5 rounded-full tracking-wider bg-[rgba(245,245,245,0.04)] text-[rgba(245,245,245,0.35)] border border-[rgba(245,245,245,0.06)]">

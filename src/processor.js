@@ -1,6 +1,4 @@
-const { predictOrderRisk } = require('./rto_predictor');
-
-const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
+const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => {
     // 1. Pre-process to find duplicated phone numbers with different names
     const phoneToNamesMap = {};
     for (const order of orders) {
@@ -84,8 +82,8 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
             payment = 'Prepaid';
         }
 
-        // --- NEW: AI RTO Prediction ---
-        const aiRtoResult = predictOrderRisk({ ...order, paymentMethod: payment });
+        // --- Shiprocket Sense RTO Risk ---
+        const senseResult = senseRiskMap[orderId] || senseRiskMap[displayOrderId] || null;
 
         // Process line items
         const orderRows = [];
@@ -244,10 +242,13 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
                     payment: payment,
                     fulfillmentStatus: order.displayFulfillmentStatus || 'UNFULFILLED',
                     createdAt: order.createdAt,
-                    // AI Risk Data
-                    aiRiskScore: aiRtoResult.score,
-                    aiRiskLevel: aiRtoResult.level,
-                    aiRiskReasons: aiRtoResult.reasons,
+                    // Shiprocket Sense RTO Risk Data
+                    aiRiskScore: senseResult ? Math.round((senseResult.probability || senseResult.score || 0) * 100) : 0,
+                    aiRiskLevel: senseResult ? (senseResult.risk === 'high' || senseResult.risk === 'very high' ? 'High' : senseResult.risk === 'low' ? 'Low' : 'Medium') : 'Unknown',
+                    aiRiskReasons: senseResult ? [
+                        ...senseResult.reasons,
+                        ...(senseResult.riskTags || []).map(t => t.reason),
+                    ].filter(Boolean) : ['RTO check unavailable'],
                 });
             }
         }

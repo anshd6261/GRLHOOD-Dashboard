@@ -509,6 +509,51 @@ const cancelOrderByChannelId = async (channelOrderId) => {
     }
 };
 
+/**
+ * Fetch RTO risk data for recent orders from Shiprocket.
+ * Shiprocket's API returns rto_risk, rto_prediction, rto_reason, and order_tag
+ * for each order — powered by cross-merchant buyer history data.
+ *
+ * @param {number} pages - Number of pages to fetch (50 orders per page)
+ * @returns {Object} Map of channel_order_id → { rtoRisk, rtoReason, rtoTags }
+ */
+const fetchRTORiskMap = async (pages = 5) => {
+    try {
+        const headers = await getHeaders();
+        const rtoMap = {};
+
+        for (let page = 1; page <= pages; page++) {
+            const res = await srApi.get(
+                `https://apiv2.shiprocket.in/v1/external/orders?per_page=50&page=${page}`,
+                { headers }
+            );
+            const orders = res.data?.data || [];
+            if (orders.length === 0) break;
+
+            for (const o of orders) {
+                const id = o.channel_order_id;
+                if (!id) continue;
+
+                rtoMap[id] = {
+                    rtoRisk: o.rto_risk || '',           // "low" or "high"
+                    rtoPrediction: o.rto_prediction || '', // "low" or "high" (COD only)
+                    rtoReason: o.rto_reason || '',         // "Buyer has high RTO risk."
+                    rtoShow: o.rto_show || 0,              // 1 for COD, 0 for prepaid
+                    rtoTags: o.order_tag || [],             // ["COD", "FlexAssure:LowRisk", ...]
+                };
+                // Also map with # prefix for Shopify order name matching
+                rtoMap[`#${id}`] = rtoMap[id];
+            }
+        }
+
+        console.log(`[SHIPROCKET] Fetched RTO risk for ${Object.keys(rtoMap).length / 2} orders.`);
+        return { success: true, data: rtoMap };
+    } catch (e) {
+        console.error('[SHIPROCKET] fetchRTORiskMap failed:', e.response?.status, e.message);
+        return { success: false, data: {} };
+    }
+};
+
 module.exports = {
     authenticate,
     assignCourier,
@@ -524,5 +569,6 @@ module.exports = {
     fetchOrdersByDate,
     getOrdersForSync,
     cancelOrderByChannelId,
-    fetchRecentOrdersForSync
+    fetchRecentOrdersForSync,
+    fetchRTORiskMap
 };

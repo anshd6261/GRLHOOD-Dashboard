@@ -6,15 +6,15 @@ require('dotenv').config();
 
 const { getUnfulfilledOrders, searchOrders, assignSkuToProduct, getOrder } = require('./shopify');
 const { processOrders } = require('./processor');
-const { loadModel } = require('./rto_predictor');
+// RTO prediction now powered by Shiprocket Sense API (shiprocket_sense.js)
 const rapidshyp = require('./rapidshyp');
+const shiprocketSense = require('./shiprocket_sense');
 const riskValidator = require('./riskValidator'); // Fixed Import
 const { v4: uuidv4 } = require('uuid');
 const { generateSupplierCSV, generateFinancialCSV, getFormattedDate, saveCSV } = require('./csv_generator');
 const { generateExcel } = require('./excel');
 
-// Pre-load the AI model
-loadModel();
+// RTO risk now handled by Shiprocket Sense API (no local model needed)
 const { getHistory, saveBatch, updateBatch } = require('./history');
 const emailService = require('./email');
 const { getAggregatedPandL, getDailyPandL, getCashPosition } = require('./calculations');
@@ -76,20 +76,17 @@ app.get('/api/orders', async (req, res) => {
         // Fetch from Shopify and RapidShyp concurrently
         const [rawOrders, rsRes] = await Promise.all([
             getUnfulfilledOrders(daysLookback, startDate, endDate, statusMode),
-            rapidshyp.fetchOrdersWithRTO('ALL', 10), // Fetch all orders with RTO risk data
+            rapidshyp.fetchOrdersWithRTO('ALL', 10), // Fetch all orders with AWB/status data
         ]);
 
-        // Build shipping data map from RapidShyp (AWB, status, IDs only — RTO risk comes from our XGBoost model)
+        // Build shipping data map from RapidShyp (AWB, status, IDs only)
         const rtoMap = {};
         if (rsRes.success && rsRes.data) {
             rsRes.data.forEach(rsOrder => {
                 const sellerId = rsOrder.seller_order_id; // e.g., "#3419"
                 const cleanId = rsOrder.channel_order_id; // e.g., "3419"
                 if (sellerId || cleanId) {
-                    // Only extract shipping metadata — NOT RTO risk (our AI handles that)
                     const shippingEntry = {
-                        risk: "Unknown", // Ignored — XGBoost AI predictor is the sole RTO source
-                        reason: "",
                         shiprocketId: rsOrder.order_id,
                         rsStatus: rsOrder.order_status || "",
                         awb: rsOrder.awb_number || ""
@@ -101,11 +98,15 @@ app.get('/api/orders', async (req, res) => {
                     }
                 }
             });
-            console.log(`[API] Built shipping map with ${Object.keys(rtoMap).length} entries from RapidShyp (RTO from XGBoost AI).`);
+            console.log(`[API] Built shipping map with ${Object.keys(rtoMap).length} entries from RapidShyp.`);
         }
 
-        // Process orders with the RTO map
-        const processedRows = processOrders(rawOrders, gstRate, rtoMap);
+        // Fetch RTO risk from Shiprocket Sense API (cross-merchant buyer intelligence)
+        const senseRiskMap = await shiprocketSense.batchPredictRisk(rawOrders);
+        console.log(`[API] Shiprocket Sense RTO risk loaded for ${Object.keys(senseRiskMap).length} orders.`);
+
+        // Process orders with shipping map + Sense RTO risk
+        const processedRows = processOrders(rawOrders, gstRate, rtoMap, senseRiskMap);
         const totalCOGS = processedRows.reduce((sum, row) => sum + (row.cogs || 0), 0);
         const totalRevenue = processedRows.reduce((sum, row) => sum + (row.price || 0), 0);
         const gstAmount = totalCOGS * (gstRate / 100);
