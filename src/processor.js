@@ -241,6 +241,7 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}) => {
                     previewUrl,
                     cogs: cogs,
                     price: price,
+                    payment: payment,
                     fulfillmentStatus: order.displayFulfillmentStatus || 'UNFULFILLED',
                     createdAt: order.createdAt,
                     // AI Risk Data

@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X, Package, Truck, User, MapPin, Calendar, Smartphone, FileText,
+  X, Package, Truck, User, MapPin, Calendar, Smartphone, FileText, Download,
   ExternalLink, AlertTriangle, ShieldCheck, Phone, MessageSquare,
   CreditCard, Hash, Tag, Sparkles, TrendingUp, Activity
 } from 'lucide-react';
@@ -138,32 +138,41 @@ export default function AestheticDetailModal({ order, onClose }) {
         {/* Content Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5 p-6 sm:p-8">
 
-          {/* Product Specs */}
+          {/* Product Specs — All Units */}
           <motion.div custom={0} variants={sectionVariant} initial="hidden" animate="visible" className="glass-card-sm p-5 space-y-4">
             <h3 className="text-[10px] uppercase tracking-widest text-[rgba(245,245,245,0.4)] font-bold flex items-center gap-2">
               <Package size={14} /> Product Specs
+              {(order.allItems?.length || 1) > 1 && (
+                <span className="ml-auto text-[9px] text-[#e3cfd8] bg-[rgba(227,207,216,0.1)] px-2 py-0.5 rounded-full border border-[rgba(227,207,216,0.15)]">
+                  {order.allItems.length} units
+                </span>
+              )}
             </h3>
-            <div className="flex items-center gap-4">
-              <motion.div
-                whileHover={{ scale: 1.05 }}
-                className="w-16 h-16 rounded-2xl bg-[rgba(227,207,216,0.05)] border border-[rgba(227,207,216,0.1)] overflow-hidden shrink-0"
-              >
-                {order.thumbnail ? (
-                  <img src={order.thumbnail} className="w-full h-full object-cover" alt="" />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center text-[rgba(245,245,245,0.2)]"><Smartphone size={20} /></div>
-                )}
-              </motion.div>
-              <div>
-                <div className="text-lg font-bold text-[#e3cfd8] mb-0.5">{order.model || 'Unknown Model'}</div>
-                <div className="text-xs text-[rgba(245,245,245,0.5)] uppercase tracking-wider">{order.category || 'GripPad'}</div>
+            {(order.allItems || [order]).map((item, idx) => (
+              <div key={idx} className={`${idx > 0 ? 'pt-3 border-t border-[rgba(227,207,216,0.06)]' : ''}`}>
+                <div className="flex items-center gap-4">
+                  <motion.div
+                    whileHover={{ scale: 1.05 }}
+                    className="w-14 h-14 rounded-2xl bg-[rgba(227,207,216,0.05)] border border-[rgba(227,207,216,0.1)] overflow-hidden shrink-0"
+                  >
+                    {item.thumbnail ? (
+                      <img src={item.thumbnail} className="w-full h-full object-cover" alt="" />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-[rgba(245,245,245,0.2)]"><Smartphone size={16} /></div>
+                    )}
+                  </motion.div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-bold text-[#e3cfd8] mb-0.5 truncate">{item.model || 'Unknown Model'}</div>
+                    <div className="text-[10px] text-[rgba(245,245,245,0.5)] uppercase tracking-wider">{item.category || 'GripPad'}</div>
+                    <div className="text-[10px] text-[rgba(245,245,245,0.3)] font-mono mt-0.5">{item.sku}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-xs text-white font-bold">₹{item.price || 0}</div>
+                    <div className="text-[10px] text-[#e3cfd8]">COGS ₹{item.cogs || 0}</div>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="space-y-2 pt-3 border-t border-[rgba(227,207,216,0.06)]">
-              <InfoRow label="SKU" value={order.sku} mono />
-              <InfoRow label="Price" value={`₹${order.price || 0}`} />
-              <InfoRow label="COGS" value={`₹${order.cogs || 0}`} accent />
-            </div>
+            ))}
           </motion.div>
 
           {/* Customer Profile */}
@@ -184,6 +193,16 @@ export default function AestheticDetailModal({ order, onClose }) {
                   >
                     <MessageSquare size={12} />
                   </a>
+                  {order.awb && (
+                    <a
+                      href={order.awb.startsWith('http') ? order.awb : `https://seller.rapidshyp.com/orders/forward-orders`}
+                      target="_blank"
+                      className="p-1.5 rounded-lg bg-[rgba(227,207,216,0.06)] border border-[rgba(227,207,216,0.12)] text-[#e3cfd8] hover:bg-[rgba(227,207,216,0.15)] transition-colors"
+                      title="Download Label"
+                    >
+                      <Download size={12} />
+                    </a>
+                  )}
                 </div>
               )}
             </div>
@@ -277,7 +296,7 @@ export default function AestheticDetailModal({ order, onClose }) {
                   {order.awb ? (
                     order.awb.startsWith('http') ? (
                       <a href={order.awb} target="_blank" className="text-[#e3cfd8] font-bold font-mono text-sm flex items-center gap-1.5 hover:underline decoration-white/30 underline-offset-4 w-max">
-                        <ExternalLink size={13} /> View Shipping Label
+                        <ExternalLink size={13} /> {order.awb}
                       </a>
                     ) : (
                       <span className="text-[#e3cfd8] font-bold font-mono text-sm">{order.awb}</span>
@@ -308,7 +327,7 @@ export default function AestheticDetailModal({ order, onClose }) {
             </a>
           )}
           {order.shiprocketId && (
-            <a href="https://seller.rapidshyp.com/orders/forward-orders" target="_blank" className="glass-pill text-[10px] hover:bg-[rgba(245,245,245,0.08)] transition-colors inline-flex items-center gap-1.5">
+            <a href={`https://seller.rapidshyp.com/orders/forward-orders?search=${order.orderId}`} target="_blank" className="glass-pill text-[10px] hover:bg-[rgba(245,245,245,0.08)] transition-colors inline-flex items-center gap-1.5">
               <ExternalLink size={10} /> RapidShyp
             </a>
           )}
