@@ -11,8 +11,8 @@
 const axios = require('axios');
 
 const SENSE_URL = 'https://sense.shiprocket.in/v3/rto/predict';
-const API_KEY = process.env.SHIPROCKET_SENSE_API_KEY || 'kmvl9y5PGP57Z5v1';
-const API_SECRET = process.env.SHIPROCKET_SENSE_API_SECRET || 'd70a717ecbd8fd337afb1635c03907c27d70';
+const API_KEY = (process.env.SHIPROCKET_SENSE_API_KEY || 'kmvl9y5PGP57Z5v1').trim();
+const API_SECRET = (process.env.SHIPROCKET_SENSE_API_SECRET || 'd70a717ecbd8fd337afb1635c03907c27d70').trim();
 
 const BASIC_AUTH = 'Basic ' + Buffer.from(`${API_KEY}:${API_SECRET}`).toString('base64');
 

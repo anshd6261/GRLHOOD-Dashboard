@@ -366,13 +366,39 @@ app.post('/api/orders/:id/cancel', async (req, res) => {
 // 7.5 Generate Label (RapidShyp)
 app.post('/api/rapidshyp/label', async (req, res) => {
     try {
-        const { orderIds, awbs } = req.body;
+        const { orderIds, awbs, shopifyOrderId } = req.body;
 
         let resolvedIds = orderIds && Array.isArray(orderIds) ? orderIds.filter(Boolean) : [];
 
-        // If no RS order IDs but have AWBs, try to look up RS order IDs from AWBs
+        // If no RS order IDs, try to look up via Shopify order ID using session API
+        if (resolvedIds.length === 0 && shopifyOrderId) {
+            console.log(`[API] Looking up RS order for Shopify #${shopifyOrderId}...`);
+            const sessionHeaders = rapidshyp.getSessionHeaders();
+            if (sessionHeaders) {
+                try {
+                    const searchRes = await require('axios').post(
+                        'https://api.rapidshyp.com/session/orders/get_orders',
+                        { search: shopifyOrderId.toString(), page: 1, limit: 5 },
+                        { headers: sessionHeaders, timeout: 8000 }
+                    );
+                    const records = searchRes.data?.records || [];
+                    const match = records.find(r =>
+                        r.seller_order_id === `#${shopifyOrderId}` ||
+                        r.seller_order_id === shopifyOrderId.toString()
+                    );
+                    if (match?.order_id) {
+                        resolvedIds.push(match.order_id);
+                        console.log(`[API] Found RS order ${match.order_id} for Shopify #${shopifyOrderId}`);
+                    }
+                } catch (searchErr) {
+                    console.warn(`[API] Session search failed:`, searchErr.message);
+                }
+            }
+        }
+
+        // If still no IDs but have AWBs, try AWB lookup
         if (resolvedIds.length === 0 && awbs && Array.isArray(awbs) && awbs.length > 0) {
-            console.log(`[API] No RS order IDs provided. Looking up from AWBs:`, awbs);
+            console.log(`[API] Looking up from AWBs:`, awbs);
             for (const awb of awbs) {
                 const rsId = await rapidshyp.findOrderIdByAWB(awb);
                 if (rsId) resolvedIds.push(rsId);
@@ -380,7 +406,7 @@ app.post('/api/rapidshyp/label', async (req, res) => {
         }
 
         if (resolvedIds.length === 0) {
-            return res.status(400).json({ success: false, error: 'No valid order IDs found. Ship the order first to generate labels.' });
+            return res.status(400).json({ success: false, error: 'Order not found in RapidShyp. Assign a courier first.' });
         }
 
         console.log(`[API] Generating labels for RapidShyp IDs:`, resolvedIds);

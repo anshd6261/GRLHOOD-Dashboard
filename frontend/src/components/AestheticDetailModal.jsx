@@ -97,7 +97,7 @@ export default function AestheticDetailModal({ order, onClose, isSupplier }) {
     try {
       const payload = order.rsOrderId
         ? { orderIds: [order.rsOrderId] }
-        : { awbs: [order.awb] };
+        : { awbs: [order.awb], shopifyOrderId: order.orderId };
       const res = await axios.post(`${API_URL}/rapidshyp/label`, payload);
       const url = res.data?.label_url || res.data?.labelUrl || res.data?.pdf_url;
       if (url) {

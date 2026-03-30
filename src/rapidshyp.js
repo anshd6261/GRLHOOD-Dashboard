@@ -35,7 +35,7 @@ rsApi.interceptors.response.use(
  * Get headers for the public API (API key via rapidshyp-token).
  */
 const getPublicHeaders = () => {
-    const apiKey = process.env.RAPIDSHYP_API_KEY;
+    const apiKey = (process.env.RAPIDSHYP_API_KEY || '').trim();
     if (!apiKey) throw new Error('RAPIDSHYP_API_KEY is not set in .env');
     return {
         'Content-Type': 'application/json',
@@ -48,7 +48,7 @@ const getPublicHeaders = () => {
  * Returns null if JWT is not configured (graceful degradation).
  */
 const getSessionHeaders = () => {
-    const jwt = process.env.RAPIDSHYP_JWT;
+    const jwt = (process.env.RAPIDSHYP_JWT || '').trim();
     if (!jwt) return null;
     return {
         'Content-Type': 'application/json',
