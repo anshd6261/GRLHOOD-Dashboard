@@ -362,6 +362,14 @@ const ConversationDrawer = ({ query, messages, onClose, onReply, onResolve, onUp
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  // Fetch Shopify domain from backend
+  const [shopifyDomain, setShopifyDomain] = useState('');
+  useEffect(() => {
+    axios.get(`${API_URL}/status`).then(res => {
+      if (res.data.store) setShopifyDomain(res.data.store);
+    }).catch(() => {});
+  }, []);
+
   // Load order details if linked
   useEffect(() => {
     if (query?.linked_order_id) {
@@ -369,13 +377,13 @@ const ConversationDrawer = ({ query, messages, onClose, onReply, onResolve, onUp
         name: query.linked_order_id,
         numericId: query.linked_order_gid,
         awb: query.linked_awb,
-        shopifyLink: query.linked_order_gid ? `https://${window.location.hostname}/admin/orders/${query.linked_order_gid}` : null,
+        shopifyLink: query.linked_order_gid && shopifyDomain ? `https://${shopifyDomain}/admin/orders/${query.linked_order_gid}` : null,
         trackingLink: query.linked_awb ? `https://www.rapidshyp.com/track/${query.linked_awb}` : null
       });
     } else {
       setOrderDetails(null);
     }
-  }, [query]);
+  }, [query, shopifyDomain]);
 
   const handleSend = async () => {
     if (!replyText.trim() || sending) return;
@@ -601,7 +609,7 @@ const ConversationDrawer = ({ query, messages, onClose, onReply, onResolve, onUp
                     )}
                     {orderDetails.numericId && (
                       <a
-                        href={`https://${import.meta.env.VITE_SHOPIFY_DOMAIN || 'your-store.myshopify.com'}/admin/orders/${orderDetails.numericId}`}
+                        href={orderDetails.shopifyLink || `#`}
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={() => setMenuOpen(false)}

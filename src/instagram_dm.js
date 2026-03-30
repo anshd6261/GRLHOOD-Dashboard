@@ -3,13 +3,37 @@ const { getDb } = require('./database');
 require('dotenv').config();
 
 const META_ACCESS_TOKEN = process.env.META_ACCESS_TOKEN;
-const META_PAGE_ID = process.env.META_PAGE_ID;
 const API_VERSION = 'v18.0';
 const BASE_URL = `https://graph.facebook.com/${API_VERSION}`;
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 let cachedIgAccountId = null;
+let cachedPageId = null;
+
+/**
+ * Auto-discover the Facebook Page ID from the access token.
+ */
+const getPageId = async () => {
+    if (cachedPageId) return cachedPageId;
+    if (process.env.META_PAGE_ID) { cachedPageId = process.env.META_PAGE_ID; return cachedPageId; }
+
+    if (!META_ACCESS_TOKEN) { console.warn('[IG DM] Missing META_ACCESS_TOKEN'); return null; }
+
+    try {
+        const res = await axios.get(`${BASE_URL}/me/accounts`, {
+            params: { access_token: META_ACCESS_TOKEN }
+        });
+        const pages = res.data.data || [];
+        if (pages.length === 0) { console.warn('[IG DM] No pages found for this token'); return null; }
+        cachedPageId = pages[0].id;
+        console.log(`[IG DM] Auto-discovered Page ID: ${cachedPageId} (${pages[0].name})`);
+        return cachedPageId;
+    } catch (e) {
+        console.error('[IG DM] Failed to discover Page ID:', e.response?.data?.error?.message || e.message);
+        return null;
+    }
+};
 
 /**
  * Get the Instagram Business Account ID from the Facebook Page.
@@ -17,13 +41,11 @@ let cachedIgAccountId = null;
 const getInstagramAccountId = async () => {
     if (cachedIgAccountId) return cachedIgAccountId;
 
-    if (!META_ACCESS_TOKEN || !META_PAGE_ID) {
-        console.warn('[IG DM] Missing META_ACCESS_TOKEN or META_PAGE_ID');
-        return null;
-    }
+    const pageId = await getPageId();
+    if (!pageId) return null;
 
     try {
-        const res = await axios.get(`${BASE_URL}/${META_PAGE_ID}`, {
+        const res = await axios.get(`${BASE_URL}/${pageId}`, {
             params: {
                 fields: 'instagram_business_account',
                 access_token: META_ACCESS_TOKEN
