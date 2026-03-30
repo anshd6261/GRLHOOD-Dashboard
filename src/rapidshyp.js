@@ -1,7 +1,18 @@
 const axios = require('axios');
 require('dotenv').config();
 
+/**
+ * RapidShyp Public API Integration
+ *
+ * Uses the public API (rapidshyp-token header) for shipping operations.
+ * Note: The public API only supports action endpoints (create, ship, track, cancel, label).
+ * Order listing and wallet balance require the session/JWT API which is not available.
+ *
+ * Orders are fetched from Shopify directly. RTO prediction uses Shiprocket Sense API.
+ */
+
 const PUBLIC_API_BASE = 'https://api.rapidshyp.com/rapidshyp/apis/v1';
+const SESSION_API_BASE = 'https://api.rapidshyp.com/session';
 
 const rsApi = axios.create({ timeout: process.env.VERCEL ? 8000 : 30000 });
 
@@ -33,9 +44,18 @@ const getPublicHeaders = () => {
 };
 
 /**
- * Map RapidShyp's numeric rto_risk_score to a risk label.
- * 0 = High, 1 = Medium, 2 = Low
+ * Get headers for the session API (JWT Bearer token) — optional.
+ * Returns null if JWT is not configured (graceful degradation).
  */
+const getSessionHeaders = () => {
+    const jwt = process.env.RAPIDSHYP_JWT;
+    if (!jwt) return null;
+    return {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${jwt}`
+    };
+};
+
 const mapRTORisk = (score) => {
     if (score === 0) return 'High';
     if (score === 1) return 'Medium';
@@ -43,9 +63,6 @@ const mapRTORisk = (score) => {
     return 'Unknown';
 };
 
-/**
- * Build a detailed RTO reason from the address_score breakdown.
- */
 const buildRTOReason = (addressScore) => {
     if (!addressScore) return '';
     const parts = [];
@@ -63,15 +80,17 @@ const buildRTOReason = (addressScore) => {
 };
 
 /**
- * Fetch all orders from RapidShyp using the public API.
- * Uses /get_orders endpoint with rapidshyp-token authentication.
- * @param {string} status - Filter by status: 'APPROVAL_PENDING', 'PROCESSING', 'ALL', etc.
- * @param {number} maxPages - Max pages to fetch (default 10)
- * @returns {Object} { success, data: normalized order array }
+ * Fetch orders from RapidShyp. Requires JWT (session API) for order listing.
+ * If JWT is not available, returns empty gracefully — orders come from Shopify instead.
  */
 const fetchOrdersWithRTO = async (status = 'ALL', maxPages = 10) => {
+    const sessionHeaders = getSessionHeaders();
+    if (!sessionHeaders) {
+        console.log('[RAPIDSHYP] No JWT configured — skipping order fetch (orders come from Shopify).');
+        return { success: false, data: [], message: 'JWT not configured' };
+    }
+
     try {
-        const headers = getPublicHeaders();
         let allOrders = [];
         let page = 1;
         let hasMore = true;
@@ -80,37 +99,14 @@ const fetchOrdersWithRTO = async (status = 'ALL', maxPages = 10) => {
             const body = { page, limit: 100 };
             if (status && status !== 'ALL') body.status = status;
 
-            // Try public API endpoint for getting orders
-            let records = [];
-            try {
-                const response = await rsApi.post(`${PUBLIC_API_BASE}/get_orders`, body, { headers });
-                records = response.data?.records || response.data?.data || [];
-                if (!Array.isArray(records)) records = [];
-            } catch (orderErr) {
-                // If get_orders doesn't exist on public API, try alternative endpoints
-                if (orderErr.response?.status === 404 || orderErr.response?.status === 405) {
-                    try {
-                        const response = await rsApi.get(`${PUBLIC_API_BASE}/orders`, {
-                            headers,
-                            params: { page, limit: 100, ...(status !== 'ALL' ? { status } : {}) }
-                        });
-                        records = response.data?.records || response.data?.data || response.data?.orders || [];
-                        if (!Array.isArray(records)) records = [];
-                    } catch (altErr) {
-                        console.warn(`[RAPIDSHYP] Public order fetch not available: ${altErr.response?.status || altErr.message}`);
-                        return { success: false, data: [], message: 'Orders endpoint not available via public API' };
-                    }
-                } else {
-                    throw orderErr;
-                }
-            }
+            const response = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, body, { headers: sessionHeaders });
+            const records = response.data?.records || [];
 
             if (records.length === 0) {
                 hasMore = false;
                 break;
             }
 
-            // Normalize each order
             const normalized = records.map(order => ({
                 order_id: order.order_id,
                 seller_order_id: order.seller_order_id,
@@ -140,9 +136,8 @@ const fetchOrdersWithRTO = async (status = 'ALL', maxPages = 10) => {
             }
         }
 
-        console.log(`[RAPIDSHYP] Fetched ${allOrders.length} orders (${page} pages) via public API.`);
+        console.log(`[RAPIDSHYP] Fetched ${allOrders.length} orders (${page} pages).`);
         return { success: true, data: allOrders };
-
     } catch (e) {
         console.error('[RAPIDSHYP] fetchOrdersWithRTO Error:', e.response?.status, e.response?.data || e.message);
         return { success: false, data: [] };
@@ -150,53 +145,61 @@ const fetchOrdersWithRTO = async (status = 'ALL', maxPages = 10) => {
 };
 
 /**
- * Cancel an order on RapidShyp using the public API.
- * @param {string} channelOrderId - Shopify order name (#3419 or 3419)
+ * Cancel an order on RapidShyp.
+ * Uses session API for order lookup (if JWT available), then public API for cancellation.
+ * If no JWT, attempts direct cancel by order name.
  */
 const cancelOrder = async (channelOrderId) => {
     try {
         const headers = getPublicHeaders();
         const cleanId = channelOrderId.toString().replace('#', '');
 
-        // Search for the order using the public API
-        console.log(`[RAPIDSHYP] Looking up order ${cleanId} for cancellation...`);
+        // Try to find the order via session API (if JWT available)
+        const sessionHeaders = getSessionHeaders();
         let match = null;
 
-        try {
-            const searchRes = await rsApi.post(`${PUBLIC_API_BASE}/get_orders`, {
-                search: cleanId, page: 1, limit: 10
-            }, { headers });
-            const records = searchRes.data?.records || searchRes.data?.data || [];
-            match = records.find(r =>
-                r.seller_order_id === `#${cleanId}` || r.seller_order_id === cleanId
-            );
-        } catch (searchErr) {
-            // If search doesn't work via public API, try GET endpoint
+        if (sessionHeaders) {
             try {
-                const searchRes = await rsApi.get(`${PUBLIC_API_BASE}/orders`, {
-                    headers, params: { search: cleanId, page: 1, limit: 10 }
-                });
-                const records = searchRes.data?.records || searchRes.data?.data || searchRes.data?.orders || [];
+                const searchRes = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, {
+                    search: cleanId, page: 1, limit: 10
+                }, { headers: sessionHeaders });
+                const records = searchRes.data?.records || [];
                 match = records.find(r =>
                     r.seller_order_id === `#${cleanId}` || r.seller_order_id === cleanId
                 );
-            } catch (altErr) {
-                console.warn(`[RAPIDSHYP] Could not search orders: ${altErr.response?.status || altErr.message}`);
+            } catch (searchErr) {
+                console.warn(`[RAPIDSHYP] Session search failed: ${searchErr.response?.status || searchErr.message}`);
             }
         }
 
         if (!match) {
-            console.warn(`[RAPIDSHYP] Order ${cleanId} not found.`);
-            return { success: false, message: `Order ${cleanId} not found in RapidShyp` };
+            // Without JWT, we can't search for the RS order ID.
+            // Try cancelling with the channel order ID directly.
+            console.log(`[RAPIDSHYP] No JWT / order not found. Attempting cancel with channel ID ${cleanId}...`);
+            try {
+                const cancelRes = await rsApi.post(`${PUBLIC_API_BASE}/cancel_order`, {
+                    orderId: cleanId,
+                }, { headers });
+                return { success: true, data: cancelRes.data };
+            } catch (directErr) {
+                // Try with # prefix
+                try {
+                    const cancelRes = await rsApi.post(`${PUBLIC_API_BASE}/cancel_order`, {
+                        orderId: `#${cleanId}`,
+                    }, { headers });
+                    return { success: true, data: cancelRes.data };
+                } catch (prefixErr) {
+                    const msg = directErr.response?.data?.message || directErr.message;
+                    console.warn(`[RAPIDSHYP] Direct cancel failed for ${cleanId}: ${msg}`);
+                    return { success: false, message: `Could not cancel: ${msg}. JWT needed for order lookup.` };
+                }
+            }
         }
 
         if ((match.order_status || '').toLowerCase().includes('cancel')) {
-            console.log(`[RAPIDSHYP] Order ${cleanId} is already cancelled.`);
             return { success: true, message: 'Already cancelled' };
         }
 
-        // Cancel using the public API
-        console.log(`[RAPIDSHYP] Cancelling order ${cleanId} (RS ID: ${match.order_id})...`);
         const cancelRes = await rsApi.post(`${PUBLIC_API_BASE}/cancel_order`, {
             orderId: match.order_id,
             storeName: match.store_name || 'DEFAULT'
@@ -213,7 +216,7 @@ const cancelOrder = async (channelOrderId) => {
 };
 
 /**
- * Track a shipment by AWB number.
+ * Track a shipment by AWB number (public API — works with API key).
  */
 const trackOrder = async (awb) => {
     try {
@@ -227,8 +230,7 @@ const trackOrder = async (awb) => {
 };
 
 /**
- * Generate Shipping Label(s)
- * @param {Array<string>} orderIds - Array of RapidShyp internal order IDs
+ * Generate Shipping Label(s) (public API — works with API key).
  */
 const generateLabel = async (orderIds) => {
     try {
@@ -248,44 +250,55 @@ const generateLabel = async (orderIds) => {
 };
 
 /**
- * Bulk assign AWB to multiple orders by their Shopify order names.
- * Uses the public API exclusively.
- * @param {string[]} orderNames - Array of Shopify order names (e.g., ["3419", "3420"])
- * @returns {{ success: boolean, results: Array }}
+ * Bulk assign AWB to multiple orders.
+ * Uses session API for lookup (if JWT available), then public API for AWB assignment.
  */
 const bulkAssignAWB = async (orderNames) => {
     const headers = getPublicHeaders();
+    const sessionHeaders = getSessionHeaders();
     const results = [];
 
     for (const name of orderNames) {
         const cleanId = name.toString().replace('#', '');
         try {
-            // Look up the RS order via public API
             let match = null;
-            try {
-                const searchRes = await rsApi.post(`${PUBLIC_API_BASE}/get_orders`, {
-                    search: cleanId, page: 1, limit: 10
-                }, { headers });
-                const records = searchRes.data?.records || searchRes.data?.data || [];
-                match = records.find(r =>
-                    r.seller_order_id === `#${cleanId}` || r.seller_order_id === cleanId
-                );
-            } catch (searchErr) {
+
+            // Try session API search if JWT available
+            if (sessionHeaders) {
                 try {
-                    const searchRes = await rsApi.get(`${PUBLIC_API_BASE}/orders`, {
-                        headers, params: { search: cleanId, page: 1, limit: 10 }
-                    });
-                    const records = searchRes.data?.records || searchRes.data?.data || searchRes.data?.orders || [];
+                    const searchRes = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, {
+                        search: cleanId, page: 1, limit: 10
+                    }, { headers: sessionHeaders });
+                    const records = searchRes.data?.records || [];
                     match = records.find(r =>
                         r.seller_order_id === `#${cleanId}` || r.seller_order_id === cleanId
                     );
-                } catch (altErr) {
-                    // ignore
+                } catch (searchErr) {
+                    console.warn(`[RAPIDSHYP] Session search failed for ${cleanId}: ${searchErr.response?.status || searchErr.message}`);
                 }
             }
 
             if (!match) {
-                results.push({ orderId: cleanId, success: false, message: 'Not found in RapidShyp' });
+                // Without JWT we can't look up the RS order ID for AWB assignment
+                // Try assigning directly with the Shopify order ID
+                try {
+                    const assignRes = await rsApi.post(`${PUBLIC_API_BASE}/assign_awb`, {
+                        shipment_id: cleanId
+                    }, { headers });
+                    const data = assignRes.data;
+                    results.push({
+                        orderId: cleanId,
+                        success: true,
+                        awb: data.awb || '',
+                        courier: data.courier_name || '',
+                        shipmentId: data.shipment_id || cleanId
+                    });
+                    console.log(`[RAPIDSHYP] Assigned AWB for ${cleanId}: ${data.awb}`);
+                } catch (directErr) {
+                    const msg = directErr.response?.data?.message || directErr.response?.data?.remarks || directErr.message;
+                    results.push({ orderId: cleanId, success: false, message: typeof msg === 'string' ? msg : JSON.stringify(msg) });
+                }
+                await new Promise(r => setTimeout(r, 300));
                 continue;
             }
 
@@ -295,8 +308,6 @@ const bulkAssignAWB = async (orderNames) => {
             }
 
             const shipmentId = match.shipment_id || match.order_id;
-
-            // Assign AWB via public API
             const assignRes = await rsApi.post(`${PUBLIC_API_BASE}/assign_awb`, {
                 shipment_id: shipmentId
             }, { headers });
@@ -326,57 +337,36 @@ const bulkAssignAWB = async (orderNames) => {
 };
 
 /**
- * Get wallet balance from RapidShyp public API.
- * Tries multiple known endpoints for wallet balance.
- * @returns {{ success: boolean, balance: number }}
+ * Get wallet balance from RapidShyp. Requires JWT (session API).
+ * Returns 0 gracefully if JWT is not available.
  */
 const getWalletBalance = async () => {
-    const headers = getPublicHeaders();
-
-    // Try multiple public API wallet endpoints
-    const endpoints = [
-        { method: 'get', url: `${PUBLIC_API_BASE}/wallet/balance` },
-        { method: 'post', url: `${PUBLIC_API_BASE}/wallet/balance`, data: {} },
-        { method: 'get', url: `${PUBLIC_API_BASE}/wallet` },
-        { method: 'post', url: `${PUBLIC_API_BASE}/wallet/get_balance`, data: {} },
-        { method: 'get', url: `${PUBLIC_API_BASE}/get_wallet_balance` },
-    ];
-
-    for (const ep of endpoints) {
-        try {
-            let res;
-            if (ep.method === 'get') {
-                res = await rsApi.get(ep.url, { headers });
-            } else {
-                res = await rsApi.post(ep.url, ep.data || {}, { headers });
-            }
-            const data = res.data;
-            const balance = data?.balance ?? data?.available_balance ?? data?.wallet_balance ?? data?.data?.balance ?? null;
-            if (balance !== null && balance !== undefined) {
-                console.log(`[RAPIDSHYP] Wallet balance: ₹${balance} (via ${ep.url})`);
-                return { success: true, balance: parseFloat(balance) || 0 };
-            }
-            // If response has data but no known balance field, log and try next
-            console.warn(`[RAPIDSHYP] Wallet response from ${ep.url} had no balance field:`, JSON.stringify(data).slice(0, 200));
-        } catch (e) {
-            const status = e.response?.status || 'network';
-            console.warn(`[RAPIDSHYP] Wallet ${ep.method.toUpperCase()} ${ep.url}: ${status}`);
-            // 401/403 means auth issue - no point trying other endpoints with same auth
-            if (e.response?.status === 401 || e.response?.status === 403) {
-                console.error('[RAPIDSHYP] Wallet: Authentication failed. Check RAPIDSHYP_API_KEY.');
-                return { success: false, balance: 0, error: 'Authentication failed' };
-            }
-        }
+    const sessionHeaders = getSessionHeaders();
+    if (!sessionHeaders) {
+        console.log('[RAPIDSHYP] No JWT configured — wallet balance unavailable.');
+        return { success: false, balance: 0, message: 'JWT not configured. Set RAPIDSHYP_JWT in env to enable wallet.' };
     }
 
-    console.error('[RAPIDSHYP] Wallet: No working endpoint found.');
-    return { success: false, balance: 0, error: 'Wallet endpoint not available via public API' };
+    try {
+        const res = await rsApi.post(`${SESSION_API_BASE}/wallet/get_balance`, {}, { headers: sessionHeaders });
+        const balance = res.data?.balance ?? res.data?.available_balance ?? res.data?.wallet_balance ?? 0;
+        console.log(`[RAPIDSHYP] Wallet balance: ₹${balance}`);
+        return { success: true, balance: parseFloat(balance) || 0 };
+    } catch (e) {
+        // Fallback to GET endpoint
+        try {
+            const res = await rsApi.get(`${SESSION_API_BASE}/wallet/balance`, { headers: sessionHeaders });
+            const balance = res.data?.balance ?? res.data?.available_balance ?? 0;
+            return { success: true, balance: parseFloat(balance) || 0 };
+        } catch (e2) {
+            console.error('[RAPIDSHYP] Wallet error:', e2.response?.status, e2.response?.data || e2.message);
+            return { success: false, balance: 0 };
+        }
+    }
 };
 
 /**
- * Generate labels for multiple orders and return the PDF URL.
- * @param {string[]} orderIds - Array of RapidShyp order IDs
- * @returns {{ success: boolean, labelUrl: string, labels: Array }}
+ * Generate labels for multiple orders (public API — works with API key).
  */
 const bulkGenerateLabels = async (orderIds) => {
     try {
@@ -402,6 +392,7 @@ const bulkGenerateLabels = async (orderIds) => {
 
 module.exports = {
     getPublicHeaders,
+    getSessionHeaders,
     fetchOrdersWithRTO,
     cancelOrder,
     trackOrder,
