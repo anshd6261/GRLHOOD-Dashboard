@@ -23,7 +23,10 @@ const { syncPayUApi } = require('./sync_payu');
 const { uploadOrderPayload } = require('./dropbox');
 const { syncInstagramDMs, sendInstagramReply } = require('./instagram_dm');
 const { syncGmailInbox, sendEmailReply } = require('./gmail_reader');
-const { getDb } = require('./database');
+const { getDb, initializeDatabase } = require('./database');
+
+// Initialize database tables (ensures customer_queries etc. exist)
+initializeDatabase();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
