@@ -1213,45 +1213,37 @@ app.post('/api/customer-care/queries/:id/escalate', async (req, res) => {
             return res.status(400).json({ success: false, error: 'SLACK_CARE_WEBHOOK_URL not configured' });
         }
 
-        const { IncomingWebhook } = require('@slack/webhook');
-        const webhook = new IncomingWebhook(webhookUrl);
-
         const numericId = query.linked_order_gid || '';
-        const shopifyLink = numericId ? `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/orders/${numericId}` : 'Not linked';
-        const trackingLink = query.linked_awb ? `https://www.rapidshyp.com/track/${query.linked_awb}` : 'No AWB';
-        const igLink = query.channel === 'instagram' ? `https://ig.me/m/${query.customer_handle}` : 'N/A';
+        const shopifyLink = numericId ? `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/orders/${numericId}` : '';
+        const trackingLink = query.linked_awb ? `https://www.rapidshyp.com/track/${query.linked_awb}` : '';
+        const igLink = query.channel === 'instagram' ? `https://ig.me/m/${query.customer_handle}` : '';
+        const channelLabel = query.channel === 'instagram' ? 'Instagram DM' : 'Email';
 
-        await webhook.send({
-            text: `🚨 *Escalated Customer Query*`,
-            blocks: [
-                {
-                    type: 'header',
-                    text: { type: 'plain_text', text: '🚨 Escalated Customer Query' }
-                },
-                {
-                    type: 'section',
-                    fields: [
-                        { type: 'mrkdwn', text: `*Customer:*\n${query.customer_name || query.customer_handle}` },
-                        { type: 'mrkdwn', text: `*Channel:*\n${query.channel === 'instagram' ? '📸 Instagram DM' : '📧 Email'}` },
-                        { type: 'mrkdwn', text: `*Order:*\n${query.linked_order_id || 'Not linked'}` },
-                        { type: 'mrkdwn', text: `*AWB:*\n${query.linked_awb ? `<${trackingLink}|${query.linked_awb}>` : 'No AWB'}` },
-                        { type: 'mrkdwn', text: `*Category:*\n${query.category}` },
-                        { type: 'mrkdwn', text: `*Priority:*\n${query.priority}` }
-                    ]
-                },
-                {
-                    type: 'section',
-                    text: { type: 'mrkdwn', text: `*Last Message:*\n> ${query.last_message_text || 'N/A'}` }
-                },
-                {
-                    type: 'actions',
-                    elements: [
-                        ...(query.channel === 'instagram' ? [{ type: 'button', text: { type: 'plain_text', text: '💬 Open Instagram Chat' }, url: igLink }] : []),
-                        ...(numericId ? [{ type: 'button', text: { type: 'plain_text', text: '🛒 Open Shopify Order' }, url: shopifyLink }] : []),
-                        ...(query.linked_awb ? [{ type: 'button', text: { type: 'plain_text', text: '📦 Track Shipment' }, url: trackingLink }] : [])
-                    ]
-                }
-            ]
+        const lines = [
+            `*Escalated Customer Query*`,
+            ``,
+            `*Customer:* ${query.customer_name || query.customer_handle}`,
+            `*Channel:* ${channelLabel}`,
+            query.linked_order_id ? `*Order:* ${query.linked_order_id}` : `*Order:* Not linked`,
+            query.linked_awb ? `*AWB:* <${trackingLink}|${query.linked_awb}>` : `*AWB:* None`,
+            `*Category:* ${query.category}`,
+            `*Priority:* ${query.priority}`,
+            ``,
+            `*Last Message:*`,
+            `> ${query.last_message_text || 'N/A'}`,
+            ``,
+            [
+                igLink ? `<${igLink}|Open Instagram Chat>` : null,
+                shopifyLink ? `<${shopifyLink}|Open Shopify Order>` : null,
+                trackingLink ? `<${trackingLink}|Track Shipment>` : null,
+            ].filter(Boolean).join('  |  ')
+        ];
+
+        const axios = require('axios');
+        await axios.post(webhookUrl, {
+            username: 'GRLHOOD Care',
+            icon_emoji: ':rotating_light:',
+            text: lines.join('\n')
         });
 
         // Mark as escalated by setting priority to urgent
