@@ -1,11 +1,21 @@
 const axios = require('axios');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 require('dotenv').config();
 
 const SESSION_API_BASE = 'https://api.rapidshyp.com/session';
 const PUBLIC_API_BASE = 'https://api.rapidshyp.com/rapidshyp/apis/v1';
 
-// Custom axios instance with retry for rate limits
-const rsApi = axios.create({ timeout: process.env.VERCEL ? 8000 : 30000 });
+// Route through static IP proxy if configured (solves Vercel rotating IP issue)
+const proxyUrl = process.env.FIXIE_URL || process.env.QUOTAGUARD_URL || process.env.STATIC_PROXY_URL;
+const axiosConfig = { timeout: process.env.VERCEL ? 8000 : 30000 };
+if (proxyUrl) {
+    const agent = new HttpsProxyAgent(proxyUrl);
+    axiosConfig.httpAgent = agent;
+    axiosConfig.httpsAgent = agent;
+    axiosConfig.proxy = false; // let the agent handle it
+    console.log('[RAPIDSHYP] Using static IP proxy');
+}
+const rsApi = axios.create(axiosConfig);
 
 rsApi.interceptors.response.use(
     (response) => response,
