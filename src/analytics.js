@@ -37,7 +37,9 @@ const generateAnalytics = async (days = 30) => {
     // 1. Fetch Real Data in Parallel
     const [shopifyOrders, shiprocketShipments, adSpendData] = await Promise.all([
         getOrdersByDateRange(startIso, endIso),
-        shiprocket.getAllShipments(srStartDate.split(' ')[0], srEndDate.split(' ')[0]).catch(e => {
+        shiprocket.fetchOrdersByDate(srStartDate, srEndDate).then(res => {
+            return (res.success && res.data) ? res.data : [];
+        }).catch(e => {
             console.warn('[ANALYTICS] Shiprocket shipments fetch failed (non-blocking):', e.message);
             return [];
         }),
