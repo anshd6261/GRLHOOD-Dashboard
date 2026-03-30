@@ -12,7 +12,7 @@ require('dotenv').config();
  */
 
 const PUBLIC_API_BASE = 'https://api.rapidshyp.com/rapidshyp/apis/v1';
-const SESSION_API_BASE = 'https://api.rapidshyp.com/session';
+const SESSION_API_BASE = 'https://api.rapidshyp.com/session/seller';
 
 const rsApi = axios.create({ timeout: process.env.VERCEL ? 8000 : 30000 });
 
@@ -390,6 +390,48 @@ const bulkGenerateLabels = async (orderIds) => {
     }
 };
 
+/**
+ * Look up RapidShyp order ID from an AWB number.
+ * Uses session API search if JWT available, falls back to tracking.
+ */
+const findOrderIdByAWB = async (awb) => {
+    if (!awb) return null;
+
+    // Try session API search first
+    const sessionHeaders = getSessionHeaders();
+    if (sessionHeaders) {
+        try {
+            const searchRes = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, {
+                search: awb, page: 1, limit: 10
+            }, { headers: sessionHeaders });
+            const records = searchRes.data?.records || [];
+            const match = records.find(r => r.awb_number === awb);
+            if (match) {
+                console.log(`[RAPIDSHYP] Found RS order ${match.order_id} for AWB ${awb}`);
+                return match.order_id;
+            }
+        } catch (e) {
+            console.warn(`[RAPIDSHYP] Session search by AWB failed: ${e.response?.status || e.message}`);
+        }
+    }
+
+    // Fallback: try tracking to get shipment info
+    try {
+        const headers = getPublicHeaders();
+        const trackRes = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, { awb }, { headers });
+        const orderId = trackRes.data?.order_id || trackRes.data?.shipment_id;
+        if (orderId) {
+            console.log(`[RAPIDSHYP] Found RS order ${orderId} for AWB ${awb} via tracking`);
+            return orderId;
+        }
+    } catch (e) {
+        console.warn(`[RAPIDSHYP] Track lookup by AWB failed: ${e.response?.status || e.message}`);
+    }
+
+    console.warn(`[RAPIDSHYP] Could not find RS order ID for AWB ${awb}`);
+    return null;
+};
+
 module.exports = {
     getPublicHeaders,
     getSessionHeaders,
@@ -400,6 +442,7 @@ module.exports = {
     bulkAssignAWB,
     getWalletBalance,
     bulkGenerateLabels,
+    findOrderIdByAWB,
     mapRTORisk,
     buildRTOReason
 };

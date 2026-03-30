@@ -106,7 +106,7 @@ app.get('/api/orders', async (req, res) => {
                 const cleanId = rsOrder.channel_order_id; // e.g., "3419"
                 if (sellerId || cleanId) {
                     const shippingEntry = {
-                        shiprocketId: rsOrder.order_id,
+                        rsOrderId: rsOrder.order_id,
                         rsStatus: rsOrder.order_status || "",
                         awb: rsOrder.awb_number || ""
                     };
@@ -366,22 +366,34 @@ app.post('/api/orders/:id/cancel', async (req, res) => {
 // 7.5 Generate Label (RapidShyp)
 app.post('/api/rapidshyp/label', async (req, res) => {
     try {
-        const { orderIds } = req.body; // Expects an array of RS order IDs
-        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
-            return res.status(400).json({ error: 'Missing or invalid orderIds array' });
+        const { orderIds, awbs } = req.body;
+
+        let resolvedIds = orderIds && Array.isArray(orderIds) ? orderIds.filter(Boolean) : [];
+
+        // If no RS order IDs but have AWBs, try to look up RS order IDs from AWBs
+        if (resolvedIds.length === 0 && awbs && Array.isArray(awbs) && awbs.length > 0) {
+            console.log(`[API] No RS order IDs provided. Looking up from AWBs:`, awbs);
+            for (const awb of awbs) {
+                const rsId = await rapidshyp.findOrderIdByAWB(awb);
+                if (rsId) resolvedIds.push(rsId);
+            }
         }
 
-        console.log(`[API] Generating labels for RapidShyp IDs:`, orderIds);
-        const result = await rapidshyp.generateLabel(orderIds);
+        if (resolvedIds.length === 0) {
+            return res.status(400).json({ success: false, error: 'No valid order IDs found. Ship the order first to generate labels.' });
+        }
+
+        console.log(`[API] Generating labels for RapidShyp IDs:`, resolvedIds);
+        const result = await rapidshyp.generateLabel(resolvedIds);
 
         if (result.success) {
-            res.json(result.data); // Return the actual RS API payload (contains PDF link)
+            res.json(result.data);
         } else {
-            res.status(500).json({ error: result.message });
+            res.json({ success: false, error: result.message || 'Label generation failed' });
         }
     } catch (e) {
         console.error('[API] Label Gen Error:', e);
-        res.status(500).json({ error: e.message });
+        res.json({ success: false, error: e.message });
     }
 });
 
@@ -413,7 +425,7 @@ app.get('/api/rapidshyp/wallet', async (req, res) => {
         res.json(result);
     } catch (e) {
         console.error('[API] Wallet Error:', e);
-        res.status(500).json({ success: false, balance: 0, error: e.message });
+        res.json({ success: false, balance: 0, error: e.message });
     }
 });
 
