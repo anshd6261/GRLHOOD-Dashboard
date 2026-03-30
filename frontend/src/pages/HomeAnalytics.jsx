@@ -198,10 +198,10 @@ export default function HomeAnalytics({ startDate, endDate, onNavigateToProductA
 
                             {/* Risk & Flags */}
                             <div className="flex flex-wrap gap-2">
-                                {o.riskLevel && (
-                                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border ${o.riskLevel === 'High' ? 'bg-red-500/10 text-red-400 border-red-500/20' : o.riskLevel === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : 'bg-green-500/10 text-green-400 border-green-500/20'}`}>
+                                {o.aiRiskLevel && o.aiRiskLevel !== 'Unknown' && (
+                                    <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border ${o.aiRiskLevel === 'High' ? 'bg-red-500/10 text-red-400 border-red-500/20' : o.aiRiskLevel === 'Medium' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' : 'bg-green-500/10 text-green-400 border-green-500/20'}`}>
                                         <AlertTriangle size={14} />
-                                        {o.riskLevel.toUpperCase()} RTO RISK
+                                        {o.aiRiskLevel.toUpperCase()} RTO RISK
                                     </div>
                                 )}
                                 {o.flags && o.flags.map((f, i) => (
