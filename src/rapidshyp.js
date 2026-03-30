@@ -4,8 +4,7 @@ require('dotenv').config();
 const SESSION_API_BASE = 'https://api.rapidshyp.com/session';
 const PUBLIC_API_BASE = 'https://api.rapidshyp.com/rapidshyp/apis/v1';
 
-// Railway provides a static outgoing IP — no proxy needed
-const rsApi = axios.create({ timeout: 30000 });
+const rsApi = axios.create({ timeout: process.env.VERCEL ? 8000 : 30000 });
 
 rsApi.interceptors.response.use(
     (response) => response,
