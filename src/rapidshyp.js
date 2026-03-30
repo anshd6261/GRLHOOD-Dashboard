@@ -342,7 +342,7 @@ const getWalletBalance = async () => {
             return { success: true, balance: parseFloat(balance) || 0 };
         } catch (e2) {
             console.error('[RAPIDSHYP] Wallet balance error:', e2.response?.data || e2.message);
-            return { success: false, balance: 0 };
+            return { success: false, balance: 0, error: e.response?.data?.message || e.response?.data || e.message, fallbackError: e2.response?.data?.message || e2.response?.data || e2.message };
         }
     }
 };
