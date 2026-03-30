@@ -364,8 +364,8 @@ const bulkAssignAWB = async (orderNames) => {
 
 /**
  * Get wallet balance from RapidShyp. Requires JWT (session API).
- * Tries multiple endpoint patterns since wallet API is undocumented.
- * Returns 0 gracefully if unavailable.
+ * Endpoint: GET /session/payments/get_wallet_balance
+ * Response: { status: true, amount: 1234.56, hold_amount: 0, credit_limit: 0 }
  */
 const getWalletBalance = async () => {
     const sessionHeaders = getSessionHeaders();
@@ -374,30 +374,17 @@ const getWalletBalance = async () => {
         return { success: false, balance: 0, message: 'JWT not configured. Set RAPIDSHYP_JWT in env to enable wallet.' };
     }
 
-    // Try multiple possible wallet endpoint patterns
-    const urlsToTry = [
-        { method: 'post', url: `${SESSION_API_BASE}/wallet/get_balance` },
-        { method: 'post', url: `${SESSION_API_BASE}/seller/wallet/get_balance` },
-        { method: 'post', url: `${SESSION_API_BASE}/recharge/wallet_balance` },
-        { method: 'post', url: `${SESSION_API_BASE}/seller/recharge/wallet_balance` },
-    ];
-
-    for (const { method, url } of urlsToTry) {
-        try {
-            const res = await rsApi[method](url, {}, { headers: sessionHeaders, timeout: 8000 });
-            if (res.status === 200 && res.data) {
-                const balance = res.data?.balance ?? res.data?.available_balance ?? res.data?.wallet_balance ?? 0;
-                console.log(`[RAPIDSHYP] Wallet balance: ₹${balance} (via ${url})`);
-                return { success: true, balance: parseFloat(balance) || 0 };
-            }
-        } catch (e) {
-            // Try next URL
-            continue;
-        }
+    try {
+        const res = await rsApi.get(`${SESSION_API_BASE}/payments/get_wallet_balance`, { headers: sessionHeaders, timeout: 10000 });
+        const balance = res.data?.amount ?? res.data?.balance ?? res.data?.available_balance ?? 0;
+        const holdAmount = res.data?.hold_amount ?? 0;
+        const creditLimit = res.data?.credit_limit ?? 0;
+        console.log(`[RAPIDSHYP] Wallet: ₹${balance} (hold: ₹${holdAmount}, credit: ₹${creditLimit})`);
+        return { success: true, balance: parseFloat(balance) || 0, holdAmount: parseFloat(holdAmount) || 0, creditLimit: parseFloat(creditLimit) || 0 };
+    } catch (e) {
+        console.error('[RAPIDSHYP] Wallet error:', e.response?.status, e.response?.data || e.message);
+        return { success: false, balance: 0, message: e.response?.data?.message || e.message };
     }
-
-    console.warn('[RAPIDSHYP] Wallet endpoint not found — wallet API may not be publicly available.');
-    return { success: false, balance: 0, message: 'Wallet endpoint unavailable. Check RapidShyp dashboard directly.' };
 };
 
 /**
