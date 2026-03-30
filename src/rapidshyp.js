@@ -328,21 +328,24 @@ const bulkAssignAWB = async (orderNames) => {
 const getWalletBalance = async () => {
     try {
         const headers = getSessionHeaders();
-        // Try the session wallet endpoint
         const res = await rsApi.post(`${SESSION_API_BASE}/wallet/get_balance`, {}, { headers });
-        const balance = res.data?.balance ?? res.data?.available_balance ?? res.data?.wallet_balance ?? 0;
+        const rawData = res.data;
+        const balance = rawData?.balance ?? rawData?.available_balance ?? rawData?.wallet_balance ?? 0;
         console.log(`[RAPIDSHYP] Wallet balance: ₹${balance}`);
-        return { success: true, balance: parseFloat(balance) || 0 };
+        return { success: true, balance: parseFloat(balance) || 0, debug: rawData };
     } catch (e) {
-        // Fallback: try alternative endpoint
         try {
             const headers = getSessionHeaders();
             const res = await rsApi.get(`${SESSION_API_BASE}/wallet/balance`, { headers });
-            const balance = res.data?.balance ?? res.data?.available_balance ?? 0;
-            return { success: true, balance: parseFloat(balance) || 0 };
+            const rawData = res.data;
+            const balance = rawData?.balance ?? rawData?.available_balance ?? 0;
+            return { success: true, balance: parseFloat(balance) || 0, debug: rawData };
         } catch (e2) {
-            console.error('[RAPIDSHYP] Wallet balance error:', e2.response?.data || e2.message);
-            return { success: false, balance: 0, error: e.response?.data?.message || e.response?.data || e.message, fallbackError: e2.response?.data?.message || e2.response?.data || e2.message };
+            return {
+                success: false, balance: 0,
+                error1: { status: e.response?.status, data: e.response?.data, msg: e.message },
+                error2: { status: e2.response?.status, data: e2.response?.data, msg: e2.message }
+            };
         }
     }
 };
