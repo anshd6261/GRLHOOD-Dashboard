@@ -12,6 +12,7 @@ export default function HomeAnalytics({ startDate, endDate, onNavigateToProductA
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [cancellingId, setCancellingId] = useState(null);
 
     useEffect(() => {
         fetchAnalyticsData();
@@ -43,6 +44,21 @@ export default function HomeAnalytics({ startDate, endDate, onNavigateToProductA
             setError(e.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleCancelOrder = async (order) => {
+        const numericId = order.id || order.orderId;
+        const orderName = `#${order.orderId}`;
+        if (!window.confirm(`Cancel order ${orderName}?`)) return;
+        setCancellingId(order.orderId);
+        try {
+            await axios.post(`${API_URL}/orders/${numericId}/cancel`, { orderName });
+            setData(prev => prev ? { ...prev, orders: prev.orders.filter(o => o.orderId !== order.orderId) } : prev);
+        } catch (e) {
+            alert(`Cancel failed: ${e.response?.data?.error || e.message}`);
+        } finally {
+            setCancellingId(null);
         }
     };
 
@@ -221,8 +237,12 @@ export default function HomeAnalytics({ startDate, endDate, onNavigateToProductA
                                     <button className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/5 text-white text-xs font-bold transition-colors flex items-center gap-2">
                                         <Edit3 size={14} /> Edit
                                     </button>
-                                    <button onClick={() => alert('Cancel trigger initialized')} className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-xs font-bold transition-colors flex items-center gap-2">
-                                        <XOctagon size={14} /> Cancel
+                                    <button
+                                        onClick={() => handleCancelOrder(o)}
+                                        disabled={cancellingId === o.orderId}
+                                        className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-xs font-bold transition-colors flex items-center gap-2 disabled:opacity-50"
+                                    >
+                                        <XOctagon size={14} /> {cancellingId === o.orderId ? 'Cancelling...' : 'Cancel'}
                                     </button>
                                 </div>
                             </div>

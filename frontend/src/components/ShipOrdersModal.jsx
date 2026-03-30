@@ -107,7 +107,7 @@ export default function ShipOrdersModal({ orders, onClose, onSuccess }) {
 
       // Step 3: Assign Courier
       setCurrentStep(3);
-      const assignRes = await axios.post(`${API_URL}/rapidshyp/bulk-assign`, { orderIds: uniqueOrderIds });
+      const assignRes = await axios.post(`${API_URL}/rapidshyp/bulk-assign`, { orderNames: uniqueOrderIds });
       if (!assignRes.data.success) throw new Error(assignRes.data.error || 'Courier assignment failed');
       markComplete(3);
 

@@ -513,11 +513,18 @@ const deleteOrder = async (id) => {
   return true;
 };
 
+const getOrdersByDateRange = async (startIso, endIso) => {
+  const startDate = startIso.split('T')[0] + 'T00:00:00Z';
+  const endDate = endIso.split('T')[0] + 'T23:59:59Z';
+  return getUnfulfilledOrders(0, startDate, endDate, 'all');
+};
+
 module.exports = {
   getUnfulfilledOrders,
   searchOrders,
   assignSkuToProduct,
   getOrder,
   graphqlRequest,
-  cancelOrder
+  cancelOrder,
+  getOrdersByDateRange
 };
