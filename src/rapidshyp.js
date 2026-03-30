@@ -216,6 +216,25 @@ const cancelOrder = async (channelOrderId) => {
 };
 
 /**
+ * Get order info by channel order ID (public API).
+ * Per docs: GET /get_orders_info?order_id=X&channel_order_id=Y
+ */
+const getOrderInfo = async (channelOrderId) => {
+    try {
+        const headers = getPublicHeaders();
+        const cleanId = channelOrderId.toString().replace('#', '');
+        const response = await rsApi.get(`${PUBLIC_API_BASE}/get_orders_info`, {
+            headers,
+            params: { channel_order_id: cleanId, order_id: cleanId }
+        });
+        return { success: true, data: response.data };
+    } catch (e) {
+        console.error(`[RAPIDSHYP] Get Order Info Error:`, e.response?.data || e.message);
+        return { success: false, data: null };
+    }
+};
+
+/**
  * Track a shipment by AWB number (public API — works with API key).
  */
 const trackOrder = async (awb) => {
@@ -231,19 +250,26 @@ const trackOrder = async (awb) => {
 
 /**
  * Generate Shipping Label(s) (public API — works with API key).
+ * Per docs: GET /generate_label with body { shipmentId: ["id1", "id2"] }
  */
-const generateLabel = async (orderIds) => {
+const generateLabel = async (shipmentIds) => {
     try {
         const headers = getPublicHeaders();
-        console.log(`[RAPIDSHYP] Generating label for orders:`, orderIds);
-        const response = await rsApi.post(`${PUBLIC_API_BASE}/generate_label`, {
-            orderId: orderIds
-        }, { headers });
+        console.log(`[RAPIDSHYP] Generating label for shipments:`, shipmentIds);
+        const response = await rsApi({
+            method: 'GET',
+            url: `${PUBLIC_API_BASE}/generate_label`,
+            headers,
+            data: { shipmentId: shipmentIds }
+        });
 
         console.log(`[RAPIDSHYP] Label API Response:`, response.data);
-        return { success: true, data: response.data };
+        // Response: { status: true, remarks: "...", labelData: [{ shipmentId, labelURL, labelRemarks }] }
+        const labelData = response.data?.labelData || [];
+        const labelUrl = labelData[0]?.labelURL || '';
+        return { success: true, data: { ...response.data, label_url: labelUrl, labelUrl, label_pdf_url: labelUrl } };
     } catch (e) {
-        const errMsg = e.response?.data?.message || e.response?.data || e.message;
+        const errMsg = e.response?.data?.remarks || e.response?.data?.message || e.response?.data || e.message;
         console.error(`[RAPIDSHYP] Label Generation Failed:`, errMsg);
         return { success: false, message: typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg) };
     }
@@ -338,7 +364,8 @@ const bulkAssignAWB = async (orderNames) => {
 
 /**
  * Get wallet balance from RapidShyp. Requires JWT (session API).
- * Returns 0 gracefully if JWT is not available.
+ * Endpoint: GET /session/payments/get_wallet_balance
+ * Response: { status: true, amount: 1234.56, hold_amount: 0, credit_limit: 0 }
  */
 const getWalletBalance = async () => {
     const sessionHeaders = getSessionHeaders();
@@ -348,46 +375,105 @@ const getWalletBalance = async () => {
     }
 
     try {
-        const res = await rsApi.post(`${SESSION_API_BASE}/wallet/get_balance`, {}, { headers: sessionHeaders });
-        const balance = res.data?.balance ?? res.data?.available_balance ?? res.data?.wallet_balance ?? 0;
-        console.log(`[RAPIDSHYP] Wallet balance: ₹${balance}`);
-        return { success: true, balance: parseFloat(balance) || 0 };
+        const res = await rsApi.get(`${SESSION_API_BASE}/payments/get_wallet_balance`, { headers: sessionHeaders, timeout: 10000 });
+        const balance = res.data?.amount ?? res.data?.balance ?? res.data?.available_balance ?? 0;
+        const holdAmount = res.data?.hold_amount ?? 0;
+        const creditLimit = res.data?.credit_limit ?? 0;
+        console.log(`[RAPIDSHYP] Wallet: ₹${balance} (hold: ₹${holdAmount}, credit: ₹${creditLimit})`);
+        return { success: true, balance: parseFloat(balance) || 0, holdAmount: parseFloat(holdAmount) || 0, creditLimit: parseFloat(creditLimit) || 0 };
     } catch (e) {
-        // Fallback to GET endpoint
-        try {
-            const res = await rsApi.get(`${SESSION_API_BASE}/wallet/balance`, { headers: sessionHeaders });
-            const balance = res.data?.balance ?? res.data?.available_balance ?? 0;
-            return { success: true, balance: parseFloat(balance) || 0 };
-        } catch (e2) {
-            console.error('[RAPIDSHYP] Wallet error:', e2.response?.status, e2.response?.data || e2.message);
-            return { success: false, balance: 0 };
-        }
+        console.error('[RAPIDSHYP] Wallet error:', e.response?.status, e.response?.data || e.message);
+        return { success: false, balance: 0, message: e.response?.data?.message || e.message };
     }
 };
 
 /**
- * Generate labels for multiple orders (public API — works with API key).
+ * Generate labels for multiple shipments (public API — works with API key).
+ * Per docs: GET /generate_label with body { shipmentId: ["id1", "id2"] }
  */
-const bulkGenerateLabels = async (orderIds) => {
+const bulkGenerateLabels = async (shipmentIds) => {
     try {
         const headers = getPublicHeaders();
-        console.log(`[RAPIDSHYP] Generating labels for ${orderIds.length} orders...`);
+        console.log(`[RAPIDSHYP] Generating labels for ${shipmentIds.length} shipments...`);
 
-        const response = await rsApi.post(`${PUBLIC_API_BASE}/generate_label`, {
-            orderId: orderIds
-        }, { headers });
+        const response = await rsApi({
+            method: 'GET',
+            url: `${PUBLIC_API_BASE}/generate_label`,
+            headers,
+            data: { shipmentId: shipmentIds }
+        });
 
         const data = response.data;
-        const labelUrl = data.label_pdf_url || '';
-        const labels = data.labels || data.data || [];
+        const labelData = data.labelData || [];
+        const labelUrl = labelData[0]?.labelURL || '';
 
         console.log(`[RAPIDSHYP] Labels generated. URL: ${labelUrl || 'check individual labels'}`);
-        return { success: true, labelUrl, labels, data };
+        return { success: true, labelUrl, labels: labelData, data: { ...data, label_pdf_url: labelUrl } };
     } catch (e) {
-        const errMsg = e.response?.data?.message || e.response?.data || e.message;
+        const errMsg = e.response?.data?.remarks || e.response?.data?.message || e.response?.data || e.message;
         console.error(`[RAPIDSHYP] Bulk label generation failed:`, errMsg);
         return { success: false, labelUrl: '', labels: [], message: typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg) };
     }
+};
+
+/**
+ * Look up RapidShyp shipment ID from an AWB number.
+ * Uses session API search if JWT available, falls back to tracking.
+ * Returns the shipment_id needed for label generation.
+ */
+const findOrderIdByAWB = async (awb) => {
+    if (!awb) return null;
+
+    // Try session API search first (can search by AWB)
+    const sessionHeaders = getSessionHeaders();
+    if (sessionHeaders) {
+        try {
+            const searchRes = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, {
+                search: awb, page: 1, limit: 10
+            }, { headers: sessionHeaders });
+            const records = searchRes.data?.records || [];
+            const match = records.find(r => r.awb_number === awb);
+            if (match) {
+                const shipId = match.shipment_id || match.order_id;
+                console.log(`[RAPIDSHYP] Found shipment ${shipId} for AWB ${awb}`);
+                return shipId;
+            }
+        } catch (e) {
+            console.warn(`[RAPIDSHYP] Session search by AWB failed: ${e.response?.status || e.message}`);
+        }
+    }
+
+    // Fallback: use public shipment_details endpoint
+    try {
+        const headers = getPublicHeaders();
+        const detailRes = await rsApi.get(`${PUBLIC_API_BASE}/shipment_details`, {
+            headers,
+            params: { awb }
+        });
+        const shipId = detailRes.data?.shipment_id;
+        if (shipId) {
+            console.log(`[RAPIDSHYP] Found shipment ${shipId} for AWB ${awb} via shipment_details`);
+            return shipId;
+        }
+    } catch (e) {
+        console.warn(`[RAPIDSHYP] Shipment details lookup by AWB failed: ${e.response?.status || e.message}`);
+    }
+
+    // Last resort: use tracking endpoint
+    try {
+        const headers = getPublicHeaders();
+        const trackRes = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, { awb }, { headers });
+        const shipId = trackRes.data?.shipment_id || trackRes.data?.order_id;
+        if (shipId) {
+            console.log(`[RAPIDSHYP] Found shipment ${shipId} for AWB ${awb} via tracking`);
+            return shipId;
+        }
+    } catch (e) {
+        console.warn(`[RAPIDSHYP] Track lookup by AWB failed: ${e.response?.status || e.message}`);
+    }
+
+    console.warn(`[RAPIDSHYP] Could not find shipment ID for AWB ${awb}`);
+    return null;
 };
 
 module.exports = {
@@ -396,10 +482,12 @@ module.exports = {
     fetchOrdersWithRTO,
     cancelOrder,
     trackOrder,
+    getOrderInfo,
     generateLabel,
     bulkAssignAWB,
     getWalletBalance,
     bulkGenerateLabels,
+    findOrderIdByAWB,
     mapRTORisk,
     buildRTOReason
 };

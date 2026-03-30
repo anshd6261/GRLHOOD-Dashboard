@@ -2,7 +2,7 @@
  * Shiprocket Sense API — RTO Risk Prediction
  *
  * Uses Shiprocket's cross-merchant buyer intelligence (4.8B data points)
- * to predict RTO risk for COD orders.
+ * to predict RTO risk for ALL orders (COD and Prepaid).
  *
  * Endpoint: POST https://sense.shiprocket.in/v3/rto/predict
  * Auth: Basic (api_key:api_secret)
@@ -17,11 +17,41 @@ const API_SECRET = process.env.SHIPROCKET_SENSE_API_SECRET || 'd70a717ecbd8fd337
 const BASIC_AUTH = 'Basic ' + Buffer.from(`${API_KEY}:${API_SECRET}`).toString('base64');
 
 /**
+ * Detect payment method from Shopify order data.
+ * Checks gateway names first (most reliable), then falls back to financial status.
+ */
+function detectPayment(order) {
+    const gateways = (order.paymentGatewayNames || []).join(' ').toLowerCase();
+
+    // COD indicators — check these first
+    if (gateways.includes('cash on delivery') ||
+        gateways.includes('manual') ||
+        gateways.includes('cod')) {
+        return 'Cash on Delivery';
+    }
+
+    // Prepaid indicators — explicit online payment gateways
+    if (gateways.includes('razorpay') ||
+        gateways.includes('paytm') ||
+        gateways.includes('stripe') ||
+        gateways.includes('paypal') ||
+        gateways.includes('phonepe') ||
+        gateways.includes('upi')) {
+        return 'Prepaid';
+    }
+
+    // Fallback: check financial status (less reliable — COD collected also shows PAID)
+    const financialStatus = order.displayFinancialStatus || '';
+    if (financialStatus === 'PENDING') {
+        return 'Cash on Delivery';
+    }
+
+    // Default to COD if uncertain — safer for RTO prediction
+    return 'Cash on Delivery';
+}
+
+/**
  * Predict RTO risk for a single order via Shiprocket Sense.
- *
- * @param {Object} order - Shopify order object
- * @param {string} paymentMethod - 'COD' or 'Prepaid'
- * @returns {{ risk: string, reasons: string[], riskTags: Object[], score: number, probability: number }}
  */
 async function predictRisk(order, paymentMethod) {
     const shipping = order.shippingAddress || {};
@@ -78,7 +108,7 @@ async function predictRisk(order, paymentMethod) {
         if (res.data?.success && res.data?.data) {
             const d = res.data.data;
             return {
-                risk: d.risk || 'unknown',       // "low", "high", "very high"
+                risk: d.risk || 'unknown',
                 score: d.score || 0,
                 probability: d.model_probability || 0,
                 reasons: (d.reasons || []).map(r => r.reason),
@@ -92,7 +122,6 @@ async function predictRisk(order, paymentMethod) {
 
         return defaultResult('API returned unsuccessful response');
     } catch (e) {
-        // Retry once on rate limit (429)
         if (e.response?.status === 429) {
             console.warn(`[SENSE] Rate limited, retrying after 2s...`);
             await new Promise(r => setTimeout(r, 2000));
@@ -134,50 +163,32 @@ function defaultResult(fallbackReason) {
 }
 
 /**
- * Batch predict RTO risk for multiple orders.
- * Runs COD predictions in parallel (capped concurrency) with a global timeout
- * so the endpoint never hangs on Vercel serverless.
- *
- * @param {Object[]} orders - Array of Shopify order objects
- * @param {Object} paymentMap - Map of orderId → paymentMethod
- * @returns {Object} Map of orderId → risk result
+ * Batch predict RTO risk for ALL orders (COD and Prepaid).
+ * Runs predictions in parallel (capped concurrency) with a global timeout.
  */
 async function batchPredictRisk(orders, paymentMap = {}) {
     const results = {};
-    const codOrders = [];
+    const allPredictions = [];
 
     for (const order of orders) {
         const orderId = order.name || order.id;
         const payment = paymentMap[orderId] || detectPayment(order);
-
-        if (payment !== 'COD' && payment !== 'Cash on Delivery') {
-            results[orderId] = {
-                risk: 'low',
-                score: 0,
-                probability: 0,
-                reasons: ['Prepaid order (low risk)'],
-                reasonCodes: [],
-                riskTags: [],
-            };
-        } else {
-            codOrders.push({ order, orderId, payment });
-        }
+        allPredictions.push({ order, orderId, payment });
     }
 
-    // Run COD predictions with concurrency limit and global timeout
     const CONCURRENCY = 5;
     const GLOBAL_TIMEOUT_MS = process.env.VERCEL ? 6000 : 30000;
 
     const runPredictions = async () => {
         let i = 0;
         const next = async () => {
-            if (i >= codOrders.length) return;
+            if (i >= allPredictions.length) return;
             const idx = i++;
-            const { order, orderId, payment } = codOrders[idx];
+            const { order, orderId, payment } = allPredictions[idx];
             results[orderId] = await predictRisk(order, payment);
             return next();
         };
-        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, codOrders.length) }, () => next()));
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, allPredictions.length) }, () => next()));
     };
 
     try {
@@ -190,32 +201,19 @@ async function batchPredictRisk(orders, paymentMap = {}) {
     }
 
     // Fill any orders that didn't complete in time
-    for (const { orderId } of codOrders) {
+    for (const { orderId } of allPredictions) {
         if (!results[orderId]) {
             results[orderId] = defaultResult('RTO check timed out');
         }
     }
 
-    const checked = codOrders.filter(c => results[c.orderId]?.risk !== 'unknown' || results[c.orderId]?.reasons?.[0] !== 'RTO check timed out').length;
-    console.log(`[SENSE] Batch RTO: ${checked}/${codOrders.length} COD checked, ${orders.length - codOrders.length} prepaid skipped.`);
+    const checked = allPredictions.filter(c => results[c.orderId]?.risk !== 'unknown' || results[c.orderId]?.reasons?.[0] !== 'RTO check timed out').length;
+    console.log(`[SENSE] Batch RTO: ${checked}/${allPredictions.length} orders checked.`);
     return results;
-}
-
-function detectPayment(order) {
-    const financialStatus = order.displayFinancialStatus || '';
-    const gateways = (order.paymentGatewayNames || []).join(' ').toLowerCase();
-
-    if (financialStatus === 'PAID' ||
-        gateways.includes('razorpay') ||
-        gateways.includes('paytm') ||
-        gateways.includes('stripe') ||
-        gateways.includes('paypal')) {
-        return 'Prepaid';
-    }
-    return 'Cash on Delivery';
 }
 
 module.exports = {
     predictRisk,
     batchPredictRisk,
+    detectPayment,
 };

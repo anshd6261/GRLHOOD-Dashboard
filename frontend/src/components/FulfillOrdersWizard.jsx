@@ -221,7 +221,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const grouped = useMemo(() => {
     const m = {};
     workingOrders.forEach(o => {
-      if (!m[o.orderId]) m[o.orderId] = { orderId: o.orderId, shopifyId: o.id, customerName: o.customerName, shippingDetails: o.shippingDetails, aiRiskScore: o.aiRiskScore, aiRiskLevel: o.aiRiskLevel, aiRiskReasons: o.aiRiskReasons || [], items: [], createdAt: o.createdAt, awb: o.awb, shiprocketId: o.shiprocketId, customerOrdersCount: o.customerOrdersCount, payment: o.payment };
+      if (!m[o.orderId]) m[o.orderId] = { orderId: o.orderId, shopifyId: o.id, customerName: o.customerName, shippingDetails: o.shippingDetails, aiRiskScore: o.aiRiskScore, aiRiskLevel: o.aiRiskLevel, aiRiskReasons: o.aiRiskReasons || [], items: [], createdAt: o.createdAt, awb: o.awb, rsOrderId: o.rsOrderId, customerOrdersCount: o.customerOrdersCount, payment: o.payment };
       m[o.orderId].items.push(o);
     });
     return Object.values(m);

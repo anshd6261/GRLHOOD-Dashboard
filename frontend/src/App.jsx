@@ -251,13 +251,17 @@ function App() {
     setEditingOrder(null);
   };
 
-  const handleDownloadLabel = async (orderIds) => {
-    if (!orderIds || orderIds.length === 0) return;
+  const handleDownloadLabel = async (orderIds, awbs) => {
+    const hasOrderIds = orderIds && orderIds.filter(Boolean).length > 0;
+    const hasAwbs = awbs && awbs.filter(Boolean).length > 0;
+    if (!hasOrderIds && !hasAwbs) return;
     setLoading(true);
     try {
-      const res = await axios.post(`${API_URL}/rapidshyp/label`, { orderIds });
-      if (res.data && res.data.label_pdf_url) {
-        window.open(res.data.label_pdf_url, '_blank');
+      const payload = hasOrderIds ? { orderIds: orderIds.filter(Boolean) } : { awbs: awbs.filter(Boolean) };
+      const res = await axios.post(`${API_URL}/rapidshyp/label`, payload);
+      const url = res.data?.label_pdf_url || res.data?.label_url || res.data?.labelUrl || res.data?.pdf_url;
+      if (url) {
+        window.open(url, '_blank');
         setToast({ message: "Label Generated!", type: "success" });
       } else {
          throw new Error("Label URL missing from response");
@@ -871,7 +875,7 @@ function App() {
                                       <div className="flex gap-1.5">
                                         {group.items[0].awb && (
                                           <button 
-                                            onClick={() => handleDownloadLabel([group.items[0].shiprocketId])} 
+                                            onClick={() => handleDownloadLabel(group.items[0].rsOrderId ? [group.items[0].rsOrderId] : [], group.items[0].awb ? [group.items[0].awb] : [])}
                                             className="glass-btn px-3.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 bg-[rgba(227,207,216,0.1)] text-[#e3cfd8] border-[rgba(227,207,216,0.3)] hover:brightness-125"
                                           >
                                             <FileText size={12} /> Label
@@ -1060,11 +1064,12 @@ function App() {
               {Array.from(selectedOrders).some(id => data.orders.find(o => o.orderId === id && o.awb)) && (
                 <button
                   onClick={() => {
-                    const idsToDownload = Array.from(selectedOrders)
+                    const matchedOrders = Array.from(selectedOrders)
                       .map(id => data.orders.find(o => o.orderId === id))
-                      .filter(o => o && o.awb && o.shiprocketId)
-                      .map(o => o.shiprocketId);
-                    if (idsToDownload.length > 0) handleDownloadLabel(idsToDownload);
+                      .filter(o => o && o.awb);
+                    const rsIds = matchedOrders.filter(o => o.rsOrderId).map(o => o.rsOrderId);
+                    const awbs = matchedOrders.filter(o => !o.rsOrderId && o.awb).map(o => o.awb);
+                    if (rsIds.length > 0 || awbs.length > 0) handleDownloadLabel(rsIds, awbs);
                   }}
                   className="glass-btn px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 tracking-wider uppercase text-[#e3cfd8] border-[rgba(227,207,216,0.2)] hover:bg-[rgba(227,207,216,0.05)]"
                 >

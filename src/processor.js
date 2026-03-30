@@ -48,15 +48,14 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
         const customerAdminId = rawCustomerId.split('/').pop();
         const customerProfileUrl = customerAdminId ? `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/customers/${customerAdminId}` : '';
 
-        // Extract shipping metadata from RapidShyp/Shiprocket map (AWB, status, IDs)
-        // RTO risk is handled by Shiprocket Sense API
-        let shiprocketId = null;
+        // Extract shipping metadata from RapidShyp map (AWB, status, IDs)
+        let rsOrderId = null;
         let rsStatus = "";
         let awb = "";
 
         const srMatch = rtoMap[order.name] || rtoMap[displayOrderId] || rtoMap[parseInt(displayOrderId, 10)];
         if (srMatch) {
-            if (srMatch.shiprocketId) shiprocketId = srMatch.shiprocketId;
+            if (srMatch.rsOrderId) rsOrderId = srMatch.rsOrderId;
             if (srMatch.rsStatus) rsStatus = srMatch.rsStatus;
             if (srMatch.awb) awb = srMatch.awb;
         }
@@ -70,16 +69,18 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
         }
 
         // Determine payment method
-        let payment = 'Cash on Delivery';
-        const financialStatus = order.displayFinancialStatus || '';
         const gateways = (order.paymentGatewayNames || []).join(' ').toLowerCase();
+        let payment = 'Cash on Delivery';
 
-        if (financialStatus === 'PAID' ||
-            gateways.includes('razorpay') ||
-            gateways.includes('paytm') ||
-            gateways.includes('stripe') ||
-            gateways.includes('paypal')) {
+        // Check gateway names first (most reliable)
+        if (gateways.includes('cash on delivery') || gateways.includes('manual') || gateways.includes('cod')) {
+            payment = 'Cash on Delivery';
+        } else if (gateways.includes('razorpay') || gateways.includes('paytm') ||
+                   gateways.includes('stripe') || gateways.includes('paypal') ||
+                   gateways.includes('phonepe') || gateways.includes('upi')) {
             payment = 'Prepaid';
+        } else if (order.displayFinancialStatus === 'PENDING') {
+            payment = 'Cash on Delivery';
         }
 
         // --- Shiprocket Sense RTO Risk ---
@@ -228,7 +229,7 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
                     customerOrdersCount,
                     customerProfileUrl,
                     shippingDetails,
-                    shiprocketId,
+                    rsOrderId,
                     rsStatus,
                     awb,
                     hasCopiedNumberDifferentName,
