@@ -238,6 +238,7 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
           node {
             id   # Need Order ID for link
             name # #1001
+            email
             phone # Global Order Phone
             createdAt
             cancelledAt
@@ -250,12 +251,15 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
               name
               phone
               address1
+              address2
               city
+              province
               zip
               country
             }
             customer {
               id
+              email
               numberOfOrders
               phone # Customer Profile Phone
             }
@@ -420,12 +424,15 @@ const searchOrders = async (searchQuery) => {
               name
               phone
               address1
+              address2
               city
+              province
               zip
               country
             }
             customer {
               id
+              email
               numberOfOrders
               phone
             }
