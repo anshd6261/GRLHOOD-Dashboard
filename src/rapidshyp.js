@@ -1,5 +1,4 @@
 const axios = require('axios');
-const { HttpsProxyAgent } = require('https-proxy-agent');
 require('dotenv').config();
 
 const SESSION_API_BASE = 'https://api.rapidshyp.com/session';
@@ -9,11 +8,16 @@ const PUBLIC_API_BASE = 'https://api.rapidshyp.com/rapidshyp/apis/v1';
 const proxyUrl = process.env.FIXIE_URL || process.env.QUOTAGUARD_URL || process.env.STATIC_PROXY_URL;
 const axiosConfig = { timeout: process.env.VERCEL ? 8000 : 30000 };
 if (proxyUrl) {
-    const agent = new HttpsProxyAgent(proxyUrl);
-    axiosConfig.httpAgent = agent;
-    axiosConfig.httpsAgent = agent;
-    axiosConfig.proxy = false; // let the agent handle it
-    console.log('[RAPIDSHYP] Using static IP proxy');
+    try {
+        const { HttpsProxyAgent } = require('https-proxy-agent');
+        const agent = new HttpsProxyAgent(proxyUrl);
+        axiosConfig.httpAgent = agent;
+        axiosConfig.httpsAgent = agent;
+        axiosConfig.proxy = false;
+        console.log('[RAPIDSHYP] Using static IP proxy');
+    } catch (e) {
+        console.warn('[RAPIDSHYP] https-proxy-agent not available, skipping proxy');
+    }
 }
 const rsApi = axios.create(axiosConfig);
 
