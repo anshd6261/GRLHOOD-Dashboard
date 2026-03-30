@@ -45,8 +45,13 @@ app.get('/api/status', (req, res) => {
 // 1.1 Get server's outgoing IP (for API whitelisting)
 app.get('/api/my-ip', async (req, res) => {
     try {
-        const r = await axios.get('https://api.ipify.org?format=json', { timeout: 5000 });
-        res.json({ ip: r.data.ip });
+        const https = require('https');
+        const ip = await new Promise((resolve, reject) => {
+            https.get('https://api.ipify.org', (r) => {
+                let d = ''; r.on('data', c => d += c); r.on('end', () => resolve(d));
+            }).on('error', reject);
+        });
+        res.json({ ip });
     } catch (e) {
         res.json({ ip: 'unknown', error: e.message });
     }
