@@ -1,488 +1,365 @@
 # GRLHOOD Dashboard
 
-**End-to-end e-commerce operations platform for GRLHOOD** — a D2C phone case & accessories brand built on Shopify. This dashboard automates order fulfillment, shipping, financial tracking, risk assessment, and supplier management from a single unified interface.
+**Full-Stack Shopify Fulfillment Automation Platform** for e-commerce order management, AI-powered RTO prediction, financial tracking, shipping automation, and supplier management.
 
-**Live:** [grlhood-dashboard.vercel.app](https://grlhood-dashboard.vercel.app)
-
----
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Tech Stack](#tech-stack)
-- [Architecture](#architecture)
-- [Features](#features)
-  - [Order Management & Fulfillment](#order-management--fulfillment)
-  - [AI-Powered RTO Risk Prediction](#ai-powered-rto-risk-prediction)
-  - [Shipping Pipeline (RapidShyp)](#shipping-pipeline-rapidshyp)
-  - [Financial Dashboard](#financial-dashboard)
-  - [Analytics & P&L](#analytics--pl)
-  - [Supplier Dashboard](#supplier-dashboard)
-  - [CSV & Excel Generation](#csv--excel-generation)
-  - [Dropbox Integration](#dropbox-integration)
-  - [Email Notifications](#email-notifications)
-  - [Consultation Form](#consultation-form)
-- [Frontend Pages & Components](#frontend-pages--components)
-- [Backend Modules](#backend-modules)
-- [API Reference](#api-reference)
-- [Environment Variables](#environment-variables)
-- [Deployment](#deployment)
-- [Project Structure](#project-structure)
-- [Authentication](#authentication)
-- [Getting Started](#getting-started)
-
----
-
-## Overview
-
-GRLHOOD Dashboard is a full-stack operations platform that connects to Shopify, RapidShyp, Shiprocket Sense, Dropbox, Gmail, PayU, and Meta Ads — providing a single pane of glass for:
-
-- Fetching and processing unfulfilled Shopify orders in real-time
-- AI-powered RTO (Return to Origin) risk prediction using Shiprocket Sense
-- Multi-step order fulfillment with courier assignment via RapidShyp
-- Automated shipping label generation and Dropbox backup
-- Financial P&L tracking, ad spend attribution, and cash position monitoring
-- Supplier-specific views with limited permissions
-- Smart risk validation (address, phone, duplicate detection)
-- CSV and Excel export with GST calculations
-
----
-
-## Tech Stack
-
-### Frontend
-| Technology | Version | Purpose |
-|---|---|---|
-| **React** | 19.2 | UI framework |
-| **Vite** | 7.x | Build tool & dev server |
-| **Tailwind CSS** | 4.x | Utility-first styling |
-| **Framer Motion** | 12.x | Animations & transitions |
-| **Recharts** | 3.x | Charts & data visualization |
-| **Lucide React** | 0.563 | Icon library |
-| **React DatePicker** | 9.x | Date range selection |
-| **Three.js** | 0.183 | 3D effects |
-| **Capacitor** | 8.x | iOS/mobile app wrapper |
-
-### Backend
-| Technology | Version | Purpose |
-|---|---|---|
-| **Express** | 5.2.1 | HTTP server framework |
-| **Axios** | 1.6 | HTTP client for API calls |
-| **Dotenv** | 16.3 | Environment variable management |
-| **Dropbox SDK** | 10.34 | Cloud file storage |
-| **ExcelJS** | 4.4 | Excel spreadsheet generation |
-| **Nodemailer** | 6.9 | Email notifications via Gmail |
-| **UUID** | 9.0 | Unique identifier generation |
-| **CSV Parse/Stringify** | 6.x | CSV processing |
-| **better-sqlite3** | 12.6 | Local SQLite database (optional) |
-| **node-cron** | 3.0 | Scheduled tasks |
-
-### Deployment
-| Service | Purpose |
-|---|---|
-| **Vercel** | Hosting (static frontend + serverless API) |
-| **GitHub** | Source control & CI/CD trigger |
+Live at: [grlhood-dashboard.vercel.app](https://grlhood-dashboard.vercel.app)
 
 ---
 
 ## Architecture
 
+| Layer | Technology | Hosting |
+|-------|-----------|---------|
+| **Frontend** | React 19 + Vite 7 + Tailwind CSS 4 | Vercel (Static CDN) |
+| **Backend** | Node.js + Express 5 | Railway (Static IP) |
+| **Database** | SQLite (better-sqlite3) | Local / Ephemeral |
+| **Styling** | Glassmorphism Dark Theme + Framer Motion | - |
+| **PWA** | Vite PWA Plugin + Workbox | Auto-update SW |
+
+### Deployment Flow
+
 ```
-                    Vercel
-    ┌───────────────────────────────────┐
-    │                                   │
-    │  Frontend (Static)    API (Node)  │
-    │  ┌──────────────┐  ┌───────────┐ │
-    │  │  React 19     │  │ Express 5 │ │
-    │  │  Vite Build   │  │ Serverless│ │
-    │  │  Tailwind CSS │  │ Functions │ │
-    │  └──────┬───────┘  └─────┬─────┘ │
-    │         │                │        │
-    └─────────┼────────────────┼────────┘
-              │                │
-              │      ┌─────────┴──────────────────┐
-              │      │                             │
-         Browser     │    External APIs            │
-                     │                             │
-                     ├── Shopify GraphQL API       │
-                     ├── RapidShyp (Shipping)      │
-                     ├── Shiprocket Sense (RTO AI) │
-                     ├── Dropbox (File Backup)     │
-                     ├── Gmail (Notifications)     │
-                     ├── PayU (Payment Sync)       │
-                     └── Meta Ads (Ad Spend)       │
+GitHub Repo
+    |
+    +---> Vercel (Frontend Only)
+    |       - Builds frontend/
+    |       - Serves static dist/ on CDN
+    |       - VITE_API_URL -> Railway backend
+    |
+    +---> Railway (Backend API)
+            - Runs src/server.js
+            - Static outgoing IP (for RapidShyp whitelist)
+            - All /api/* endpoints
 ```
 
-**Routing:** All `/api/*` requests route to the Express serverless function. All other requests serve the static React frontend.
+---
+
+## Tech Stack
+
+### Backend
+| Package | Version | Purpose |
+|---------|---------|---------|
+| Express | 5.2.1 | REST API framework |
+| Axios | 1.6.0 | HTTP client for external APIs |
+| Nodemailer | 6.9.16 | Gmail SMTP for approval emails |
+| Dropbox SDK | 10.34.0 | CSV/label backup to Dropbox |
+| ExcelJS | 4.4.0 | Styled Excel workbook generation |
+| csv-parse / csv-stringify | 6.x | CSV import/export |
+| better-sqlite3 | 12.6.2 | SQLite with WAL mode (optional) |
+| UUID | 9.0.0 | Unique batch/job IDs |
+| dotenv | 16.3.0 | Environment variable management |
+| node-cron | 3.0.0 | Scheduled background jobs |
+
+### Frontend
+| Package | Version | Purpose |
+|---------|---------|---------|
+| React | 19.2.0 | UI framework |
+| Vite | 7.2.4 | Build tool with HMR |
+| Tailwind CSS | 4.1.18 | Utility-first styling |
+| Framer Motion | 12.30.0 | Animations & transitions |
+| Recharts | 3.8.0 | Charts (Line, Bar, Pie) |
+| Lucide React | 0.563.0 | Icon library |
+| React DatePicker | 9.1.0 | Date range selection |
+| date-fns | 4.1.0 | Date utilities |
+| Capacitor | 8.2.0 | Native mobile (iOS) support |
+| Three.js | 0.183.2 | 3D graphics |
 
 ---
 
 ## Features
 
-### Order Management & Fulfillment
+### 1. Order Management & Fulfillment
+- **Real-time Shopify sync** via GraphQL Admin API
+- **Smart order processing** with automatic product categorization
+- **8-step Fulfillment Wizard:**
+  1. Detect repeat customers (same phone, different names)
+  2. AI-powered RTO risk sorting (High/Medium/Low)
+  3. Flag missing device/product info
+  4. Interactive CSV preview & editing
+  5. CSV download (supplier or financial format)
+  6. RapidShyp courier assignment & AWB generation
+  7. Bulk shipping label generation (PDF)
+  8. Auto-backup to Dropbox
+- **Bulk operations:** Select multiple orders, export, ship, cancel
+- **Order search** across all fields (ID, customer name, phone, address)
 
-- **Real-time Shopify sync** — Fetches unfulfilled orders via Shopify GraphQL Admin API with configurable date ranges and lookback periods
-- **Smart order processing** — Extracts product category, model, SKU, COGS, payment type (COD/Prepaid), and customer data
-- **Bulk selection** — Select individual or all orders for batch operations
-- **Order search** — Search by order ID, customer name, phone, city, or product
-- **Order cancellation** — Triple-sync cancellation across RapidShyp + Shopify
-- **Fulfillment Wizard** — Multi-step guided workflow:
-  1. Upload/review CSV data
-  2. Edit product categories and models inline
-  3. Assign SKUs to products
-  4. Review financial summary (COGS, GST, margins)
-  5. Generate supplier and financial CSVs
-  6. Ship via RapidShyp pipeline
+### 2. AI-Powered RTO Prediction (Dual Engine)
+- **Shiprocket Sense API** (Primary) - ML model trained on 4.8B+ data points
+  - Pincode-level risk scoring
+  - Buyer experience analysis
+  - Address validity checks
+  - Mobile number pattern analysis
+  - Returns: risk level, probability score (0-100), detailed reasons
+- **Local XGBoost Model** (Fallback) - 300 decision trees, RMSE 0.0095
+  - 5 features: pincode_risk, customer_risk, rto_risk, address_risk, composite
+  - High-RTO pincode detection (NE India, UP, Rajasthan prefixes)
+  - Junk/bogus name detection
 
-### AI-Powered RTO Risk Prediction
+### 3. Risk Management & Fraud Detection
+- **Address validation** - minimum length, blocklist patterns (test, dummy, NA, etc.)
+- **Phone validation** - Indian 10-digit format, valid prefix (6-9)
+- **Duplicate detection** - Same address with different customer names
+- **Copied number flagging** - Same phone across orders with different names
+- **Suspicious model detection** - Multiple different phone models in one order
 
-- **Shiprocket Sense API** integration for real-time RTO probability scoring
-- Each COD order is scored with a risk level: **Low**, **Medium**, or **High**
-- Risk reasons are displayed (e.g., "High RTO pincode", "New customer", "High order value")
-- **Parallel batch processing** with 5 concurrent predictions and a 6-second timeout on Vercel
-- Non-blocking — if Sense API fails, orders still load with default risk levels
-- **Risk Validator module** — Additional local checks:
-  - Address validation (completeness, suspicious patterns)
-  - Phone number validation
-  - Duplicate order detection (same address, different name)
+### 4. Shipping Integration (RapidShyp)
+- **Bulk AWB assignment** - Auto-assign best courier partner
+- **Bulk label generation** - PDF shipping labels
+- **Wallet balance** monitoring
+- **Order tracking** with real-time status
+- **Auto-cancellation** sync (RapidShyp + Shopify)
+- **Rate limit handling** - Exponential backoff (3 retries)
 
-### Shipping Pipeline (RapidShyp)
+### 5. Financial Dashboard
+- **Real-time P&L** - Today vs Month-to-Date comparison
+  - Revenue, COGS, Shipping costs, RTO losses
+  - Gateway fees, Ad spend, Net profit
+  - Blended margin %, ROAS
+- **Cash Position** tracking
+  - Net cash, settled amount, total cash out
+  - Pending COD & prepaid settlements
+  - RTO risk value exposure
+- **Daily P&L breakdown** with date range filtering
+- **Business alerts:**
+  - Settlement delays (>4 days unpaid)
+  - RTO risk (shipped >7 days, not delivered)
+  - Low ROAS campaigns (<1.0)
 
-- **Bulk AWB Assignment** — Assigns courier partners to multiple orders at once
-- **Label Generation** — Bulk shipping label PDF generation
-- **Dropbox Backup** — Automatic upload of labels and CSVs to organized Dropbox folders
-- **Wallet Balance** — Real-time RapidShyp wallet balance check
-- **Order Tracking** — Track shipment status via RapidShyp
-- **RTO Data** — Fetches shipping status and RTO flags from RapidShyp order history
-- **Static IP Proxy Support** — Optional proxy routing for IP-whitelisted APIs (configurable via env vars)
+### 6. Analytics & Reporting
+- **30-day profit/loss dashboard** with configurable period
+- **Cost distribution** breakdown (COGS, shipping, ads, RTO loss)
+- **Ad spend tracking** with daily entry logging
+- **Key metrics:** AOV, CAC, ROAS, blended margin
+- **Per-order profitability** analysis
+- **Product analysis** - Top models, categories, unit volumes
 
-### Financial Dashboard
+### 7. Export & Backup
+- **Supplier CSV** - Category, Model, SKU, Customer, Order ID, Preview URL (no pricing)
+- **Financial CSV** - Full pricing with COGS, GST calculation, totals
+- **Styled Excel** - Pink-themed workbook with borders, currency formatting, striped rows
+- **Dropbox auto-upload** - Labels PDF + CSVs to `/ORDERS/[Month]/[Date] Order/`
+- **Email approval** - Send CSV to stakeholder for review
+- **Portal upload** - Puppeteer-automated supplier portal submission
 
-- **Real-time P&L** — Revenue, COGS, shipping costs, ad spend, net profit
-- **Daily breakdown** — Day-by-day financial metrics
-- **Cash position** — Settled amounts, pending COD/Prepaid, RTO risk value
-- **Settlement tracking** — Monitor payment gateway settlements
-- **GST calculations** — Automatic 18% GST computation on COGS
-- **Alerts system** — Automated alerts for:
-  - Settlement delays
-  - High RTO risk orders
-  - Poor ad spend ROAS
+### 8. Supplier Dashboard
+- Accounts payable tracking
+- Vendor payment schedules & outstanding balances
+- Overdue invoice aging (1-30, 31-60, 61+ days)
+- Cash outflow timeline
 
-### Analytics & P&L
-
-- **Revenue analytics** — Total revenue, AOV, order count trends
-- **Cost distribution** — Visual breakdown of COGS, shipping, ad spend, RTO losses
-- **ROAS tracking** — Return on ad spend with per-order attribution
-- **Ad spend management** — Add daily ad spend entries with platform attribution
-- **RTO rate monitoring** — Track return rates and associated losses
-- **Product analysis** — Best-selling devices, models, and variants
-
-### Supplier Dashboard
-
-- **Role-based access** — Separate login and limited view for suppliers
-- **Order visibility** — Suppliers see only relevant order data
-- **Restricted actions** — No access to financial data or admin functions
-
-### CSV & Excel Generation
-
-- **Supplier CSV** — Product details, quantities, models for fulfillment centers
-- **Financial CSV** — Revenue, COGS, GST, margins per order
-- **Excel exports** — Formatted .xlsx files with multiple sheets
-- **Dynamic CSV** — Flexible CSV generation from any data structure
-- **History tracking** — All generated CSVs are saved with timestamps
-
-### Dropbox Integration
-
-- **Automatic backup** — Shipping labels, CSVs, and financial documents
-- **Organized folders** — Date-based folder structure for easy retrieval
-- **OAuth refresh** — Automatic token refresh for uninterrupted access
-- **Non-blocking** — Dropbox failures don't block the main workflow
-
-### Email Notifications
-
-- **Gmail SMTP** — Send order confirmations and reports via Gmail
-- **Automated alerts** — Configurable email notifications for key events
-
-### Consultation Form
-
-- **CA consultation** — Comprehensive tax planning and business structure questionnaire
-- **Section-based** — Business structure, tax rates, GST, expense tracking
-- **Persistent storage** — Submissions saved to JSON file for review
+### 9. CA Consultation Form
+- Multi-section tax planning questionnaire
+  - Business structure (Proprietorship / LLP / Pvt Ltd)
+  - Tax rates & savings (80C, 80D, HRA, depreciation)
+  - Business expenses tracking
+  - GST compliance checklist
+- Auto-saved to server for CA review
 
 ---
 
-## Frontend Pages & Components
+## API Endpoints
+
+### System
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/status` | Server health check |
+| `GET` | `/api/my-ip` | Outgoing IP (for API whitelisting) |
+| `GET` | `/api/v2/status` | Extended status (Gmail, Portal, Dropbox) |
+
+### Authentication
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/login` | Authenticate (returns role + token) |
+
+### Orders
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/orders` | Fetch & process orders (with RTO risk) |
+| `GET` | `/api/orders/search` | Search orders by any field |
+| `POST` | `/api/orders/:id/cancel` | Cancel order (RapidShyp + Shopify) |
+| `POST` | `/api/products/:id/assign-sku` | Auto-assign next SKU |
+
+### Export & Upload
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/download` | Generate CSV (supplier or financial) |
+| `POST` | `/api/email-approval` | Email CSV for approval |
+| `POST` | `/api/upload-portal` | Upload to supplier portal |
+| `POST` | `/api/dropbox/upload` | Backup CSV to Dropbox |
+| `GET` | `/api/download-file/:filename` | Download temp files |
+
+### Shipping (RapidShyp)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/rapidshyp/bulk-assign` | Bulk AWB courier assignment |
+| `POST` | `/api/rapidshyp/label` | Generate shipping label PDF |
+| `POST` | `/api/rapidshyp/bulk-labels-dropbox` | Labels + auto Dropbox upload |
+| `GET` | `/api/rapidshyp/wallet` | Wallet balance |
+
+### Financials
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/financials/summary` | Today + MTD P&L + alerts |
+| `GET` | `/api/financials/breakdown` | Daily P&L by date range |
+| `POST` | `/api/financials/sync-payu` | Sync PayU settlements |
+
+### Analytics
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/analytics/dashboard` | Full analytics (configurable days) |
+| `POST` | `/api/analytics/ad-spend` | Log daily ad spend |
+
+### History & Misc
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/history` | Download batch history |
+| `PUT` | `/api/history/:id` | Update batch rows |
+| `POST` | `/api/consultation/submit` | Submit CA consultation form |
+
+---
+
+## Frontend Pages
+
+### Main App (`App.jsx`)
+- **Fulfill Tab** - Order table with selection, filtering (All / Missing Device / Repeat Orders), bulk actions
+- **Dashboard Tab** - Coming soon placeholder
+- **Finance Tab** - Financial dashboard embed
+- **Settings Tab** - API connectivity status, download history
 
 ### Pages
-
-| Page | File | Description |
-|---|---|---|
-| **Home Analytics** | `HomeAnalytics.jsx` | Main analytics dashboard with order cards, stats, product analysis link, cancel functionality |
-| **Product Analysis** | `ProductAnalysis.jsx` | Best-selling products, models, variants with charts |
-| **Financial Dashboard** | `FinancialDashboard.jsx` | P&L overview, daily metrics, cash position, settlement alerts |
-| **Profit Dashboard** | `ProfitDashboard.jsx` | Detailed profit analytics with cost distribution charts, ad spend management |
-| **Supplier Dashboard** | `SupplierDashboard.jsx` | Limited view for supplier partners |
-| **Consultation Form** | `ConsultationForm.jsx` | CA tax consultation questionnaire |
+| Page | Description |
+|------|-------------|
+| `HomeAnalytics.jsx` | Order cards with RTO risk badges, cancel buttons, product thumbnails, payment charts |
+| `FinancialDashboard.jsx` | Today vs MTD P&L, cash position, settlement alerts |
+| `ProfitDashboard.jsx` | 30-day analytics, cost breakdown charts, ad spend entry, order profitability table |
+| `ProductAnalysis.jsx` | Top 10 models & categories, unit volume aggregation |
+| `SupplierDashboard.jsx` | Accounts payable, vendor balances, overdue invoices |
+| `ConsultationForm.jsx` | Multi-section CA tax planning form |
 
 ### Components
-
-| Component | File | Description |
-|---|---|---|
-| **Fulfill Orders Wizard** | `FulfillOrdersWizard.jsx` | Multi-step fulfillment flow — CSV upload, editing, SKU assignment, financial review, shipping |
-| **Ship Orders Modal** | `ShipOrdersModal.jsx` | 7-step shipping pipeline UI — review, AI risk scan, verify, assign courier, labels, backup, complete |
-| **CSV Editor Modal** | `CsvEditorModal.jsx` | Inline CSV editing with export capabilities |
-| **Edit Order Modal** | `EditOrderModal.jsx` | Individual order editing interface |
-| **Aesthetic Detail Modal** | `AestheticDetailModal.jsx` | Detailed order view with rich formatting |
-| **Dotted Background** | `DottedBackground.jsx` | Animated dotted grid background effect |
-| **Glow Blobs** | `GlowBlobs.jsx` | Floating gradient blob animations |
-
-### Core App (`App.jsx`)
-
-The main application shell provides:
-- **Navigation tabs**: Dashboard, Fulfill, Finance, Settings
-- **Error Boundary**: Global error catching with reload option
-- **Spotlight Cards**: Mouse-tracking hover glow effect
-- **Settings Tab**: Connected APIs overview, fulfillment history
-- **Date range picker**: Filter orders by custom date ranges
-- **Order cards**: Expandable cards with risk badges, product thumbnails, actions
-- **Bulk operations**: Select multiple orders for shipping or export
-- **Real-time search**: Filter orders across all fields
-
-### Auth System
-
-| File | Purpose |
-|---|---|
-| `Login.jsx` | Login form with role-based routing |
-| `AuthContext.jsx` | React Context for auth state management |
+| Component | Description |
+|-----------|-------------|
+| `FulfillOrdersWizard.jsx` | 8-step fulfillment pipeline with cancel, risk review, CSV preview |
+| `ShipOrdersModal.jsx` | 7-step RapidShyp shipping pipeline (risk scan, courier assign, labels, backup) |
+| `AestheticDetailModal.jsx` | Rich order detail view (shipping, products, pricing, risk, tracking) |
+| `EditOrderModal.jsx` | Inline order field editor |
+| `CsvEditorModal.jsx` | CSV row editor with column management |
+| `GlowBlobs.jsx` | Animated background orbs |
+| `DottedBackground.jsx` | Grid pattern overlay |
 
 ---
 
 ## Backend Modules
 
-| Module | File | Description |
-|---|---|---|
-| **Server** | `server.js` | Express 5 API server — all route definitions, middleware, static serving |
-| **Shopify** | `shopify.js` | Shopify GraphQL Admin API client — fetch orders, search, cancel, assign SKUs |
-| **Processor** | `processor.js` | Order data processor — transforms raw Shopify orders into dashboard-ready rows |
-| **RapidShyp** | `rapidshyp.js` | RapidShyp API client — AWB assignment, labels, wallet, tracking, cancellation |
-| **Shiprocket Sense** | `shiprocket_sense.js` | Shiprocket Sense RTO prediction API — batch risk scoring with concurrency control |
-| **Shiprocket** | `shiprocket.js` | Shiprocket API client — shipment lookup, courier assignment, labels (legacy) |
-| **Risk Validator** | `riskValidator.js` | Local risk checks — address validation, phone validation, duplicate detection |
-| **Analytics** | `analytics.js` | Analytics engine — revenue, costs, ROAS, RTO rates with Shopify + Shiprocket data |
-| **Calculations** | `calculations.js` | Financial P&L — daily/aggregated metrics, cash position (SQLite-backed) |
-| **Alerts** | `alerts.js` | Alert system — settlement delays, RTO risk, ad spend ROAS monitoring |
-| **Database** | `database.js` | SQLite database setup and connection management |
-| **CSV Generator** | `csv_generator.js` | Supplier and financial CSV generation with GST calculations |
-| **Excel** | `excel.js` | Excel workbook generation with ExcelJS |
-| **Dropbox** | `dropbox.js` | Dropbox SDK integration — file upload with OAuth token refresh |
-| **Email** | `email.js` | Gmail SMTP email sending via Nodemailer |
-| **History** | `history.js` | Fulfillment history tracking — save/load/update batch records |
-| **Sync PayU** | `sync_payu.js` | PayU payment gateway settlement sync |
-| **Sync Meta Ads** | `sync_meta_ads.js` | Meta (Facebook) Ads spend data sync |
-| **Sync Shiprocket** | `sync_shiprocket.js` | Shiprocket order and shipment data sync |
-| **Sync Shopify** | `sync_shopify.js` | Shopify order data sync to local database |
-| **Products DB** | `products_db.js` | Product catalog and SKU management |
-| **Uploader** | `uploader.js` | Portal file upload automation (Puppeteer-based) |
-| **RTO Predictor** | `rto_predictor.js` | XGBoost-based RTO prediction model (legacy, replaced by Shiprocket Sense) |
-| **Index** | `index.js` | CLI entry point for cron-based order processing |
-
----
-
-## API Reference
-
-### Status & Auth
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/status` | Server health check — returns store domain and connection status |
-| `GET` | `/api/my-ip` | Returns server's outgoing IP address (for API whitelisting) |
-| `POST` | `/api/login` | Authenticate user — returns role (`admin`/`supplier`) and token |
-
-### Orders
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/orders` | Fetch and process orders from Shopify with RTO risk scoring |
-| `GET` | `/api/orders/search?q=` | Search orders by ID, name, phone, city, or product |
-| `POST` | `/api/orders/:id/cancel` | Cancel order across RapidShyp + Shopify |
-| `POST` | `/api/orders/assign-sku` | Assign SKU to a Shopify product |
-
-### Fulfillment & CSV
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/generate-csv` | Generate supplier and financial CSVs from order data |
-| `POST` | `/api/generate-excel` | Generate formatted Excel workbook |
-| `POST` | `/api/upload-csv` | Upload CSV to Dropbox |
-| `POST` | `/api/fulfill` | Process fulfillment — generate CSV, upload, optionally email |
-
-### Shipping (RapidShyp)
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/rapidshyp/bulk-assign` | Bulk assign AWB numbers to orders |
-| `GET` | `/api/rapidshyp/wallet` | Get RapidShyp wallet balance |
-| `POST` | `/api/rapidshyp/bulk-labels-dropbox` | Generate shipping labels + upload to Dropbox |
-| `POST` | `/api/generate-labels` | Generate labels for specific RapidShyp order IDs |
-
-### Financial
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/financials/summary` | P&L summary — today, MTD, cash position, alerts |
-| `GET` | `/api/settings` | Get automation settings (email, portal, lookback days) |
-
-### Analytics
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/analytics/dashboard?days=` | Full analytics with revenue, costs, ROAS, order breakdown |
-| `POST` | `/api/analytics/ad-spend` | Save ad spend entry (date, amount, platform) |
-
-### History
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/history` | Get fulfillment batch history |
-| `POST` | `/api/history` | Save new fulfillment batch |
-| `PUT` | `/api/history/:id` | Update existing batch record |
-
-### Consultation
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/api/consultation/submit` | Submit CA consultation form |
-
-### Utility
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/download-file/:filename` | Download a generated file (labels, CSVs) |
+| Module | Description |
+|--------|-------------|
+| `server.js` | Express API server (25+ endpoints) |
+| `shopify.js` | Shopify GraphQL client (orders, products, cancellation) |
+| `processor.js` | Order transformation (raw Shopify -> fulfillment rows) |
+| `rapidshyp.js` | RapidShyp shipping API (AWB, labels, tracking, wallet) |
+| `shiprocket_sense.js` | Shiprocket Sense RTO prediction API |
+| `shiprocket.js` | Shiprocket shipping API (shipments, courier data) |
+| `rto_predictor.js` | Local XGBoost RTO model (300 trees) |
+| `riskValidator.js` | Address/phone validation, duplicate detection |
+| `calculations.js` | P&L metrics, cash position, daily breakdown |
+| `alerts.js` | Business alerts (settlement, RTO, ROAS) |
+| `analytics.js` | Dashboard analytics (revenue, costs, ROAS, CAC) |
+| `database.js` | SQLite schema (orders, shipments, settlements, ad_spend) |
+| `csv_generator.js` | Supplier & financial CSV export |
+| `excel.js` | Styled Excel workbook generation |
+| `email.js` | Gmail SMTP (approval emails with CSV attachment) |
+| `dropbox.js` | Dropbox OAuth2 token refresh + file upload |
+| `uploader.js` | Puppeteer portal automation |
+| `history.js` | Batch download tracking (JSON) |
+| `sync_payu.js` | PayU payment settlement sync |
+| `sync_meta_ads.js` | Meta/Facebook Ads API sync |
 
 ---
 
 ## Environment Variables
 
-### Required — Shopify
-
+### Required
 ```env
+# Shopify
 SHOPIFY_STORE_DOMAIN=grlhood-3.myshopify.com
 SHOPIFY_CLIENT_ID=your_client_id
 SHOPIFY_CLIENT_SECRET=your_client_secret
-```
 
-### Required — RapidShyp
-
-```env
+# RapidShyp (Shipping)
 RAPIDSHYP_JWT=your_jwt_token
 RAPIDSHYP_API_KEY=your_api_key
+
+# Shiprocket Sense (RTO Prediction)
+SHIPROCKET_SENSE_API_KEY=your_key
+SHIPROCKET_SENSE_API_SECRET=your_secret
 ```
 
-### Required — Shiprocket Sense (RTO Prediction)
-
+### Optional
 ```env
-SHIPROCKET_SENSE_API_KEY=your_api_key
-SHIPROCKET_SENSE_API_SECRET=your_api_secret
-```
+# Dropbox (CSV Backup)
+DROPBOX_REFRESH_TOKEN=your_token
+DROPBOX_APP_KEY=your_key
+DROPBOX_APP_SECRET=your_secret
 
-### Optional — Shiprocket (Legacy Shipping)
+# Gmail (Approval Emails)
+GMAIL_USER=your_email@gmail.com
+GMAIL_APP_PASSWORD=your_16char_app_password
 
-```env
+# Shiprocket (Shipping Data)
 SHIPROCKET_EMAIL=your_email
 SHIPROCKET_PASSWORD=your_password
-```
 
-### Optional — Dropbox
-
-```env
-DROPBOX_REFRESH_TOKEN=your_refresh_token
-DROPBOX_APP_KEY=your_app_key
-DROPBOX_APP_SECRET=your_app_secret
-```
-
-### Optional — Gmail
-
-```env
-GMAIL_USER=your_email@gmail.com
-GMAIL_APP_PASSWORD=your_app_password
-```
-
-### Optional — PayU
-
-```env
-PAYU_MERCHANT_KEY=your_merchant_key
+# PayU (Payment Gateway)
+PAYU_MERCHANT_KEY=your_key
 PAYU_SALT=your_salt
-PAYU_ENV=test  # or "live"
-```
+PAYU_ENV=production
 
-### Optional — Meta Ads
-
-```env
-META_ACCESS_TOKEN=your_access_token
+# Meta Ads
+META_ACCESS_TOKEN=your_token
 META_AD_ACCOUNT_ID=act_123456789
-```
 
-### Optional — Static IP Proxy
+# Portal Upload (Puppeteer)
+PORTAL_URL=https://portal.example.com
+PORTAL_USERNAME=your_username
+PORTAL_PASSWORD=your_password
 
-```env
-FIXIE_URL=http://fixie:token@proxy.usefixie.com:80
-# or
-QUOTAGUARD_URL=http://user:pass@proxy.quotaguard.com:9293
-# or
-STATIC_PROXY_URL=http://your-proxy:port
-```
-
-### Application Settings
-
-```env
+# Config
 PORT=3001
 GST_RATE=18
 DETAILS_LOOKBACK_DAYS=3
-NODE_ENV=production
-VERCEL=1  # Auto-set by Vercel
+DATA_DIR=./data
+```
+
+### Frontend (Vercel)
+```env
+VITE_API_URL=https://your-railway-backend.up.railway.app
 ```
 
 ---
 
-## Deployment
+## UI Theme
 
-### Vercel (Production)
+**Dark glassmorphism** design with dusty pink accents.
 
-The project deploys automatically to Vercel on push to `main`.
-
-**`vercel.json` configuration:**
-```json
-{
-  "version": 2,
-  "builds": [
-    {
-      "src": "frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "dist" }
-    },
-    {
-      "src": "src/server.js",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/src/server.js" },
-    { "src": "/(.*)", "dest": "/frontend/$1" }
-  ]
-}
+```
+Background:    #0e0e11 (near black)
+Surface:       rgba(30, 30, 34, 0.7) with backdrop-blur
+Accent:        #e3cfd8 (dusty pink)
+Text Primary:  #f5f5f5
+Text Muted:    rgba(245, 245, 245, 0.35)
+Border:        rgba(227, 207, 216, 0.12)
+Risk High:     #ff1493 (hot pink)
+Risk Medium:   #e3cfd8
+Risk Low:      #34d399 (emerald)
+Success:       #34d399
+Error:         #ef4444
 ```
 
-- **Frontend**: Built with `@vercel/static-build`, served as static files
-- **Backend**: Runs as `@vercel/node` serverless function
-- **Routing**: `/api/*` routes to Express, everything else to the React SPA
-
-### Vercel Considerations
-
-- **Serverless timeout**: Functions have limited execution time. API calls are parallelized with timeouts:
-  - Shiprocket Sense: 6s global timeout with 5 concurrent workers
-  - RapidShyp: 8s timeout per request
-- **No persistent storage**: `better-sqlite3` is an optional dependency. Financial calculations gracefully return empty data when SQLite is unavailable
-- **Rotating IPs**: Vercel serverless functions don't have static outgoing IPs. Use proxy env vars for IP-whitelisted APIs
+- Glass cards with 28px blur + 1.4x saturate
+- Spotlight cards with mouse-follow glow effect
+- Framer Motion page transitions & step animations
+- Custom thin scrollbar with pink tint
+- Poppins font (Google Fonts)
 
 ---
 
@@ -490,151 +367,114 @@ The project deploys automatically to Vercel on push to `main`.
 
 ```
 GRLHOOD-Dashboard/
-├── frontend/                    # React frontend (Vite)
-│   ├── src/
-│   │   ├── App.jsx              # Main application shell
-│   │   ├── App.css              # Global styles
-│   │   ├── Login.jsx            # Login page
-│   │   ├── AuthContext.jsx      # Auth state management
-│   │   ├── main.jsx             # React entry point
-│   │   ├── index.css            # Base CSS + Tailwind
-│   │   ├── components/
-│   │   │   ├── FulfillOrdersWizard.jsx
-│   │   │   ├── ShipOrdersModal.jsx
-│   │   │   ├── CsvEditorModal.jsx
-│   │   │   ├── EditOrderModal.jsx
-│   │   │   ├── AestheticDetailModal.jsx
-│   │   │   ├── DottedBackground.jsx
-│   │   │   └── GlowBlobs.jsx
-│   │   ├── pages/
-│   │   │   ├── HomeAnalytics.jsx
-│   │   │   ├── ProductAnalysis.jsx
-│   │   │   ├── FinancialDashboard.jsx
-│   │   │   ├── ProfitDashboard.jsx
-│   │   │   ├── SupplierDashboard.jsx
-│   │   │   └── ConsultationForm.jsx
-│   │   ├── lib/                 # Utility functions
-│   │   └── assets/              # Static assets
-│   ├── public/                  # Public assets (logo, icons)
-│   ├── package.json
-│   └── vite.config.js
-│
-├── src/                         # Express backend
-│   ├── server.js                # API routes & middleware
-│   ├── shopify.js               # Shopify GraphQL client
-│   ├── processor.js             # Order data transformer
-│   ├── rapidshyp.js             # RapidShyp API client
-│   ├── shiprocket_sense.js      # Shiprocket Sense RTO API
-│   ├── shiprocket.js            # Shiprocket API (legacy)
-│   ├── riskValidator.js         # Address/phone/duplicate checks
-│   ├── analytics.js             # Analytics engine
-│   ├── calculations.js          # P&L calculations
-│   ├── alerts.js                # Alert system
-│   ├── database.js              # SQLite setup
-│   ├── csv_generator.js         # CSV generation
-│   ├── excel.js                 # Excel generation
-│   ├── dropbox.js               # Dropbox integration
-│   ├── email.js                 # Gmail SMTP
-│   ├── history.js               # Batch history tracking
-│   ├── sync_payu.js             # PayU sync
-│   ├── sync_meta_ads.js         # Meta Ads sync
-│   ├── sync_shiprocket.js       # Shiprocket data sync
-│   ├── sync_shopify.js          # Shopify data sync
-│   ├── products_db.js           # Product catalog
-│   ├── uploader.js              # Portal automation
-│   └── index.js                 # CLI entry point
-│
-├── data/                        # Local data storage
-│   ├── history.json             # Fulfillment batch history
-│   ├── ad_spend.json            # Ad spend records
-│   └── grlhood.db               # SQLite database
-│
-├── vercel.json                  # Vercel deployment config
-├── package.json                 # Backend dependencies
-└── .env                         # Environment variables
+|
++-- src/                          # Backend (Node.js/Express)
+|   +-- server.js                 # API server (25+ endpoints)
+|   +-- shopify.js                # Shopify GraphQL API
+|   +-- processor.js              # Order data transformation
+|   +-- rapidshyp.js              # RapidShyp shipping API
+|   +-- shiprocket_sense.js       # RTO prediction (ML API)
+|   +-- shiprocket.js             # Shiprocket shipping API
+|   +-- rto_predictor.js          # Local XGBoost RTO model
+|   +-- riskValidator.js          # Fraud & risk checks
+|   +-- calculations.js           # P&L calculations
+|   +-- alerts.js                 # Business alerts
+|   +-- analytics.js              # Dashboard analytics
+|   +-- database.js               # SQLite schema
+|   +-- csv_generator.js          # CSV export
+|   +-- excel.js                  # Excel generation
+|   +-- email.js                  # Gmail SMTP
+|   +-- dropbox.js                # Dropbox integration
+|   +-- history.js                # Batch history
+|   +-- sync_payu.js              # PayU sync
+|   +-- xgb_trained_model.json    # XGBoost model (300 trees)
+|
++-- frontend/
+|   +-- src/
+|   |   +-- App.jsx               # Main app shell
+|   |   +-- Login.jsx             # Auth page
+|   |   +-- AuthContext.jsx       # React auth context
+|   |   +-- main.jsx              # Entry point
+|   |   +-- index.css             # Global styles (glassmorphism)
+|   |   +-- pages/
+|   |   |   +-- HomeAnalytics.jsx
+|   |   |   +-- FinancialDashboard.jsx
+|   |   |   +-- ProfitDashboard.jsx
+|   |   |   +-- ProductAnalysis.jsx
+|   |   |   +-- SupplierDashboard.jsx
+|   |   |   +-- ConsultationForm.jsx
+|   |   +-- components/
+|   |   |   +-- FulfillOrdersWizard.jsx
+|   |   |   +-- ShipOrdersModal.jsx
+|   |   |   +-- AestheticDetailModal.jsx
+|   |   |   +-- EditOrderModal.jsx
+|   |   |   +-- CsvEditorModal.jsx
+|   |   |   +-- GlowBlobs.jsx
+|   |   |   +-- DottedBackground.jsx
+|   |   +-- lib/utils.js
+|   |   +-- assets/
+|   +-- vite.config.js
+|   +-- package.json
+|
++-- data/                         # Local persistent data
+|   +-- grlhood.db
+|   +-- history.json
+|   +-- ad_spend.json
+|
++-- package.json                  # Backend dependencies
++-- vercel.json                   # Vercel config (frontend only)
++-- railway.json                  # Railway config (backend)
 ```
 
 ---
 
-## Authentication
-
-The dashboard uses a simple role-based authentication system:
-
-| Role | Access |
-|---|---|
-| **Admin** | Full access — all tabs, financial data, settings, fulfillment |
-| **Supplier** | Limited access — order data only, no financials or admin controls |
-
-Authentication is handled via the `/api/login` endpoint which returns a role and mock JWT token. The frontend stores auth state in React Context and conditionally renders UI based on role.
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- **Node.js** 18+
-- **npm** 9+
-- Shopify store with Admin API credentials
-- RapidShyp account with API keys
+## Setup & Development
 
 ### Local Development
-
 ```bash
-# 1. Clone the repository
-git clone https://github.com/anshd6261/GRLHOOD-Dashboard.git
-cd GRLHOOD-Dashboard
-
-# 2. Install dependencies
-npm install
-cd frontend && npm install && cd ..
-
-# 3. Configure environment
-cp .env.example .env
-# Edit .env with your API keys
-
-# 4. Run development server
+npm install && npm install --prefix frontend
 npm run dev
-# This starts both backend (port 3001) and frontend (port 5173) concurrently
+# Backend: http://localhost:3001
+# Frontend: http://localhost:5173
 ```
 
-### Build for Production
-
+### Production
 ```bash
-# Build frontend
-cd frontend && npm run build && cd ..
-
-# Start production server
+npm run build
 npm start
 ```
 
-### Deploy to Vercel
+---
 
-1. Push to GitHub
-2. Connect repo to Vercel
-3. Add all environment variables in Vercel dashboard
-4. Deploy triggers automatically on push to `main`
+## Deployment
+
+### Backend (Railway)
+1. Connect GitHub repo on [railway.com](https://railway.com)
+2. Railway uses `railway.json` config automatically
+3. Add all environment variables in Railway dashboard
+4. Deploy — Railway assigns a **static outgoing IP**
+5. Whitelist that IP in RapidShyp (once, permanently)
+
+### Frontend (Vercel)
+1. Connect same GitHub repo on [vercel.com](https://vercel.com)
+2. Set `VITE_API_URL` to your Railway backend URL
+3. Auto-deploys on push to `main`
 
 ---
 
-## Design
+## Integrations
 
-The dashboard features a **glassmorphism** design language with:
-
-- Dark theme (`#0e0e11` base) with translucent glass cards
-- Signature pink accent color (`#e3cfd8`) — GRLHOOD brand
-- Mouse-tracking spotlight hover effects on cards
-- Framer Motion animations throughout
-- Dotted grid background with floating gradient blobs
-- Responsive layout optimized for both desktop and mobile
-- PWA-ready with service worker and offline support
-
----
-
-## License
-
-Private project. All rights reserved.
+| Service | Purpose | Auth Method |
+|---------|---------|-------------|
+| **Shopify** | Order source (GraphQL Admin API) | OAuth Client ID/Secret |
+| **RapidShyp** | Shipping, AWB, labels, tracking | JWT + API Key |
+| **Shiprocket Sense** | ML-powered RTO prediction | Basic Auth |
+| **Shiprocket** | Shipping cost & shipment data | Email/Password |
+| **Dropbox** | CSV & label PDF backup | OAuth2 refresh token |
+| **Gmail** | Approval email notifications | App password SMTP |
+| **PayU** | Payment settlement sync | Merchant Key + Salt |
+| **Meta Ads** | Ad spend data sync | Access token |
 
 ---
 
-*Built for GRLHOOD by Ansh D.*
+*Built for GRLHOOD by Ansh.*

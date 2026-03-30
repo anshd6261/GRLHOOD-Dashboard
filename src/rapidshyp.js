@@ -4,22 +4,8 @@ require('dotenv').config();
 const SESSION_API_BASE = 'https://api.rapidshyp.com/session';
 const PUBLIC_API_BASE = 'https://api.rapidshyp.com/rapidshyp/apis/v1';
 
-// Route through static IP proxy if configured (solves Vercel rotating IP issue)
-const proxyUrl = process.env.FIXIE_URL || process.env.QUOTAGUARD_URL || process.env.STATIC_PROXY_URL;
-const axiosConfig = { timeout: process.env.VERCEL ? 8000 : 30000 };
-if (proxyUrl) {
-    try {
-        const { HttpsProxyAgent } = require('https-proxy-agent');
-        const agent = new HttpsProxyAgent(proxyUrl);
-        axiosConfig.httpAgent = agent;
-        axiosConfig.httpsAgent = agent;
-        axiosConfig.proxy = false;
-        console.log('[RAPIDSHYP] Using static IP proxy');
-    } catch (e) {
-        console.warn('[RAPIDSHYP] https-proxy-agent not available, skipping proxy');
-    }
-}
-const rsApi = axios.create(axiosConfig);
+// Railway provides a static outgoing IP — no proxy needed
+const rsApi = axios.create({ timeout: 30000 });
 
 rsApi.interceptors.response.use(
     (response) => response,
@@ -329,23 +315,18 @@ const getWalletBalance = async () => {
     try {
         const headers = getSessionHeaders();
         const res = await rsApi.post(`${SESSION_API_BASE}/wallet/get_balance`, {}, { headers });
-        const rawData = res.data;
-        const balance = rawData?.balance ?? rawData?.available_balance ?? rawData?.wallet_balance ?? 0;
+        const balance = res.data?.balance ?? res.data?.available_balance ?? res.data?.wallet_balance ?? 0;
         console.log(`[RAPIDSHYP] Wallet balance: ₹${balance}`);
-        return { success: true, balance: parseFloat(balance) || 0, debug: rawData };
+        return { success: true, balance: parseFloat(balance) || 0 };
     } catch (e) {
         try {
             const headers = getSessionHeaders();
             const res = await rsApi.get(`${SESSION_API_BASE}/wallet/balance`, { headers });
-            const rawData = res.data;
-            const balance = rawData?.balance ?? rawData?.available_balance ?? 0;
-            return { success: true, balance: parseFloat(balance) || 0, debug: rawData };
+            const balance = res.data?.balance ?? res.data?.available_balance ?? 0;
+            return { success: true, balance: parseFloat(balance) || 0 };
         } catch (e2) {
-            return {
-                success: false, balance: 0,
-                error1: { status: e.response?.status, data: e.response?.data, msg: e.message },
-                error2: { status: e2.response?.status, data: e2.response?.data, msg: e2.message }
-            };
+            console.error('[RAPIDSHYP] Wallet error:', e2.response?.status, e2.response?.data || e2.message);
+            return { success: false, balance: 0 };
         }
     }
 };
