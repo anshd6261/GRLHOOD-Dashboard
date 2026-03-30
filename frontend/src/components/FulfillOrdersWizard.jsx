@@ -10,7 +10,7 @@ import axios from 'axios';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
-const SHOPIFY_DOMAIN = 'grlhood-2.myshopify.com';
+const SHOPIFY_DOMAIN = 'grlhood-3.myshopify.com';
 
 const STEPS = [
   { id: 'REPEAT', label: 'Repeats', icon: Users },
@@ -83,7 +83,7 @@ const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, c
                 target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="glass-btn p-1.5 rounded-lg"><MessageSquare size={12} className="text-emerald-400" /></a>
             </>
           )}
-          <button onClick={e => { e.stopPropagation(); onCancel(group.orderId); }} disabled={cancellingId === group.orderId}
+          <button onClick={e => { e.stopPropagation(); onCancel(group.orderId, group.shopifyId); }} disabled={cancellingId === group.orderId}
             className="glass-btn p-1.5 rounded-lg text-[#ff1493] hover:bg-[rgba(255,20,147,0.1)]">
             {cancellingId === group.orderId ? <RefreshCw size={12} className="animate-spin" /> : <Trash2 size={12} />}
           </button>
@@ -146,6 +146,24 @@ const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, c
   );
 });
 
+// Memoized CSV table row to prevent full-table re-render on single cell edit
+const CsvRow = React.memo(function CsvRow({ r, i, isSupplier, onCategory, onModel, onDelete }) {
+  return (
+    <tr className="border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(227,207,216,0.03)]">
+      <td className="text-[10px] text-[rgba(245,245,245,0.25)] px-2 py-1.5">{i+1}</td>
+      <td className="px-2 py-1.5"><input type="text" value={r.category||''} onChange={e => onCategory(i, e.target.value)} className="glass-input text-[10px] px-2 py-1 rounded w-full min-w-[80px]" /></td>
+      <td className="px-2 py-1.5"><input type="text" value={r.model||''} onChange={e => onModel(i, e.target.value)} className="glass-input text-[10px] px-2 py-1 rounded w-full min-w-[120px]" /></td>
+      <td className="text-[10px] text-[rgba(245,245,245,0.35)] px-2 py-1.5 font-mono">{r.sku}</td>
+      <td className="text-[10px] text-[rgba(245,245,245,0.5)] px-2 py-1.5">{r.customerName}</td>
+      <td className="text-[10px] text-white font-bold px-2 py-1.5">{r.orderId}</td>
+      <td className="text-[10px] text-[rgba(245,245,245,0.45)] px-2 py-1.5">{r.payment||'—'}</td>
+      {!isSupplier && <td className="text-[10px] text-[rgba(245,245,245,0.45)] px-2 py-1.5">₹{r.price||0}</td>}
+      {!isSupplier && <td className="text-[10px] text-[#e3cfd8] px-2 py-1.5">₹{r.cogs||0}</td>}
+      <td className="px-2 py-1.5"><button onClick={() => onDelete(i)} className="text-[rgba(245,245,245,0.15)] hover:text-[#ff1493]"><Trash2 size={11} /></button></td>
+    </tr>
+  );
+});
+
 export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, isSupplier }) {
   const [step, setStep] = useState(0);
   const [done, setDone] = useState(new Set());
@@ -180,12 +198,22 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       return u;
     });
   }, []);
+  const handleCategoryUpdate = useCallback((i, val) => {
+    setWorkingOrders(prev => {
+      const u = [...prev]; u[i] = { ...u[i], category: val }; return u;
+    });
+  }, []);
   const handleDeleteRow = useCallback((i) => {
     setWorkingOrders(prev => { const u = [...prev]; u.splice(i, 1); return u; });
   }, []);
-  const handleCancel = useCallback(async (id) => {
-    setCancellingId(id);
-    try { await axios.post(`${API_URL}/orders/${id}/cancel`); setWorkingOrders(p => p.filter(o => o.orderId !== id)); setToast({ msg: `#${id} cancelled` }); }
+  const handleCancel = useCallback(async (orderId, shopifyId) => {
+    setCancellingId(orderId);
+    try {
+      const numericId = shopifyId || orderId;
+      await axios.post(`${API_URL}/orders/${numericId}/cancel`, { orderName: `#${orderId}` });
+      setWorkingOrders(p => p.filter(o => o.orderId !== orderId));
+      setToast({ msg: `#${orderId} cancelled` });
+    }
     catch (e) { setToast({ msg: `Cancel failed: ${e.response?.data?.error || e.message}`, err: true }); }
     finally { setCancellingId(null); }
   }, []);
@@ -193,7 +221,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const grouped = useMemo(() => {
     const m = {};
     workingOrders.forEach(o => {
-      if (!m[o.orderId]) m[o.orderId] = { orderId: o.orderId, customerName: o.customerName, shippingDetails: o.shippingDetails, aiRiskScore: o.aiRiskScore, aiRiskLevel: o.aiRiskLevel, aiRiskReasons: o.aiRiskReasons || [], items: [], createdAt: o.createdAt, awb: o.awb, shiprocketId: o.shiprocketId, customerOrdersCount: o.customerOrdersCount, payment: o.payment };
+      if (!m[o.orderId]) m[o.orderId] = { orderId: o.orderId, shopifyId: o.id, customerName: o.customerName, shippingDetails: o.shippingDetails, aiRiskScore: o.aiRiskScore, aiRiskLevel: o.aiRiskLevel, aiRiskReasons: o.aiRiskReasons || [], items: [], createdAt: o.createdAt, awb: o.awb, shiprocketId: o.shiprocketId, customerOrdersCount: o.customerOrdersCount, payment: o.payment };
       m[o.orderId].items.push(o);
     });
     return Object.values(m);
@@ -277,7 +305,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const missingByOrder = useMemo(() => {
     const map = {};
     missingUnits.forEach(u => {
-      if (!map[u.orderId]) map[u.orderId] = { orderId: u.orderId, customerName: u.customerName, shippingDetails: u.shippingDetails, units: [] };
+      if (!map[u.orderId]) map[u.orderId] = { orderId: u.orderId, shopifyId: u.id, customerName: u.customerName, shippingDetails: u.shippingDetails, units: [] };
       map[u.orderId].units.push(u);
     });
     return Object.values(map);
@@ -311,7 +339,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
                       <a href={`https://wa.me/91${ph}?text=${encodeURIComponent(`Hi ${orderGroup.customerName}, this is GRLHOOD. We're processing your order #${orderGroup.orderId} but need your phone model to proceed. Could you please share your device name? Thanks!`)}`}
                         target="_blank" rel="noopener noreferrer" className="glass-btn p-1.5 rounded-lg"><MessageSquare size={12} className="text-emerald-400" /></a>
                     </>}
-                    <button onClick={() => handleCancel(orderGroup.orderId)} disabled={cancellingId === orderGroup.orderId}
+                    <button onClick={() => handleCancel(orderGroup.orderId, orderGroup.shopifyId)} disabled={cancellingId === orderGroup.orderId}
                       className="glass-btn p-1.5 rounded-lg text-[#ff1493]">{cancellingId === orderGroup.orderId ? <RefreshCw size={12} className="animate-spin" /> : <Trash2 size={12} />}</button>
                   </div>
                 </div>
@@ -348,18 +376,8 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           </tr></thead>
           <tbody>
             {workingOrders.map((r, i) => (
-              <tr key={i} className="border-b border-[rgba(255,255,255,0.03)] hover:bg-[rgba(227,207,216,0.03)]">
-                <td className="text-[10px] text-[rgba(245,245,245,0.25)] px-2 py-1.5">{i+1}</td>
-                <td className="px-2 py-1.5"><input type="text" value={r.category||''} onChange={e=>{const u=[...workingOrders];u[i]={...u[i],category:e.target.value};setWorkingOrders(u);}} className="glass-input text-[10px] px-2 py-1 rounded w-full min-w-[80px]" /></td>
-                <td className="px-2 py-1.5"><input type="text" value={r.model||''} onChange={e=>handleModelUpdate(i,e.target.value)} className="glass-input text-[10px] px-2 py-1 rounded w-full min-w-[120px]" /></td>
-                <td className="text-[10px] text-[rgba(245,245,245,0.35)] px-2 py-1.5 font-mono">{r.sku}</td>
-                <td className="text-[10px] text-[rgba(245,245,245,0.5)] px-2 py-1.5">{r.customerName}</td>
-                <td className="text-[10px] text-white font-bold px-2 py-1.5">{r.orderId}</td>
-                <td className="text-[10px] text-[rgba(245,245,245,0.45)] px-2 py-1.5">{r.payment||'—'}</td>
-                {!isSupplier && <td className="text-[10px] text-[rgba(245,245,245,0.45)] px-2 py-1.5">₹{r.price||0}</td>}
-                {!isSupplier && <td className="text-[10px] text-[#e3cfd8] px-2 py-1.5">₹{r.cogs||0}</td>}
-                <td className="px-2 py-1.5"><button onClick={()=>handleDeleteRow(i)} className="text-[rgba(245,245,245,0.15)] hover:text-[#ff1493]"><Trash2 size={11} /></button></td>
-              </tr>
+              <CsvRow key={`${r.orderId}-${r.sku}-${i}`} r={r} i={i} isSupplier={isSupplier}
+                onCategory={handleCategoryUpdate} onModel={handleModelUpdate} onDelete={handleDeleteRow} />
             ))}
           </tbody>
         </table>
@@ -539,7 +557,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const stepContent = [renderRepeatOrders, renderRTOSort, renderMissing, renderCSV, renderDownload, renderShip, renderLabels, renderDone];
 
   return (
-    <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xl">
+    <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0" onClick={onClose} />
       <motion.div initial={{ scale: 0.9, y: 20, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
         transition={{ type: 'spring', damping: 28, stiffness: 280 }}
