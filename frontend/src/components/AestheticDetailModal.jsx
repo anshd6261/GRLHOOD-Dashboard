@@ -95,9 +95,12 @@ export default function AestheticDetailModal({ order, onClose, isSupplier }) {
     setLabelLoading(true);
     setLabelError(null);
     try {
-      const payload = order.rsOrderId
-        ? { orderIds: [order.rsOrderId] }
-        : { awbs: [order.awb], shopifyOrderId: order.orderId };
+      // Always send AWB if available — tracking API gives the correct shipment_id
+      const payload = {
+        ...(order.awb ? { awbs: [order.awb] } : {}),
+        ...(order.rsOrderId ? { orderIds: [order.rsOrderId] } : {}),
+        shopifyOrderId: order.orderId,
+      };
       const res = await axios.post(`${API_URL}/rapidshyp/label`, payload);
       const url = res.data?.label_url || res.data?.labelUrl || res.data?.pdf_url;
       if (url) {

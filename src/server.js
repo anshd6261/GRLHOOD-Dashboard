@@ -368,9 +368,23 @@ app.post('/api/rapidshyp/label', async (req, res) => {
     try {
         const { orderIds, awbs, shopifyOrderId } = req.body;
 
-        let resolvedIds = orderIds && Array.isArray(orderIds) ? orderIds.filter(Boolean) : [];
+        let resolvedIds = [];
 
-        // If no RS order IDs, try to look up via Shopify order ID using session API
+        // Priority 1: AWB tracking lookup (gives correct shipment_id format like S2603415750)
+        if (awbs && Array.isArray(awbs) && awbs.length > 0) {
+            console.log(`[API] Looking up shipment IDs from AWBs:`, awbs);
+            for (const awb of awbs.filter(Boolean)) {
+                const shipId = await rapidshyp.findOrderIdByAWB(awb);
+                if (shipId) resolvedIds.push(shipId);
+            }
+        }
+
+        // Priority 2: Direct order IDs (from rsOrderId — but these are MongoDB ObjectIds, may not work)
+        if (resolvedIds.length === 0 && orderIds && Array.isArray(orderIds)) {
+            resolvedIds = orderIds.filter(Boolean);
+        }
+
+        // Priority 3: Search by Shopify order ID via session API
         if (resolvedIds.length === 0 && shopifyOrderId) {
             console.log(`[API] Looking up RS order for Shopify #${shopifyOrderId}...`);
             const sessionHeaders = rapidshyp.getSessionHeaders();
@@ -393,15 +407,6 @@ app.post('/api/rapidshyp/label', async (req, res) => {
                 } catch (searchErr) {
                     console.warn(`[API] Session search failed:`, searchErr.message);
                 }
-            }
-        }
-
-        // If still no IDs but have AWBs, try AWB lookup
-        if (resolvedIds.length === 0 && awbs && Array.isArray(awbs) && awbs.length > 0) {
-            console.log(`[API] Looking up from AWBs:`, awbs);
-            for (const awb of awbs) {
-                const rsId = await rapidshyp.findOrderIdByAWB(awb);
-                if (rsId) resolvedIds.push(rsId);
             }
         }
 

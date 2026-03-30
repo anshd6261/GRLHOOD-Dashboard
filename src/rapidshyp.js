@@ -459,14 +459,19 @@ const findOrderIdByAWB = async (awb) => {
         console.warn(`[RAPIDSHYP] Shipment details lookup by AWB failed: ${e.response?.status || e.message}`);
     }
 
-    // Last resort: use tracking endpoint
+    // Use tracking endpoint — returns records[].shipment_details[].shipment_id
     try {
         const headers = getPublicHeaders();
         const trackRes = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, { awb }, { headers });
-        const shipId = trackRes.data?.shipment_id || trackRes.data?.order_id;
-        if (shipId) {
-            console.log(`[RAPIDSHYP] Found shipment ${shipId} for AWB ${awb} via tracking`);
-            return shipId;
+        const records = trackRes.data?.records || [];
+        if (records.length > 0) {
+            const shipments = records[0].shipment_details || [];
+            const match = shipments.find(s => s.awb === awb);
+            const shipId = match?.shipment_id || shipments[0]?.shipment_id;
+            if (shipId) {
+                console.log(`[RAPIDSHYP] Found shipment ${shipId} for AWB ${awb} via tracking`);
+                return shipId;
+            }
         }
     } catch (e) {
         console.warn(`[RAPIDSHYP] Track lookup by AWB failed: ${e.response?.status || e.message}`);
