@@ -1,6 +1,17 @@
 const { getDb } = require('./database');
 
+const isDbAvailable = () => {
+    try { getDb(); return true; } catch (e) { return false; }
+};
+
+const emptyMetrics = () => ({
+    orders: 0, prepaid: 0, cod: 0, revenue: 0, cogs: 0, shipping: 0,
+    rto: 0, gatewayFees: 0, grossProfit: 0, adSpend: 0, otherExpenses: 0,
+    netProfit: 0, roas: 0, blendedMargin: 0
+});
+
 const calculateOrderMetrics = (orderId) => {
+    if (!isDbAvailable()) return null;
     const db = getDb();
     const order = db.prepare('SELECT * FROM orders WHERE order_id = ?').get(orderId);
     if (!order) return null;
@@ -46,6 +57,7 @@ const calculateOrderMetrics = (orderId) => {
 
 const getDailyPandL = (date) => {
     // date format: "YYYY-MM-DD"
+    if (!isDbAvailable()) return { date, metrics: emptyMetrics() };
     const db = getDb();
 
     // 1. Get Orders created on this date
@@ -114,6 +126,9 @@ const getDailyPandL = (date) => {
 };
 
 const getAggregatedPandL = (startDate, endDate) => {
+    if (!isDbAvailable()) {
+        return { period: { start: startDate, end: endDate }, totals: { ...emptyMetrics(), aov: 0 }, dailyBreakdown: [] };
+    }
     const db = getDb();
     // This could be optimized massively in SQL, but doing it in JS for flexibility right now
     // as we rely on per-order complex logic (RTOs revoking revenue, etc.)
@@ -148,6 +163,9 @@ const getAggregatedPandL = (startDate, endDate) => {
 
 // Cash position: Cash In (Settlements + Deposits) - Cash Out (Expenses + Withdrawals)
 const getCashPosition = () => {
+    if (!isDbAvailable()) {
+        return { netCash: 0, settledAmount: 0, totalCashOut: 0, pendingCod: 0, pendingPrepaid: 0, totalPending: 0, rtoRiskValue: 0 };
+    }
     const db = getDb();
 
     // Sum of all actual_settled_amount

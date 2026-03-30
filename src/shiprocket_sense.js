@@ -135,8 +135,8 @@ function defaultResult(fallbackReason) {
 
 /**
  * Batch predict RTO risk for multiple orders.
- * Calls Sense API sequentially with a small delay to avoid rate limits.
- * Only checks COD orders; prepaid orders get automatic "low" risk.
+ * Runs COD predictions in parallel (capped concurrency) with a global timeout
+ * so the endpoint never hangs on Vercel serverless.
  *
  * @param {Object[]} orders - Array of Shopify order objects
  * @param {Object} paymentMap - Map of orderId → paymentMethod
@@ -144,14 +144,12 @@ function defaultResult(fallbackReason) {
  */
 async function batchPredictRisk(orders, paymentMap = {}) {
     const results = {};
-    let checked = 0;
-    let skipped = 0;
+    const codOrders = [];
 
     for (const order of orders) {
         const orderId = order.name || order.id;
         const payment = paymentMap[orderId] || detectPayment(order);
 
-        // Only check COD orders — prepaid orders are auto low-risk
         if (payment !== 'COD' && payment !== 'Cash on Delivery') {
             results[orderId] = {
                 risk: 'low',
@@ -161,20 +159,45 @@ async function batchPredictRisk(orders, paymentMap = {}) {
                 reasonCodes: [],
                 riskTags: [],
             };
-            skipped++;
-            continue;
-        }
-
-        results[orderId] = await predictRisk(order, payment);
-        checked++;
-
-        // Delay between API calls to avoid rate limiting
-        if (checked % 3 === 0) {
-            await new Promise(r => setTimeout(r, 500));
+        } else {
+            codOrders.push({ order, orderId, payment });
         }
     }
 
-    console.log(`[SENSE] Batch RTO: ${checked} COD orders checked, ${skipped} prepaid skipped.`);
+    // Run COD predictions with concurrency limit and global timeout
+    const CONCURRENCY = 5;
+    const GLOBAL_TIMEOUT_MS = process.env.VERCEL ? 6000 : 30000;
+
+    const runPredictions = async () => {
+        let i = 0;
+        const next = async () => {
+            if (i >= codOrders.length) return;
+            const idx = i++;
+            const { order, orderId, payment } = codOrders[idx];
+            results[orderId] = await predictRisk(order, payment);
+            return next();
+        };
+        await Promise.all(Array.from({ length: Math.min(CONCURRENCY, codOrders.length) }, () => next()));
+    };
+
+    try {
+        await Promise.race([
+            runPredictions(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Sense batch timeout')), GLOBAL_TIMEOUT_MS)),
+        ]);
+    } catch (e) {
+        console.warn(`[SENSE] ${e.message} — filling remaining with defaults`);
+    }
+
+    // Fill any orders that didn't complete in time
+    for (const { orderId } of codOrders) {
+        if (!results[orderId]) {
+            results[orderId] = defaultResult('RTO check timed out');
+        }
+    }
+
+    const checked = codOrders.filter(c => results[c.orderId]?.risk !== 'unknown' || results[c.orderId]?.reasons?.[0] !== 'RTO check timed out').length;
+    console.log(`[SENSE] Batch RTO: ${checked}/${codOrders.length} COD checked, ${orders.length - codOrders.length} prepaid skipped.`);
     return results;
 }
 

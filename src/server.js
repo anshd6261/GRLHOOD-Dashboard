@@ -73,10 +73,13 @@ app.get('/api/orders', async (req, res) => {
 
         console.log(`[API] Fetching orders... Options:`, { daysLookback, startDate, endDate, statusMode });
 
-        // Fetch from Shopify and RapidShyp concurrently
+        // Fetch from Shopify and RapidShyp concurrently (RapidShyp is non-blocking)
         const [rawOrders, rsRes] = await Promise.all([
             getUnfulfilledOrders(daysLookback, startDate, endDate, statusMode),
-            rapidshyp.fetchOrdersWithRTO('ALL', 10), // Fetch all orders with AWB/status data
+            rapidshyp.fetchOrdersWithRTO('ALL', 10).catch(e => {
+                console.warn('[API] RapidShyp fetch failed (non-blocking):', e.message);
+                return { success: false, data: [] };
+            }),
         ]);
 
         // Build shipping data map from RapidShyp (AWB, status, IDs only)
@@ -101,9 +104,14 @@ app.get('/api/orders', async (req, res) => {
             console.log(`[API] Built shipping map with ${Object.keys(rtoMap).length} entries from RapidShyp.`);
         }
 
-        // Fetch RTO risk from Shiprocket Sense API (cross-merchant buyer intelligence)
-        const senseRiskMap = await shiprocketSense.batchPredictRisk(rawOrders);
-        console.log(`[API] Shiprocket Sense RTO risk loaded for ${Object.keys(senseRiskMap).length} orders.`);
+        // Fetch RTO risk from Shiprocket Sense API (non-blocking — dashboard loads even if Sense is slow)
+        let senseRiskMap = {};
+        try {
+            senseRiskMap = await shiprocketSense.batchPredictRisk(rawOrders);
+            console.log(`[API] Shiprocket Sense RTO risk loaded for ${Object.keys(senseRiskMap).length} orders.`);
+        } catch (e) {
+            console.warn('[API] Shiprocket Sense failed (non-blocking):', e.message);
+        }
 
         // Process orders with shipping map + Sense RTO risk
         const processedRows = processOrders(rawOrders, gstRate, rtoMap, senseRiskMap);
@@ -157,7 +165,12 @@ app.get('/api/orders/search', async (req, res) => {
         // (For a highly optimized V3 search, we'll try to get their specific RTO from RapidShyp if possible)
         // For now, we process them as safe to display in the UI quickly.
         const gstRate = parseFloat(process.env.GST_RATE || 18);
-        const senseRiskMap = await shiprocketSense.batchPredictRisk(rawOrders);
+        let senseRiskMap = {};
+        try {
+            senseRiskMap = await shiprocketSense.batchPredictRisk(rawOrders);
+        } catch (e) {
+            console.warn('[API] Sense failed in search (non-blocking):', e.message);
+        }
         const processedRows = processOrders(rawOrders, gstRate, {}, senseRiskMap);
 
         res.json({

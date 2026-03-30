@@ -1,6 +1,11 @@
 const { getDb } = require('./database');
 
+const isDbAvailable = () => {
+    try { getDb(); return true; } catch (e) { return false; }
+};
+
 const checkSettlementDelays = (daysThreshold = 4) => {
+    if (!isDbAvailable()) return [];
     const db = getDb();
     const thresholdDate = new Date();
     thresholdDate.setDate(thresholdDate.getDate() - daysThreshold);
@@ -28,6 +33,7 @@ const checkSettlementDelays = (daysThreshold = 4) => {
 };
 
 const checkRtoRisk = () => {
+    if (!isDbAvailable()) return [];
     const db = getDb();
 
     // Find COD orders that have been shipped but not delivered for > 7 days
@@ -56,6 +62,7 @@ const checkRtoRisk = () => {
 };
 
 const checkHighAdSpendRoas = (minRoasThreshold = 1.0) => {
+    if (!isDbAvailable()) return [];
     const db = getDb();
 
     // Check the last 3 days of ad spend
