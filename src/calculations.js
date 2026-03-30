@@ -1,7 +1,12 @@
 const { getDb } = require('./database');
 
 const isDbAvailable = () => {
-    try { getDb(); return true; } catch (e) { return false; }
+    try {
+        const db = getDb();
+        // Also verify tables exist (schema may not be initialized on Vercel)
+        db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='orders'").get();
+        return true;
+    } catch (e) { return false; }
 };
 
 const emptyMetrics = () => ({

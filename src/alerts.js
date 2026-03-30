@@ -1,7 +1,11 @@
 const { getDb } = require('./database');
 
 const isDbAvailable = () => {
-    try { getDb(); return true; } catch (e) { return false; }
+    try {
+        const db = getDb();
+        db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='orders'").get();
+        return true;
+    } catch (e) { return false; }
 };
 
 const checkSettlementDelays = (daysThreshold = 4) => {
