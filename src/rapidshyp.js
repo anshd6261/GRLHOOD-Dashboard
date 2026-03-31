@@ -435,6 +435,110 @@ const bulkAssignAWB = async (orderNames) => {
 };
 
 /**
+ * Bulk approve unapproved orders in RapidShyp.
+ * Fetches all orders, finds unapproved ones matching the given Shopify order IDs,
+ * and approves them via session API so AWB assignment doesn't fail.
+ */
+const bulkApproveOrders = async (shopifyOrderIds) => {
+    const sessionHeaders = getSessionHeaders();
+    if (!sessionHeaders) {
+        return { success: false, message: 'JWT not configured', approved: 0, alreadyApproved: 0, notFound: 0 };
+    }
+
+    const orderMap = await fetchAllOrders();
+    const toApprove = [];
+    let alreadyApproved = 0;
+    let notFound = 0;
+
+    for (const id of shopifyOrderIds) {
+        const cleanId = id.toString().replace('#', '');
+        const match = orderMap.get(cleanId);
+        if (!match) {
+            notFound++;
+            continue;
+        }
+        const status = (match.order_status || '').toLowerCase();
+        // Orders that are already approved, shipped, or have AWB don't need approval
+        if (status === 'approved' || status === 'shipped' || status === 'in_transit' ||
+            status === 'delivered' || match.awb_number) {
+            alreadyApproved++;
+            continue;
+        }
+        // Unapproved: new, pending, unapproved, etc.
+        toApprove.push({ orderId: match.order_id, shipmentId: match.shipment_id, cleanId });
+    }
+
+    console.log(`[RAPIDSHYP] Bulk approve: ${toApprove.length} to approve, ${alreadyApproved} already approved, ${notFound} not found in RS`);
+
+    if (toApprove.length === 0) {
+        return { success: true, approved: 0, alreadyApproved, notFound, message: 'All orders already approved or not found' };
+    }
+
+    let approvedCount = 0;
+    const errors = [];
+
+    // Try bulk approve endpoint first (sends all order IDs at once)
+    try {
+        const orderIds = toApprove.map(o => o.orderId).filter(Boolean);
+        const res = await rsApi.post(`${SESSION_API_BASE}/orders/approve`, {
+            order_ids: orderIds
+        }, { headers: sessionHeaders, timeout: 15000 });
+
+        if (res.data?.status || res.data?.success) {
+            approvedCount = orderIds.length;
+            console.log(`[RAPIDSHYP] Bulk approved ${approvedCount} orders`);
+        } else {
+            console.warn(`[RAPIDSHYP] Bulk approve response:`, res.data);
+            // Fall through to individual approval
+            throw new Error('Bulk approve returned non-success');
+        }
+    } catch (bulkErr) {
+        console.warn(`[RAPIDSHYP] Bulk approve failed (${bulkErr.response?.status || bulkErr.message}), trying individually...`);
+
+        // Fallback: approve one by one
+        for (const { orderId, shipmentId, cleanId } of toApprove) {
+            try {
+                // Try different endpoint patterns
+                const approveId = shipmentId || orderId;
+                await rsApi.post(`${SESSION_API_BASE}/orders/approve`, {
+                    order_ids: [orderId]
+                }, { headers: sessionHeaders, timeout: 8000 });
+                approvedCount++;
+                console.log(`[RAPIDSHYP] Approved order ${cleanId} (${orderId})`);
+            } catch (e) {
+                // Try alternative endpoint pattern
+                try {
+                    await rsApi.post(`${SESSION_API_BASE}/orders/update_status`, {
+                        order_id: orderId,
+                        status: 'approved'
+                    }, { headers: sessionHeaders, timeout: 8000 });
+                    approvedCount++;
+                    console.log(`[RAPIDSHYP] Approved order ${cleanId} via update_status`);
+                } catch (e2) {
+                    const msg = e2.response?.data?.message || e2.message;
+                    errors.push({ orderId: cleanId, error: msg });
+                    console.warn(`[RAPIDSHYP] Could not approve ${cleanId}: ${msg}`);
+                }
+            }
+            await new Promise(r => setTimeout(r, 200));
+        }
+    }
+
+    // Invalidate order map cache so next fetch sees updated statuses
+    _orderMapCache = null;
+    _orderMapTimestamp = 0;
+
+    return {
+        success: approvedCount > 0 || alreadyApproved > 0,
+        approved: approvedCount,
+        alreadyApproved,
+        notFound,
+        errors: errors.length > 0 ? errors : undefined,
+        message: `${approvedCount} approved, ${alreadyApproved} already approved, ${notFound} not in RapidShyp`
+    };
+};
+
+/**
  * Get wallet balance from RapidShyp. Requires JWT (session API).
  * Endpoint: GET /session/payments/get_wallet_balance
  * Response: { status: true, amount: 1234.56, hold_amount: 0, credit_limit: 0 }
@@ -550,6 +654,7 @@ module.exports = {
     getSessionHeaders,
     fetchAllOrders,
     fetchOrdersWithRTO,
+    bulkApproveOrders,
     cancelOrder,
     trackOrder,
     getOrderInfo,

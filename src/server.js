@@ -502,6 +502,23 @@ app.post('/api/rapidshyp/label', async (req, res) => {
 // RAPIDSHYP FULFILLMENT ENDPOINTS
 // ==========================================
 
+// Bulk Approve Orders (before AWB assignment)
+app.post('/api/rapidshyp/bulk-approve', async (req, res) => {
+    try {
+        const { orderIds } = req.body;
+        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+            return res.status(400).json({ error: 'Missing or invalid orderIds array' });
+        }
+
+        console.log(`[API] Bulk approving ${orderIds.length} orders...`);
+        const result = await rapidshyp.bulkApproveOrders(orderIds);
+        res.json(result);
+    } catch (e) {
+        console.error('[API] Bulk Approve Error:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // Bulk Assign AWB
 app.post('/api/rapidshyp/bulk-assign', async (req, res) => {
     try {

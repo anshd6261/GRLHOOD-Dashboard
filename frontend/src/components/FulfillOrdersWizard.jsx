@@ -172,6 +172,8 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const [cancellingId, setCancellingId] = useState(null);
   const [walletBalance, setWalletBalance] = useState(null);
   const [walletLoading, setWalletLoading] = useState(false);
+  const [approveResult, setApproveResult] = useState(null);
+  const [approveLoading, setApproveLoading] = useState(false);
   const [shipResults, setShipResults] = useState(null);
   const [shipLoading, setShipLoading] = useState(false);
   const [labelResult, setLabelResult] = useState(null);
@@ -441,6 +443,27 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   };
   useEffect(() => { if (step === 5 && walletBalance === null) fetchWallet(); }, [step]);
 
+  // ═══ Auto-approve unapproved orders in RapidShyp before shipping ═══
+  const handleApprove = async () => {
+    if (approveResult || approveLoading) return;
+    setApproveLoading(true);
+    try {
+      const r = await axios.post(`${API_URL}/rapidshyp/bulk-approve`, { orderIds: uniqueIds });
+      setApproveResult(r.data);
+      if (r.data.approved > 0) {
+        setToast({ msg: `${r.data.approved} orders approved in RapidShyp` });
+      }
+    } catch (e) {
+      setApproveResult({ success: false, error: e.response?.data?.error || e.message });
+      setToast({ msg: `Approve failed: ${e.response?.data?.error || e.message}`, err: true });
+    } finally {
+      setApproveLoading(false);
+    }
+  };
+
+  // Auto-approve when entering SHIP step (step 5)
+  useEffect(() => { if (step === 5 && !approveResult && !approveLoading) handleApprove(); }, [step]);
+
   const handleShip = async () => {
     setShipLoading(true);
     try {
@@ -457,6 +480,29 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
 
   const renderShip = () => (
     <div className="space-y-3">
+      {/* Auto-approve status */}
+      <div className="glass-card-sm p-3">
+        {approveLoading ? (
+          <div className="flex items-center gap-2 text-[11px] text-[rgba(245,245,245,0.5)]">
+            <RefreshCw size={11} className="animate-spin text-[#e3cfd8]" /> Approving orders in RapidShyp...
+          </div>
+        ) : approveResult ? (
+          <div className="flex items-center gap-2 text-[11px]">
+            {approveResult.error ? (
+              <><AlertTriangle size={11} className="text-amber-400" /><span className="text-amber-400">Approve: {approveResult.error}</span></>
+            ) : (
+              <><CheckCircle size={11} className="text-emerald-400" />
+              <span className="text-[rgba(245,245,245,0.5)]">
+                {approveResult.approved > 0 && <span className="text-emerald-400 font-bold">{approveResult.approved} approved</span>}
+                {approveResult.approved > 0 && approveResult.alreadyApproved > 0 && ' · '}
+                {approveResult.alreadyApproved > 0 && `${approveResult.alreadyApproved} already approved`}
+                {approveResult.notFound > 0 && ` · ${approveResult.notFound} not in RS`}
+              </span></>
+            )}
+          </div>
+        ) : null}
+      </div>
+
       <div className="glass-card-sm p-4 space-y-4">
         <div className="flex justify-between items-center">
           <span className="text-xs text-[rgba(245,245,245,0.4)]">Estimated cost</span>
@@ -490,7 +536,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           </div>
         </div>
       ) : (
-        <button onClick={handleShip} disabled={shipLoading} className="glass-btn-accent w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2">
+        <button onClick={handleShip} disabled={shipLoading || approveLoading} className="glass-btn-accent w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2">
           {shipLoading ? <><RefreshCw size={13} className="animate-spin" /> Assigning...</> : <><Truck size={13} /> Confirm & Ship All</>}
         </button>
       )}
