@@ -495,6 +495,29 @@ app.post('/api/rapidshyp/label', async (req, res) => {
             }
         }
 
+        // Priority 4: Use get_orders_info public API (no JWT needed, works for any order)
+        if (resolvedIds.length === 0 && shopifyOrderId) {
+            console.log(`[API] Trying get_orders_info for Shopify #${shopifyOrderId}...`);
+            try {
+                const infoResult = await rapidshyp.getOrderInfo(shopifyOrderId);
+                if (infoResult.success && infoResult.data) {
+                    const shipLines = infoResult.data.shipment_lines || infoResult.data.shipments || [];
+                    for (const s of shipLines) {
+                        if (s.shipment_id) resolvedIds.push(s.shipment_id);
+                    }
+                    // Also check top-level fields
+                    if (resolvedIds.length === 0 && infoResult.data.shipment_id) {
+                        resolvedIds.push(infoResult.data.shipment_id);
+                    }
+                    if (resolvedIds.length > 0) {
+                        console.log(`[API] Found shipment IDs via get_orders_info:`, resolvedIds);
+                    }
+                }
+            } catch (infoErr) {
+                console.warn(`[API] get_orders_info failed:`, infoErr.message);
+            }
+        }
+
         if (resolvedIds.length === 0) {
             return res.status(400).json({ success: false, error: 'Order not found in RapidShyp. Assign a courier first.' });
         }
