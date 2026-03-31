@@ -478,30 +478,20 @@ app.post('/api/rapidshyp/label', async (req, res) => {
             resolvedIds = orderIds.filter(Boolean);
         }
 
-        // Priority 3: Search by Shopify order ID via session API
+        // Priority 3: Search by Shopify order ID via order map (fetches all RS orders)
         if (resolvedIds.length === 0 && shopifyOrderId) {
-            console.log(`[API] Looking up RS order for Shopify #${shopifyOrderId}...`);
-            const sessionHeaders = rapidshyp.getSessionHeaders();
-            if (sessionHeaders) {
-                try {
-                    const searchRes = await require('axios').post(
-                        'https://api.rapidshyp.com/session/orders/get_orders',
-                        { search: shopifyOrderId.toString(), page: 1, limit: 5 },
-                        { headers: sessionHeaders, timeout: 8000 }
-                    );
-                    const records = searchRes.data?.records || [];
-                    const match = records.find(r =>
-                        r.seller_order_id === `#${shopifyOrderId}` ||
-                        r.seller_order_id === shopifyOrderId.toString()
-                    );
-                    if (match) {
-                        const shipId = match.shipment_id || match.order_id;
-                        resolvedIds.push(shipId);
-                        console.log(`[API] Found RS shipment ${shipId} for Shopify #${shopifyOrderId}`);
-                    }
-                } catch (searchErr) {
-                    console.warn(`[API] Session search failed:`, searchErr.message);
+            console.log(`[API] Looking up RS order for Shopify #${shopifyOrderId} via order map...`);
+            try {
+                const orderMap = await rapidshyp.fetchAllOrders();
+                const cleanId = shopifyOrderId.toString().replace('#', '');
+                const match = orderMap.get(cleanId);
+                if (match) {
+                    const shipId = match.shipment_id || match.order_id;
+                    resolvedIds.push(shipId);
+                    console.log(`[API] Found RS shipment ${shipId} for Shopify #${shopifyOrderId}`);
                 }
+            } catch (searchErr) {
+                console.warn(`[API] Order map lookup failed:`, searchErr.message);
             }
         }
 
