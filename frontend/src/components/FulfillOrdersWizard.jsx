@@ -172,6 +172,8 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const [cancellingId, setCancellingId] = useState(null);
   const [walletBalance, setWalletBalance] = useState(null);
   const [walletLoading, setWalletLoading] = useState(false);
+  const [approveResult, setApproveResult] = useState(null);
+  const [approveLoading, setApproveLoading] = useState(false);
   const [shipResults, setShipResults] = useState(null);
   const [shipLoading, setShipLoading] = useState(false);
   const [labelResult, setLabelResult] = useState(null);
@@ -441,6 +443,27 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   };
   useEffect(() => { if (step === 5 && walletBalance === null) fetchWallet(); }, [step]);
 
+  // ═══ Auto-approve unapproved orders in RapidShyp before shipping ═══
+  const handleApprove = async () => {
+    if (approveResult || approveLoading) return;
+    setApproveLoading(true);
+    try {
+      const r = await axios.post(`${API_URL}/rapidshyp/bulk-approve`, { orderIds: uniqueIds });
+      setApproveResult(r.data);
+      if (r.data.approved > 0) {
+        setToast({ msg: `${r.data.approved} orders approved in RapidShyp` });
+      }
+    } catch (e) {
+      setApproveResult({ success: false, error: e.response?.data?.error || e.message });
+      setToast({ msg: `Approve failed: ${e.response?.data?.error || e.message}`, err: true });
+    } finally {
+      setApproveLoading(false);
+    }
+  };
+
+  // Auto-approve when entering SHIP step (step 5)
+  useEffect(() => { if (step === 5 && !approveResult && !approveLoading) handleApprove(); }, [step]);
+
   const handleShip = async () => {
     setShipLoading(true);
     try {
@@ -457,6 +480,29 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
 
   const renderShip = () => (
     <div className="space-y-3">
+      {/* Auto-approve status */}
+      <div className="glass-card-sm p-3">
+        {approveLoading ? (
+          <div className="flex items-center gap-2 text-[11px] text-[rgba(245,245,245,0.5)]">
+            <RefreshCw size={11} className="animate-spin text-[#e3cfd8]" /> Approving orders in RapidShyp...
+          </div>
+        ) : approveResult ? (
+          <div className="flex items-center gap-2 text-[11px]">
+            {approveResult.error ? (
+              <><AlertTriangle size={11} className="text-amber-400" /><span className="text-amber-400">Approve: {approveResult.error}</span></>
+            ) : (
+              <><CheckCircle size={11} className="text-emerald-400" />
+              <span className="text-[rgba(245,245,245,0.5)]">
+                {approveResult.approved > 0 && <span className="text-emerald-400 font-bold">{approveResult.approved} approved</span>}
+                {approveResult.approved > 0 && approveResult.alreadyApproved > 0 && ' · '}
+                {approveResult.alreadyApproved > 0 && `${approveResult.alreadyApproved} already approved`}
+                {approveResult.notFound > 0 && ` · ${approveResult.notFound} not in RS`}
+              </span></>
+            )}
+          </div>
+        ) : null}
+      </div>
+
       <div className="glass-card-sm p-4 space-y-4">
         <div className="flex justify-between items-center">
           <span className="text-xs text-[rgba(245,245,245,0.4)]">Estimated cost</span>
@@ -490,7 +536,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           </div>
         </div>
       ) : (
-        <button onClick={handleShip} disabled={shipLoading} className="glass-btn-accent w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2">
+        <button onClick={handleShip} disabled={shipLoading || approveLoading} className="glass-btn-accent w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2">
           {shipLoading ? <><RefreshCw size={13} className="animate-spin" /> Assigning...</> : <><Truck size={13} /> Confirm & Ship All</>}
         </button>
       )}
@@ -504,17 +550,37 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       const successResults = shipResults?.results?.filter(r => r.success) || [];
       const shipmentIds = successResults.map(r => r.shipmentId).filter(Boolean);
       const awbs = successResults.map(r => r.awb).filter(Boolean);
+
+      // Fallback: if no AWBs/shipmentIds from ship step, use order IDs from the CSV
+      if (!shipmentIds.length && !awbs.length && uniqueIds.length > 0) {
+        const orderAwbs = workingOrders.map(o => o.awb).filter(Boolean);
+        if (orderAwbs.length > 0) {
+          awbs.push(...orderAwbs);
+        } else {
+          const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-by-orders`, { orderIds: uniqueIds });
+          setLabelResult(r.data);
+          const url = r.data?.label_pdf_url || r.data?.labelUrl;
+          if (url) window.open(url, '_blank');
+          setToast({ msg: 'Labels generated' });
+          setLabelLoading(false);
+          return;
+        }
+      }
+
       if (!shipmentIds.length && !awbs.length) { setToast({ msg: 'No shipped orders for labels', err: true }); setLabelLoading(false); return; }
       const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-dropbox`, { orderIds: shipmentIds, awbs, orders: workingOrders });
       setLabelResult(r.data);
-      if (r.data?.labelUrl) window.open(r.data.labelUrl, '_blank');
+      const url = r.data?.label_pdf_url || r.data?.labelUrl;
+      if (url) window.open(url, '_blank');
       setToast({ msg: 'Labels generated' });
     } catch (e) { setToast({ msg: `Labels failed: ${e.response?.data?.error||e.message}`, err: true }); }
     finally { setLabelLoading(false); }
   };
-  useEffect(() => { if (step === 6 && !labelResult && !labelLoading && shipResults) handleLabels(); }, [step]);
+  useEffect(() => { if (step === 6 && !labelResult && !labelLoading) handleLabels(); }, [step]);
 
-  const renderLabels = () => (
+  const renderLabels = () => {
+    const labelUrl = labelResult?.label_pdf_url || labelResult?.labelUrl;
+    return (
     <div className="space-y-3">
       <div className="glass-card-sm p-6 text-center space-y-3">
         {labelLoading ? (
@@ -523,17 +589,18 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="space-y-2">
             <CheckCircle size={40} className="mx-auto text-emerald-400" />
             <p className="text-sm font-bold text-white">labels ready</p>
-            {labelResult.labelUrl && <a href={labelResult.labelUrl} target="_blank" rel="noopener noreferrer" className="glass-btn-accent px-5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2"><Download size={12} /> Download PDF</a>}
+            {labelUrl && <a href={labelUrl} target="_blank" rel="noopener noreferrer" className="glass-btn-accent px-5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2"><Download size={12} /> Download PDF</a>}
             {labelResult.dropboxPath && <p className="text-[9px] text-[rgba(245,245,245,0.2)]">Dropbox: {labelResult.dropboxPath}</p>}
           </motion.div>
         ) : (
-          <div><AlertTriangle size={28} className="mx-auto text-amber-400" /><p className="text-xs text-[rgba(245,245,245,0.4)] mt-2">{shipResults ? 'click to generate' : 'ship orders first'}</p>
-            <button onClick={handleLabels} disabled={!shipResults} className="glass-btn-accent px-5 py-2 rounded-xl text-xs font-bold mt-2 disabled:opacity-30"><FileText size={12} /> Generate Labels</button>
+          <div><AlertTriangle size={28} className="mx-auto text-amber-400" /><p className="text-xs text-[rgba(245,245,245,0.4)] mt-2">click to generate labels</p>
+            <button onClick={handleLabels} className="glass-btn-accent px-5 py-2 rounded-xl text-xs font-bold mt-2"><FileText size={12} /> Generate Labels</button>
           </div>
         )}
       </div>
     </div>
-  );
+    );
+  };
 
   // ═══ STEP 7: Done ═══
   const renderDone = () => (

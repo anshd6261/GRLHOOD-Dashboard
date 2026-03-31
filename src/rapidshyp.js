@@ -245,6 +245,7 @@ const cancelOrder = async (channelOrderId) => {
             try {
                 const cancelRes = await rsApi.post(`${PUBLIC_API_BASE}/cancel_order`, {
                     orderId: cleanId,
+                    storeName: 'DEFAULT'
                 }, { headers });
                 return { success: true, data: cancelRes.data };
             } catch (directErr) {
@@ -252,6 +253,7 @@ const cancelOrder = async (channelOrderId) => {
                 try {
                     const cancelRes = await rsApi.post(`${PUBLIC_API_BASE}/cancel_order`, {
                         orderId: `#${cleanId}`,
+                        storeName: 'DEFAULT'
                     }, { headers });
                     return { success: true, data: cancelRes.data };
                 } catch (prefixErr) {
@@ -435,6 +437,93 @@ const bulkAssignAWB = async (orderNames) => {
 };
 
 /**
+ * Bulk approve unapproved orders in RapidShyp.
+ * Uses PUBLIC API: POST /approve_orders with rapidshyp-token header.
+ * Docs: https://docs.rapidshyp.com/docs/DocumentationSidebar/Forward%20B2C/Orders/POST%20Approve%20Order%20API
+ *
+ * Fetches all orders via session API, finds unapproved ones matching the given
+ * Shopify order IDs, and approves them via public API so AWB assignment won't fail.
+ */
+const bulkApproveOrders = async (shopifyOrderIds) => {
+    const headers = getPublicHeaders();
+    const orderMap = await fetchAllOrders();
+    const toApprove = [];
+    let alreadyApproved = 0;
+    let notFound = 0;
+
+    for (const id of shopifyOrderIds) {
+        const cleanId = id.toString().replace('#', '');
+        const match = orderMap.get(cleanId);
+        if (!match) {
+            notFound++;
+            continue;
+        }
+        const status = (match.order_status || '').toLowerCase();
+        // Orders that are already approved, shipped, or have AWB don't need approval
+        if (status === 'approved' || status === 'shipped' || status === 'in_transit' ||
+            status === 'delivered' || match.awb_number) {
+            alreadyApproved++;
+            continue;
+        }
+        // Unapproved: new, pending, unapproved, etc.
+        toApprove.push({ orderId: match.order_id, storeName: match.store_name || 'DEFAULT', cleanId });
+    }
+
+    console.log(`[RAPIDSHYP] Bulk approve: ${toApprove.length} to approve, ${alreadyApproved} already approved, ${notFound} not found in RS`);
+
+    if (toApprove.length === 0) {
+        return { success: true, approved: 0, alreadyApproved, notFound, message: 'All orders already approved or not found' };
+    }
+
+    let approvedCount = 0;
+    const errors = [];
+
+    // Group by store_name since the API requires it
+    const byStore = {};
+    for (const item of toApprove) {
+        const store = item.storeName;
+        if (!byStore[store]) byStore[store] = [];
+        byStore[store].push(item);
+    }
+
+    for (const [storeName, items] of Object.entries(byStore)) {
+        const orderIds = items.map(o => o.orderId).filter(Boolean);
+        try {
+            const res = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
+                order_id: orderIds,
+                store_name: storeName
+            }, { headers, timeout: 15000 });
+
+            if (res.data?.status === 'success' || res.data?.status === 'SUCCESS' || res.data?.success) {
+                approvedCount += orderIds.length;
+                console.log(`[RAPIDSHYP] Approved ${orderIds.length} orders (store: ${storeName})`);
+            } else {
+                console.warn(`[RAPIDSHYP] Approve response for store ${storeName}:`, res.data);
+                const remark = res.data?.remark || res.data?.remarks || res.data?.message || 'Unknown response';
+                errors.push({ store: storeName, error: remark });
+            }
+        } catch (e) {
+            const msg = e.response?.data?.remarks || e.response?.data?.message || e.response?.data?.remark || e.message;
+            console.error(`[RAPIDSHYP] Approve failed for store ${storeName}:`, msg);
+            errors.push({ store: storeName, error: typeof msg === 'string' ? msg : JSON.stringify(msg) });
+        }
+    }
+
+    // Invalidate order map cache so next fetch sees updated statuses
+    _orderMapCache = null;
+    _orderMapTimestamp = 0;
+
+    return {
+        success: approvedCount > 0 || alreadyApproved > 0,
+        approved: approvedCount,
+        alreadyApproved,
+        notFound,
+        errors: errors.length > 0 ? errors : undefined,
+        message: `${approvedCount} approved, ${alreadyApproved} already approved, ${notFound} not in RapidShyp`
+    };
+};
+
+/**
  * Get wallet balance from RapidShyp. Requires JWT (session API).
  * Endpoint: GET /session/payments/get_wallet_balance
  * Response: { status: true, amount: 1234.56, hold_amount: 0, credit_limit: 0 }
@@ -507,13 +596,13 @@ const findOrderIdByAWB = async (awb) => {
     }
 
     // Use public shipment_details endpoint (reliable, works with API key)
+    // Docs: GET /shipment_details?shipment_id=X
     try {
         const headers = getPublicHeaders();
         const detailRes = await rsApi.get(`${PUBLIC_API_BASE}/shipment_details`, {
             headers,
-            params: { awb }
+            params: { shipment_id: awb }
         });
-        // Response: { success, shipment_details: { shipment_id, awb, ... } }
         const shipId = detailRes.data?.shipment_details?.shipment_id || detailRes.data?.shipment_id;
         if (shipId) {
             console.log(`[RAPIDSHYP] Found shipment ${shipId} for AWB ${awb} via shipment_details`);
@@ -548,7 +637,9 @@ const findOrderIdByAWB = async (awb) => {
 module.exports = {
     getPublicHeaders,
     getSessionHeaders,
+    fetchAllOrders,
     fetchOrdersWithRTO,
+    bulkApproveOrders,
     cancelOrder,
     trackOrder,
     getOrderInfo,

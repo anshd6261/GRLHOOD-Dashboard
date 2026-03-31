@@ -252,9 +252,9 @@ app.get('/api/orders/search', async (req, res) => {
         const gstRate = parseFloat(process.env.GST_RATE || 18);
         let senseRiskMap = {};
         try {
-            senseRiskMap = await shiprocketSense.batchPredictRisk(rawOrders);
+            senseRiskMap = shiprocketSense.getCachedResults(rawOrders);
         } catch (e) {
-            console.warn('[API] Sense failed in search (non-blocking):', e.message);
+            console.warn('[API] Sense cache lookup failed in search (non-blocking):', e.message);
         }
         const processedRows = processOrders(rawOrders, gstRate, {}, senseRiskMap);
 
@@ -502,6 +502,23 @@ app.post('/api/rapidshyp/label', async (req, res) => {
 // RAPIDSHYP FULFILLMENT ENDPOINTS
 // ==========================================
 
+// Bulk Approve Orders (before AWB assignment)
+app.post('/api/rapidshyp/bulk-approve', async (req, res) => {
+    try {
+        const { orderIds } = req.body;
+        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+            return res.status(400).json({ error: 'Missing or invalid orderIds array' });
+        }
+
+        console.log(`[API] Bulk approving ${orderIds.length} orders...`);
+        const result = await rapidshyp.bulkApproveOrders(orderIds);
+        res.json(result);
+    } catch (e) {
+        console.error('[API] Bulk Approve Error:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // Bulk Assign AWB
 app.post('/api/rapidshyp/bulk-assign', async (req, res) => {
     try {
@@ -581,6 +598,61 @@ app.post('/api/rapidshyp/bulk-labels-dropbox', async (req, res) => {
         });
     } catch (e) {
         console.error('[API] Bulk Labels+Dropbox Error:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Bulk Generate Labels by Shopify Order IDs (from CSV)
+app.post('/api/rapidshyp/bulk-labels-by-orders', async (req, res) => {
+    try {
+        const { orderIds } = req.body;
+        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
+            return res.status(400).json({ error: 'Missing or invalid orderIds array' });
+        }
+
+        console.log(`[API] Bulk labels by Shopify order IDs: ${orderIds.length} orders`);
+
+        // Fetch all RapidShyp orders and find matching AWBs
+        const allOrders = await rapidshyp.fetchAllOrders();
+        const shipmentIds = [];
+        for (const orderId of orderIds) {
+            const searchKey = `#${orderId}`;
+            for (const [, rsOrder] of allOrders) {
+                if (rsOrder.seller_order_id === searchKey || rsOrder.seller_order_id === orderId.toString()) {
+                    const shipId = rsOrder.shipment_id || rsOrder.order_id;
+                    if (shipId) shipmentIds.push(shipId);
+                    break;
+                }
+            }
+        }
+
+        if (shipmentIds.length === 0) {
+            return res.status(400).json({ error: 'No matching shipments found in RapidShyp for these orders' });
+        }
+
+        console.log(`[API] Resolved ${shipmentIds.length}/${orderIds.length} orders to shipment IDs`);
+        const labelResult = await rapidshyp.bulkGenerateLabels(shipmentIds);
+
+        if (!labelResult.success) {
+            return res.status(500).json({ success: false, error: labelResult.message || 'Label generation failed' });
+        }
+
+        const labelUrl = labelResult.labelUrl;
+
+        // Upload to Dropbox
+        let dropboxPath = null;
+        if (labelUrl) {
+            try {
+                const { uploadOrderPayload } = require('./dropbox');
+                dropboxPath = await uploadOrderPayload(labelUrl, null, null);
+            } catch (dbxErr) {
+                console.warn('[API] Dropbox label upload failed (non-blocking):', dbxErr.message);
+            }
+        }
+
+        res.json({ success: true, labelUrl, label_pdf_url: labelUrl, labels: labelResult.labels, dropboxPath });
+    } catch (e) {
+        console.error('[API] Bulk Labels by Orders Error:', e);
         res.status(500).json({ success: false, error: e.message });
     }
 });

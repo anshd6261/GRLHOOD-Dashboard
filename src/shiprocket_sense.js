@@ -259,11 +259,14 @@ async function batchPredictRisk(shopifyOrders) {
     for (const order of shopifyOrders) {
         const orderId = order.name || order.id;
 
-        // 1. Check cache
+        // 1. Check cache — only use successful predictions, re-check errors
         if (rtoCache.has(orderId)) {
-            results[orderId] = rtoCache.get(orderId);
-            cachedCount++;
-            continue;
+            const cached = rtoCache.get(orderId);
+            if (cached.risk && cached.risk !== 'unknown') {
+                results[orderId] = cached;
+                cachedCount++;
+                continue;
+            }
         }
 
         // 2. Skip fulfilled/delivered orders — only unfulfilled need RTO check
