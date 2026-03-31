@@ -138,7 +138,7 @@ async function predictSingleOrder(order, authHeader) {
     const payload = {
         customer: {
             mobile_no: phone,
-            email: order.email || order.customer?.email || '',
+            email: order.email || order.customer?.email || `${phone || 'customer'}@noemail.local`,
             address,
             pincode: shipping.zip || '',
             city: shipping.city || '',
