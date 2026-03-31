@@ -24,7 +24,7 @@ const API_KEY = (process.env.SHIPROCKET_SENSE_API_KEY || '').trim();
 const API_SECRET = (process.env.SHIPROCKET_SENSE_API_SECRET || '').trim();
 const CONCURRENCY = 2;
 const ON_VERCEL = !!process.env.VERCEL;
-const GLOBAL_TIMEOUT_MS = ON_VERCEL ? 6000 : 30000;
+const GLOBAL_TIMEOUT_MS = ON_VERCEL ? 8000 : 30000;
 const PER_REQUEST_TIMEOUT = 8000;
 const CACHE_FILE = '/tmp/rto_cache.json';
 
@@ -177,7 +177,28 @@ async function predictSingleOrder(order, authHeader) {
         if (status === 402) {
             console.error('[SENSE] 402 — Sense wallet has no balance. Recharge at sense.shiprocket.in');
         } else if (status === 429) {
-            console.warn('[SENSE] Rate limited (429)');
+            // Rate limited — wait and retry once
+            console.warn('[SENSE] Rate limited (429), retrying after 1.5s...');
+            await new Promise(r => setTimeout(r, 1500));
+            try {
+                const retry = await axios.post(SENSE_URL, payload, {
+                    headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
+                    timeout: PER_REQUEST_TIMEOUT,
+                });
+                if (retry.data?.success && retry.data?.data) {
+                    const d = retry.data.data;
+                    return {
+                        risk: d.risk || 'unknown',
+                        score: d.score || 0,
+                        probability: d.model_probability || 0,
+                        reasons: (d.reasons || []).map(r => r.reason),
+                        reasonCodes: (d.reasons || []).map(r => r.reason_code),
+                        riskTags: (d.risk_tags || []).map(t => ({ code: t.code, reason: t.reason })),
+                    };
+                }
+            } catch (retryErr) {
+                console.warn('[SENSE] Retry also failed:', retryErr.message);
+            }
         }
         return defaultResult(e.response?.data?.message || e.message);
     }
