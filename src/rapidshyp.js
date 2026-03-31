@@ -271,10 +271,12 @@ const generateLabel = async (shipmentIds) => {
         }
 
         console.log(`[RAPIDSHYP] Label API Response:`, response.data);
-        // Response: { status: true, remarks: "...", labelData: [{ shipmentId, labelURL, labelRemarks }] }
-        const labelData = response.data?.labelData || [];
-        const labelUrl = labelData[0]?.labelURL || '';
-        return { success: true, data: { ...response.data, label_url: labelUrl, labelUrl, label_pdf_url: labelUrl } };
+        // Response format varies:
+        // New: { label_created, label_url, response }
+        // Old: { status, labelData: [{ shipmentId, labelURL }] }
+        const data = response.data || {};
+        const labelUrl = data.label_url || data.labelUrl || (data.labelData?.[0]?.labelURL) || '';
+        return { success: true, data: { ...data, label_url: labelUrl, labelUrl, label_pdf_url: labelUrl } };
     } catch (e) {
         const errMsg = e.response?.data?.remarks || e.response?.data?.message || e.response?.data || e.message;
         console.error(`[RAPIDSHYP] Label Generation Failed:`, errMsg);
@@ -411,12 +413,11 @@ const bulkGenerateLabels = async (shipmentIds) => {
             response = await rsApi.get(`${PUBLIC_API_BASE}/generate_label`, { headers, params: { shipmentId: ids } });
         }
 
-        const data = response.data;
-        const labelData = data.labelData || [];
-        const labelUrl = labelData[0]?.labelURL || '';
+        const data = response.data || {};
+        const labelUrl = data.label_url || data.labelUrl || (data.labelData?.[0]?.labelURL) || '';
 
         console.log(`[RAPIDSHYP] Labels generated. URL: ${labelUrl || 'check individual labels'}`);
-        return { success: true, labelUrl, labels: labelData, data: { ...data, label_pdf_url: labelUrl } };
+        return { success: true, labelUrl, labels: data.labelData || [], data: { ...data, label_url: labelUrl, label_pdf_url: labelUrl } };
     } catch (e) {
         const errMsg = e.response?.data?.remarks || e.response?.data?.message || e.response?.data || e.message;
         console.error(`[RAPIDSHYP] Bulk label generation failed:`, errMsg);
@@ -464,7 +465,8 @@ const findOrderIdByAWB = async (awb) => {
             headers,
             params: { awb }
         });
-        const shipId = detailRes.data?.shipment_id;
+        // Response: { success, shipment_details: { shipment_id, awb, ... } }
+        const shipId = detailRes.data?.shipment_details?.shipment_id || detailRes.data?.shipment_id;
         if (shipId) {
             console.log(`[RAPIDSHYP] Found shipment ${shipId} for AWB ${awb} via shipment_details`);
             return shipId;
