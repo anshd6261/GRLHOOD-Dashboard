@@ -89,7 +89,14 @@ function saveCache() {
         const obj = Object.fromEntries(rtoCache);
         fs.writeFileSync(CACHE_FILE, JSON.stringify(obj));
     } catch (e) {
-        console.warn('[SENSE] Cache save failed (non-fatal):', e.message);
+        console.warn('[SENSE] /tmp cache save failed (non-fatal):', e.message);
+    }
+    // Also save to repo-level backup (survives deploys + cold starts)
+    try {
+        const obj = Object.fromEntries(rtoCache);
+        fs.writeFileSync(REPO_CACHE_FILE, JSON.stringify(obj));
+    } catch (e) {
+        // Expected to fail on Vercel (read-only filesystem outside /tmp)
     }
 }
 
