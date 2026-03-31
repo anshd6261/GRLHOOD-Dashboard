@@ -172,6 +172,8 @@ function App() {
   const [editingOrder, setEditingOrder] = useState(null);
   const [shippingOrders, setShippingOrders] = useState(null);
   const [showFulfillWizard, setShowFulfillWizard] = useState(false);
+  const [wizardOrders, setWizardOrders] = useState(null);
+  const justSelectedRef = useRef(false);
 
   // Accordion
   const [expandedOrders, setExpandedOrders] = useState(new Set());
@@ -207,6 +209,7 @@ function App() {
   // Long-press selection
   const handlePressStart = (id) => {
     window.pressTimer = setTimeout(() => {
+      justSelectedRef.current = true;
       setSelectionMode(true);
       toggleSelectRow(id);
       if ("vibrate" in navigator) navigator.vibrate(50);
@@ -251,7 +254,7 @@ function App() {
     setEditingOrder(null);
   };
 
-  const handleDownloadLabel = async (orderIds, awbs) => {
+  const handleDownloadLabel = async (orderIds, awbs, customerName, orderId) => {
     const hasOrderIds = orderIds && orderIds.filter(Boolean).length > 0;
     const hasAwbs = awbs && awbs.filter(Boolean).length > 0;
     if (!hasOrderIds && !hasAwbs) return;
@@ -260,16 +263,31 @@ function App() {
       const payload = {};
       if (hasAwbs) payload.awbs = awbs.filter(Boolean);
       if (hasOrderIds) payload.orderIds = orderIds.filter(Boolean);
+      if (orderId) payload.shopifyOrderId = orderId;
       const res = await axios.post(`${API_URL}/rapidshyp/label`, payload);
       const url = res.data?.label_pdf_url || res.data?.label_url || res.data?.labelUrl || res.data?.pdf_url;
       if (url) {
-        const a = document.createElement('a');
-        a.href = url;
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        const fileName = customerName && orderId ? `${customerName} - ${orderId}.pdf` : `Label-${orderId || 'download'}.pdf`;
+        try {
+          const pdfRes = await fetch(url);
+          const blob = await pdfRes.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(blobUrl);
+        } catch {
+          const a = document.createElement('a');
+          a.href = url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
         setToast({ message: "Label Generated!", type: "success" });
       } else {
          throw new Error("Label URL missing from response");
@@ -447,6 +465,7 @@ function App() {
       const phone = r.shippingDetails?.phone ? r.shippingDetails.phone.toLowerCase() : '';
       const matchesSearch = !searchTerm || oid.includes(s) || name.includes(s) || phone.includes(s);
       let matchesFilter = true;
+      if (activeFilter === 'High Risk') matchesFilter = r.aiRiskLevel === 'High';
       if (activeFilter === 'Missing Device') matchesFilter = !r.model || r.model.trim() === '' || r.model.toLowerCase() === 'unknown model';
       if (activeFilter === 'Repeat Orders') matchesFilter = (r.customerOrdersCount || 1) > 1;
       return matchesSearch && matchesFilter;
@@ -475,6 +494,7 @@ function App() {
     const all = data.orders;
     return {
       'All': all.length,
+      'High Risk': all.filter(r => r.aiRiskLevel === 'High').length,
       'Missing Device': all.filter(r => !r.model || r.model.trim() === '' || r.model.toLowerCase() === 'unknown model').length,
       'Repeat Orders': all.filter(r => (r.customerOrdersCount || 1) > 1).length,
     };
@@ -518,6 +538,7 @@ function App() {
                   startDate={startDate}
                   endDate={endDate}
                   onChange={(update) => setDateRange(update)}
+                  dateFormat="do MMMM"
                   className="bg-transparent text-[13px] font-semibold text-white outline-none w-full placeholder-[rgba(245,245,245,0.25)] cursor-pointer"
                   placeholderText="Select dates"
                 />
@@ -737,7 +758,7 @@ function App() {
                     {/* Filter Bar */}
                     <div className="flex items-center justify-between gap-4 mb-5">
                       <div className="flex items-center gap-2 flex-wrap">
-                        {['All', 'Missing Device', 'Repeat Orders'].map(f => (
+                        {['All', 'High Risk', 'Missing Device', 'Repeat Orders'].map(f => (
                           <button
                             key={f}
                             onClick={() => setActiveFilter(f)}
@@ -752,15 +773,6 @@ function App() {
                         ))}
                       </div>
 
-                      {data.orders && data.orders.length > 0 && selectedOrders.size === 0 && (
-                        <button
-                          onClick={() => { setCsvPreviewData(data?.orders || []); setShowCsvEditor(true); }}
-                          className="glass-btn flex items-center gap-2 px-4 py-2 rounded-xl text-xs"
-                        >
-                          <Download size={13} className="text-[#e3cfd8]" />
-                          <span className="font-bold tracking-wider uppercase">Export All</span>
-                        </button>
-                      )}
                     </div>
 
                     {/* Order Count */}
@@ -792,7 +804,7 @@ function App() {
                             {/* Card Header */}
                             <div
                               className="p-5 cursor-pointer"
-                              onClick={() => { if (selectionMode) toggleSelectRow(group.orderId); else toggleOrderExpanded(group.orderId); }}
+                              onClick={() => { if (justSelectedRef.current) { justSelectedRef.current = false; return; } if (selectionMode) toggleSelectRow(group.orderId); else toggleOrderExpanded(group.orderId); }}
                               onPointerDown={() => !selectionMode && handlePressStart(group.orderId)}
                               onPointerUp={handlePressEnd}
                               onPointerLeave={handlePressEnd}
@@ -848,14 +860,27 @@ function App() {
                                         Label Generated
                                       </span>
                                     )}
+                                    {(() => { const age = (Date.now() - new Date(group.createdAt).getTime()) / (1000*60*60*24); return age > 15 ? (
+                                      <span className="text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider bg-[rgba(255,100,0,0.12)] border border-[rgba(255,100,0,0.25)] text-orange-400 animate-pulse">
+                                        Late Delivery Risk
+                                      </span>
+                                    ) : null; })()}
                                   </div>
                                 </div>
 
-                                {/* COGS - admin only */}
+                                {/* Right side: COGS + age + status */}
                                 {!isSupplier && (
-                                <div className="text-right shrink-0">
-                                  <div className="text-[9px] text-[rgba(245,245,245,0.25)] uppercase font-bold tracking-[0.12em] mb-1">COGS</div>
-                                  <div className="text-lg font-black text-[#e3cfd8] glow-text">₹{totalCogs}</div>
+                                <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
+                                  <div>
+                                    <div className="text-[9px] text-[rgba(245,245,245,0.25)] uppercase font-bold tracking-[0.12em] mb-0.5">COGS</div>
+                                    <div className="text-lg font-black text-[#e3cfd8] glow-text">₹{totalCogs}</div>
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[9px] text-[rgba(245,245,245,0.3)] font-medium">
+                                      {(() => { const d = Math.floor((Date.now() - new Date(group.createdAt).getTime()) / (1000*60*60*24)); return d === 0 ? 'Today' : d === 1 ? '1d ago' : `${d}d ago`; })()}
+                                    </span>
+                                    <div className={`w-2 h-2 rounded-full ${group.items[0].awb ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]' : 'bg-[rgba(245,245,245,0.15)]'}`} title={group.items[0].awb ? 'AWB Assigned' : 'Pending'} />
+                                  </div>
                                 </div>
                                 )}
                               </div>
@@ -947,7 +972,7 @@ function App() {
                                       <div className="flex gap-1.5">
                                         {(group.items[0].awb || group.items[0].rsOrderId) && (
                                           <button
-                                            onClick={() => handleDownloadLabel(group.items[0].rsOrderId ? [group.items[0].rsOrderId] : [], group.items[0].awb ? [group.items[0].awb] : [])}
+                                            onClick={() => handleDownloadLabel(group.items[0].rsOrderId ? [group.items[0].rsOrderId] : [], group.items[0].awb ? [group.items[0].awb] : [], group.customerName, group.orderId)}
                                             className="glass-btn px-3.5 py-1.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 bg-[rgba(227,207,216,0.1)] text-[#e3cfd8] border-[rgba(227,207,216,0.3)] hover:brightness-125"
                                           >
                                             <FileText size={12} /> Label
@@ -1061,8 +1086,8 @@ function App() {
       <AnimatePresence>
         {showFulfillWizard && data?.orders && (
           <FulfillOrdersWizard
-            orders={data.orders}
-            onClose={() => setShowFulfillWizard(false)}
+            orders={wizardOrders || data.orders}
+            onClose={() => { setShowFulfillWizard(false); setWizardOrders(null); }}
             onOrdersUpdate={(updatedOrders) => setData(prev => ({ ...prev, orders: updatedOrders }))}
             isSupplier={user?.role === 'supplier'}
           />
@@ -1162,12 +1187,20 @@ function App() {
                 </button>
               )}
 
-              {/* Download */}
+              {/* Fulfill */}
               <button
-                onClick={handleDownloadSelected}
+                onClick={() => {
+                  const selected = data.orders.filter(o => selectedOrders.has(o.orderId));
+                  if (selected.length > 0) {
+                    setWizardOrders(selected);
+                    setShowFulfillWizard(true);
+                    setSelectedOrders(new Set());
+                    setSelectionMode(false);
+                  }
+                }}
                 className="glass-btn-accent px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 tracking-wider uppercase btn-shine-effect"
               >
-                <Download size={13} /> Export
+                <ClipboardCheck size={13} /> Fulfill
               </button>
 
               {/* Delete */}
