@@ -27,6 +27,7 @@ const ON_VERCEL = !!process.env.VERCEL;
 const GLOBAL_TIMEOUT_MS = ON_VERCEL ? 8000 : 30000;
 const PER_REQUEST_TIMEOUT = 8000;
 const CACHE_FILE = '/tmp/rto_cache.json';
+const REPO_CACHE_FILE = path.join(__dirname, '..', 'data', 'rto_cache.json');
 
 // --- In-memory cache ---
 const rtoCache = new Map();
@@ -40,28 +41,46 @@ function getAuthHeader() {
 // --- Cache I/O ---
 function loadCache() {
     if (cacheLoaded) return;
+
+    // Priority 1: /tmp cache (warm Vercel instance)
+    let loaded = 0;
     try {
         if (fs.existsSync(CACHE_FILE)) {
             const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
-            let loaded = 0, purged = 0;
             for (const [k, v] of Object.entries(raw)) {
-                // Purge cached errors — only keep successful predictions
                 if (v.risk && v.risk !== 'unknown') {
                     rtoCache.set(k, v);
                     loaded++;
-                } else {
-                    purged++;
                 }
             }
-            if (purged > 0) {
-                console.log(`[SENSE] Purged ${purged} stale error entries from cache.`);
-                saveCache();
-            }
-            console.log(`[SENSE] Loaded ${loaded} cached RTO results from disk.`);
+            console.log(`[SENSE] Loaded ${loaded} cached RTO results from /tmp.`);
         }
     } catch (e) {
-        console.warn('[SENSE] Cache load failed (non-fatal):', e.message);
+        console.warn('[SENSE] /tmp cache load failed (non-fatal):', e.message);
     }
+
+    // Priority 2: Bundled repo file (cold start fallback — survives deploys)
+    if (loaded === 0) {
+        try {
+            if (fs.existsSync(REPO_CACHE_FILE)) {
+                const raw = JSON.parse(fs.readFileSync(REPO_CACHE_FILE, 'utf8'));
+                let repoLoaded = 0;
+                for (const [k, v] of Object.entries(raw)) {
+                    if (v.risk && v.risk !== 'unknown') {
+                        rtoCache.set(k, v);
+                        repoLoaded++;
+                    }
+                }
+                if (repoLoaded > 0) {
+                    console.log(`[SENSE] Loaded ${repoLoaded} cached RTO results from repo backup.`);
+                    saveCache(); // Copy to /tmp for faster access
+                }
+            }
+        } catch (e) {
+            console.warn('[SENSE] Repo cache load failed (non-fatal):', e.message);
+        }
+    }
+
     cacheLoaded = true;
 }
 
@@ -376,9 +395,45 @@ function getCachedResults(shopifyOrders) {
     return results;
 }
 
+/**
+ * Warm the server cache from frontend localStorage data.
+ * Called on page load so server has cache even after cold start.
+ */
+function warmCache(cacheData) {
+    loadCache();
+    let added = 0;
+    for (const [orderId, rto] of Object.entries(cacheData)) {
+        if (!rtoCache.has(orderId) && rto.risk && rto.risk !== 'unknown') {
+            rtoCache.set(orderId, rto);
+            added++;
+        }
+    }
+    if (added > 0) {
+        saveCache();
+        console.log(`[SENSE] Warmed cache with ${added} entries from frontend.`);
+    }
+    return { added, total: rtoCache.size };
+}
+
+/**
+ * Export the full cache as a plain object (for GitHub backup).
+ */
+function exportCache() {
+    loadCache();
+    const obj = {};
+    for (const [k, v] of rtoCache) {
+        if (v.risk && v.risk !== 'unknown') {
+            obj[k] = v;
+        }
+    }
+    return obj;
+}
+
 module.exports = {
     predictRisk: async () => defaultResult('Use batchPredictRisk instead'),
     batchPredictRisk,
     getCachedResults,
+    warmCache,
+    exportCache,
     detectPayment,
 };

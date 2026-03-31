@@ -227,6 +227,31 @@ app.post('/api/rto-check', async (req, res) => {
     }
 });
 
+// Warm server RTO cache from frontend localStorage (survives cold starts)
+app.post('/api/rto-cache/warm', (req, res) => {
+    try {
+        const { cache } = req.body;
+        if (!cache || typeof cache !== 'object') {
+            return res.json({ success: true, added: 0, total: 0 });
+        }
+        const result = shiprocketSense.warmCache(cache);
+        res.json({ success: true, ...result });
+    } catch (e) {
+        console.warn('[API] Cache warm failed:', e.message);
+        res.json({ success: false, error: e.message });
+    }
+});
+
+// Export current RTO cache (for GitHub backup)
+app.get('/api/rto-cache/export', (req, res) => {
+    try {
+        const cache = shiprocketSense.exportCache();
+        res.json({ success: true, count: Object.keys(cache).length, cache });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // Helper for RTO percentage calculation (same logic as processor.js)
 function calculateRtoScore(senseResult) {
     const prob = senseResult.probability || 0;
