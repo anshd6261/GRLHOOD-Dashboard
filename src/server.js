@@ -81,15 +81,30 @@ app.post('/api/login', (req, res) => {
 });
 
 // 2. Fetch & Process Orders
-app.get('/api/orders', async (req, res) => {
-    try {
-        const daysLookback = parseInt(req.query.days || process.env.DETAILS_LOOKBACK_DAYS || 3);
-        const startDate = req.query.startDate || null;
-        const endDate = req.query.endDate || null;
+// Support both GET (backward compat) and POST (with inline cache for Vercel serverless)
+app.get('/api/orders', handleOrders);
+app.post('/api/orders', handleOrders);
 
-        // Allow frontend to specify status ('unfulfilled' or 'all'). Default to 'all' for the new analytics home page.
-        const statusMode = req.query.status || 'all';
+async function handleOrders(req, res) {
+    try {
+        const query = req.query || {};
+        const body = req.body || {};
+        const daysLookback = parseInt(query.days || process.env.DETAILS_LOOKBACK_DAYS || 3);
+        const startDate = query.startDate || null;
+        const endDate = query.endDate || null;
+        const statusMode = query.status || 'all';
         const gstRate = parseFloat(process.env.GST_RATE || 18);
+
+        // Warm RTO cache inline (same instance — solves Vercel serverless isolation)
+        if (body.rtoCache && typeof body.rtoCache === 'object') {
+            const normalized = {};
+            for (const [k, v] of Object.entries(body.rtoCache)) {
+                normalized[k.startsWith('#') ? k : `#${k}`] = v;
+                normalized[k] = v;
+            }
+            const warmResult = shiprocketSense.warmCache(normalized);
+            console.log(`[API] Inline cache warm: ${warmResult.added} added, ${warmResult.total} total`);
+        }
 
         console.log(`[API] Fetching orders... Options:`, { daysLookback, startDate, endDate, statusMode });
 
@@ -170,7 +185,7 @@ app.get('/api/orders', async (req, res) => {
         console.error('[API] Error in /api/orders:', error.message);
         res.status(500).json({ success: false, error: error.message });
     }
-});
+}
 
 // 2.3 RTO Risk Check — Dedicated endpoint for Sense API (gets full 10s budget)
 // Frontend calls this after loading orders to enrich them with RTO data
