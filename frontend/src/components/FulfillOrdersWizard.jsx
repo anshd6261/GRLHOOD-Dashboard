@@ -12,6 +12,14 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
 const SHOPIFY_DOMAIN = 'grlhood-3.myshopify.com';
 
+const getOrdinalDate = () => {
+  const d = new Date();
+  const day = d.getDate();
+  const suffix = [11,12,13].includes(day) ? 'th' : ['st','nd','rd'][(day % 10) - 1] || 'th';
+  const months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return `${day}${suffix} ${months[d.getMonth()]} ${d.getFullYear()}`;
+};
+
 const STEPS = [
   { id: 'REPEAT', label: 'Repeats', icon: Users },
   { id: 'RTO_SORT', label: 'RTO Sort', icon: ShieldCheck },
@@ -79,7 +87,7 @@ const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, c
           {!hideActions && cleanPhone && (
             <>
               <a href={`tel:+91${cleanPhone}`} onClick={e => e.stopPropagation()} className="glass-btn p-1.5 rounded-lg"><Phone size={12} className="text-[#e3cfd8]" /></a>
-              <a href={`https://wa.me/91${cleanPhone}?text=${encodeURIComponent(`Hi ${group.customerName}, this is GRLHOOD! We have an update regarding your order #${group.orderId}.`)}`}
+              <a href={`https://wa.me/91${cleanPhone}?text=${encodeURIComponent(`Hi ${group.customerName}, this is GRLHOOD!\n\nWe'd like to confirm your order #${group.orderId} before dispatch.\n\nPlease reply YES to confirm so we can ship it out right away!\n\nThank you`)}`}
                 target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="glass-btn p-1.5 rounded-lg"><MessageSquare size={12} className="text-emerald-400" /></a>
             </>
           )}
@@ -560,7 +568,10 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-by-orders`, { orderIds: uniqueIds });
           setLabelResult(r.data);
           const url = r.data?.label_pdf_url || r.data?.labelUrl;
-          if (url) { const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
+          if (url) {
+            const batchName = `${getOrdinalDate()} - Labels.pdf`;
+            try { const pr = await fetch(url); const bl = await pr.blob(); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = batchName; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(bu); } catch { window.open(url, '_blank'); }
+          }
           setToast({ msg: 'Labels generated' });
           setLabelLoading(false);
           return;
@@ -571,7 +582,10 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-dropbox`, { orderIds: shipmentIds, awbs, orders: workingOrders });
       setLabelResult(r.data);
       const url = r.data?.label_pdf_url || r.data?.labelUrl;
-      if (url) { const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
+      if (url) {
+        const batchName = `${getOrdinalDate()} - Labels.pdf`;
+        try { const pr = await fetch(url); const bl = await pr.blob(); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = batchName; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(bu); } catch { window.open(url, '_blank'); }
+      }
       setToast({ msg: 'Labels generated' });
     } catch (e) { setToast({ msg: `Labels failed: ${e.response?.data?.error||e.message}`, err: true }); }
     finally { setLabelLoading(false); }
@@ -626,44 +640,45 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const stepContent = [renderRepeatOrders, renderRTOSort, renderMissing, renderCSV, renderDownload, renderShip, renderLabels, renderDone];
 
   return (
-    <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md" style={{ fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif" }}>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0" onClick={onClose} />
-      <motion.div initial={{ scale: 0.9, y: 20, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-        transition={{ type: 'spring', damping: 28, stiffness: 280 }}
-        className="relative w-full max-w-4xl max-h-[85vh] glass-panel rounded-3xl border border-[rgba(227,207,216,0.15)] shadow-[0_25px_80px_rgba(0,0,0,0.7)] flex flex-col overflow-hidden">
+      <motion.div initial={{ scale: 0.92, y: 30, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }}
+        transition={{ type: 'spring', damping: 24, stiffness: 200 }}
+        className="relative w-full max-w-4xl max-h-[85vh] glass-panel rounded-[32px] border border-[rgba(227,207,216,0.15)] shadow-[0_25px_80px_rgba(0,0,0,0.7)] flex flex-col overflow-hidden">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[rgba(255,255,255,0.05)] shrink-0">
+        <div className="flex items-center justify-between px-7 py-5 border-b border-[rgba(255,255,255,0.05)] shrink-0">
           <div>
-            <h1 className="text-base font-black text-white tracking-wide">Fulfill Orders</h1>
-            <p className="text-[11px] text-[rgba(245,245,245,0.3)]">{uniqueIds.length} orders · {workingOrders.length} units</p>
+            <h1 className="text-lg font-black text-white tracking-wide">Fulfill Orders</h1>
+            <p className="text-xs text-[rgba(245,245,245,0.35)]">{uniqueIds.length} orders · {workingOrders.length} units</p>
           </div>
           <button onClick={onClose} className="glass-btn p-2 rounded-xl hover:bg-[rgba(255,255,255,0.05)]"><X size={18} className="text-[rgba(245,245,245,0.4)]" /></button>
         </div>
 
         {/* Step Bar */}
-        <div className="flex items-center gap-0.5 px-4 py-2.5 overflow-x-auto shrink-0 border-b border-[rgba(255,255,255,0.04)]">
+        <div className="flex items-center gap-1 px-5 py-3 overflow-x-auto shrink-0 border-b border-[rgba(255,255,255,0.04)]">
           {STEPS.map((s, i) => {
             const Icon = s.icon; const active = i === step; const completed = done.has(i);
             return (
-              <button key={s.id} onClick={() => (completed || i <= step) && setStep(i)} disabled={!completed && i > step}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[10px] font-bold tracking-wider uppercase whitespace-nowrap transition-all ${active ? 'bg-[rgba(227,207,216,0.12)] text-[#e3cfd8] border border-[rgba(227,207,216,0.2)]' : completed ? 'text-emerald-400/70' : 'text-[rgba(245,245,245,0.18)]'}`}>
-                {completed ? <CheckCircle size={11} className="text-emerald-400" /> : <Icon size={11} />}
+              <motion.button key={s.id} onClick={() => (completed || i <= step) && setStep(i)} disabled={!completed && i > step}
+                layout
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-bold tracking-wider uppercase whitespace-nowrap transition-all ${active ? 'bg-[rgba(227,207,216,0.12)] text-[#e3cfd8] border border-[rgba(227,207,216,0.2)]' : completed ? 'text-emerald-400/70' : 'text-[rgba(245,245,245,0.18)]'}`}>
+                {completed ? <CheckCircle size={12} className="text-emerald-400" /> : <Icon size={12} />}
                 <span className="hidden md:inline">{s.label}</span>
-              </button>
+              </motion.button>
             );
           })}
         </div>
 
         {/* Step Title */}
-        <div className="px-6 pt-4 pb-1 shrink-0">
-          <h2 className="text-lg font-black text-white">{STEPS[step]?.label}</h2>
+        <div className="px-7 pt-5 pb-1 shrink-0">
+          <h2 className="text-xl font-black text-white">{STEPS[step]?.label}</h2>
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-6 py-3">
+        <div className="flex-1 overflow-y-auto px-7 py-4">
           <AnimatePresence mode="wait">
-            <motion.div key={step} initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -8 }} transition={{ duration: 0.12, ease: 'easeOut' }}>
+            <motion.div key={step} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}>
               {stepContent[step]?.()}
             </motion.div>
           </AnimatePresence>
@@ -671,13 +686,13 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
 
         {/* Footer */}
         {step < STEPS.length - 1 && (
-          <div className="flex items-center justify-between px-6 py-3.5 border-t border-[rgba(255,255,255,0.05)] shrink-0">
-            <button onClick={goBack} disabled={step === 0} className={`glass-btn px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 ${step === 0 ? 'opacity-30' : ''}`}>
-              <ArrowLeft size={13} /> Back
+          <div className="flex items-center justify-between px-7 py-4 border-t border-[rgba(255,255,255,0.05)] shrink-0">
+            <button onClick={goBack} disabled={step === 0} className={`glass-btn px-5 py-2.5 rounded-2xl text-sm font-bold flex items-center gap-2 ${step === 0 ? 'opacity-30' : ''}`}>
+              <ArrowLeft size={14} /> Back
             </button>
-            <span className="text-[10px] text-[rgba(245,245,245,0.2)] font-bold">{step + 1} / {STEPS.length}</span>
-            <button onClick={goNext} className="glass-btn-accent px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5">
-              Next <ArrowRight size={13} />
+            <span className="text-xs text-[rgba(245,245,245,0.25)] font-bold">{step + 1} / {STEPS.length}</span>
+            <button onClick={goNext} className="glass-btn-accent px-6 py-2.5 rounded-2xl text-sm font-bold flex items-center gap-2">
+              Next <ArrowRight size={14} />
             </button>
           </div>
         )}

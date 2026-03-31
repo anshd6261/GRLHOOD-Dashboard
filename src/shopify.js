@@ -479,7 +479,7 @@ const cancelOrder = async (id) => {
   const globalId = id.toString().includes('gid://') ? id : `gid://shopify/Order/${id}`;
   const query = `
     mutation orderCancel($orderId: ID!) {
-      orderCancel(orderId: $orderId, notifyCustomer: true, reason: CUSTOMER) {
+      orderCancel(orderId: $orderId, notifyCustomer: true, reason: CUSTOMER, restock: true) {
         orderCancelUserErrors {
           message
         }

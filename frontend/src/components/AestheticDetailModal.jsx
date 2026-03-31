@@ -104,13 +104,27 @@ export default function AestheticDetailModal({ order, onClose, isSupplier }) {
       const res = await axios.post(`${API_URL}/rapidshyp/label`, payload);
       const url = res.data?.label_pdf_url || res.data?.label_url || res.data?.labelUrl || res.data?.pdf_url;
       if (url) {
-        const a = document.createElement('a');
-        a.href = url;
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        const fileName = `${order.customerName || 'Label'} - ${order.orderId || 'download'}.pdf`;
+        try {
+          const pdfRes = await fetch(url);
+          const blob = await pdfRes.blob();
+          const blobUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = blobUrl;
+          a.download = fileName;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(blobUrl);
+        } catch {
+          const a = document.createElement('a');
+          a.href = url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
       } else {
         setLabelError('No label URL returned');
       }
