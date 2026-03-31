@@ -294,13 +294,25 @@ function App() {
         setData(res.data);
       }
 
-      // Enrich orders with RTO risk data (separate call — gets full 10s budget for Sense API)
+      // Enrich orders with RTO risk data
+      // Step 1: Load persistent RTO cache from localStorage (survives Vercel cold starts)
       const orders = res.data?.orders || [];
-      const uncheckedOrders = orders.filter(o =>
+      let rtoLocalCache = {};
+      try { rtoLocalCache = JSON.parse(localStorage.getItem('rto_cache') || '{}'); } catch {}
+
+      // Step 2: Apply cached RTO data to orders that the server returned as Unknown
+      let ordersWithCache = orders.map(o => {
+        if (o.aiRiskLevel === 'Unknown' && rtoLocalCache[o.orderId] && rtoLocalCache[o.orderId].aiRiskLevel !== 'Unknown') {
+          return { ...o, ...rtoLocalCache[o.orderId] };
+        }
+        return o;
+      });
+
+      // Step 3: Find truly unchecked orders (not in server cache AND not in localStorage)
+      const uncheckedOrders = ordersWithCache.filter(o =>
         o.aiRiskLevel === 'Unknown' && o.payment === 'Cash on Delivery' &&
         (!o.fulfillmentStatus || o.fulfillmentStatus === 'UNFULFILLED')
       );
-      // Deduplicate by orderId
       const uniqueUnchecked = [];
       const seenIds = new Set();
       for (const o of uncheckedOrders) {
@@ -309,21 +321,36 @@ function App() {
           uniqueUnchecked.push(o);
         }
       }
+
+      // Step 4: Only call Sense API for genuinely new orders (saves credits)
       if (uniqueUnchecked.length > 0) {
         try {
           const rtoRes = await axios.post(`${API_URL}/rto-check`, { orders: uniqueUnchecked });
           if (rtoRes.data?.success && rtoRes.data?.results) {
             const rtoResults = rtoRes.data.results;
-            const enrichedOrders = orders.map(o => {
+            // Save new results to localStorage permanently
+            const updatedCache = { ...rtoLocalCache };
+            for (const [orderId, rto] of Object.entries(rtoResults)) {
+              if (rto.aiRiskLevel && rto.aiRiskLevel !== 'Unknown') {
+                updatedCache[orderId] = { aiRiskLevel: rto.aiRiskLevel, aiRiskScore: rto.aiRiskScore, aiRiskReasons: rto.aiRiskReasons };
+              }
+            }
+            try { localStorage.setItem('rto_cache', JSON.stringify(updatedCache)); } catch {}
+
+            ordersWithCache = ordersWithCache.map(o => {
               const rto = rtoResults[o.orderId];
               if (rto) return { ...o, ...rto };
               return o;
             });
-            setData(prev => ({ ...prev, orders: enrichedOrders }));
           }
         } catch (rtoErr) {
           console.warn('RTO enrichment failed (non-blocking):', rtoErr.message);
         }
+      }
+
+      // Step 5: Update state with all enriched orders
+      if (ordersWithCache !== orders) {
+        setData(prev => ({ ...prev, orders: ordersWithCache }));
       }
     } catch (e) {
       console.error("Sync Error:", e);
