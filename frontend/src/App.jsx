@@ -263,7 +263,13 @@ function App() {
       const res = await axios.post(`${API_URL}/rapidshyp/label`, payload);
       const url = res.data?.label_pdf_url || res.data?.label_url || res.data?.labelUrl || res.data?.pdf_url;
       if (url) {
-        window.open(url, '_blank');
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
         setToast({ message: "Label Generated!", type: "success" });
       } else {
          throw new Error("Label URL missing from response");

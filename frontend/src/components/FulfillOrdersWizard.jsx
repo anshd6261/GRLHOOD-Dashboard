@@ -560,7 +560,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-by-orders`, { orderIds: uniqueIds });
           setLabelResult(r.data);
           const url = r.data?.label_pdf_url || r.data?.labelUrl;
-          if (url) window.open(url, '_blank');
+          if (url) { const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
           setToast({ msg: 'Labels generated' });
           setLabelLoading(false);
           return;
@@ -571,7 +571,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-dropbox`, { orderIds: shipmentIds, awbs, orders: workingOrders });
       setLabelResult(r.data);
       const url = r.data?.label_pdf_url || r.data?.labelUrl;
-      if (url) window.open(url, '_blank');
+      if (url) { const a = document.createElement('a'); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
       setToast({ msg: 'Labels generated' });
     } catch (e) { setToast({ msg: `Labels failed: ${e.response?.data?.error||e.message}`, err: true }); }
     finally { setLabelLoading(false); }
