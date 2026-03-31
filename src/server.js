@@ -658,6 +658,31 @@ app.post('/api/rapidshyp/bulk-assign', async (req, res) => {
     }
 });
 
+// Debug: inspect raw RapidShyp record for an order (temporary)
+app.get('/api/rapidshyp/debug-order/:id', async (req, res) => {
+    try {
+        const orderMap = await rapidshyp.fetchAllOrders();
+        const cleanId = req.params.id.replace('#', '');
+        const match = orderMap.get(cleanId);
+        if (!match) return res.json({ found: false, mapSize: orderMap.size, triedKey: cleanId });
+        res.json({
+            found: true,
+            mapSize: orderMap.size,
+            fields: Object.keys(match),
+            order_id: match.order_id,
+            shipment_id: match.shipment_id,
+            seller_order_id: match.seller_order_id,
+            order_status: match.order_status,
+            awb_number: match.awb_number,
+            store_name: match.store_name,
+            id: match.id,
+            contact_name: match.contact_name,
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Get Wallet Balance
 app.get('/api/rapidshyp/wallet', async (req, res) => {
     try {
