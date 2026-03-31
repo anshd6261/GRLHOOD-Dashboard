@@ -106,7 +106,8 @@ export default function AestheticDetailModal({ order, onClose, isSupplier }) {
       if (url) {
         const fileName = `${order.customerName || 'Label'} - ${order.orderId || 'download'}.pdf`;
         try {
-          const pdfRes = await fetch(url);
+          const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(fileName)}`;
+          const pdfRes = await fetch(proxyUrl);
           const blob = await pdfRes.blob();
           const blobUrl = URL.createObjectURL(blob);
           const a = document.createElement('a');

@@ -535,6 +535,32 @@ app.post('/api/rapidshyp/label', async (req, res) => {
     }
 });
 
+// Proxy PDF download (avoids CORS issues with cross-origin label PDFs)
+app.get('/api/proxy-pdf', async (req, res) => {
+    try {
+        const { url } = req.query;
+        if (!url) return res.status(400).json({ error: 'Missing url parameter' });
+
+        // Only allow known label domains
+        const allowed = ['rapidshyp.com', 'googleapis.com', 'storage.google', 'cloudfront.net', 'amazonaws.com'];
+        const urlHost = new URL(url).hostname;
+        if (!allowed.some(d => urlHost.includes(d))) {
+            return res.status(403).json({ error: 'Domain not allowed' });
+        }
+
+        const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 30000 });
+        res.set({
+            'Content-Type': response.headers['content-type'] || 'application/pdf',
+            'Content-Disposition': req.query.filename ? `attachment; filename="${req.query.filename}"` : 'attachment',
+            'Cache-Control': 'no-cache',
+        });
+        res.send(response.data);
+    } catch (e) {
+        console.error('[API] PDF Proxy Error:', e.message);
+        res.status(500).json({ error: 'Failed to fetch PDF' });
+    }
+});
+
 // ==========================================
 // RAPIDSHYP FULFILLMENT ENDPOINTS
 // ==========================================

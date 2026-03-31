@@ -570,7 +570,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           const url = r.data?.label_pdf_url || r.data?.labelUrl;
           if (url) {
             const batchName = `${getOrdinalDate()} - Labels.pdf`;
-            try { const pr = await fetch(url); const bl = await pr.blob(); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = batchName; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(bu); } catch { window.open(url, '_blank'); }
+            try { const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(batchName)}`; const pr = await fetch(proxyUrl); const bl = await pr.blob(); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = batchName; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(bu); } catch { window.open(url, '_blank'); }
           }
           setToast({ msg: 'Labels generated' });
           setLabelLoading(false);
@@ -584,7 +584,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       const url = r.data?.label_pdf_url || r.data?.labelUrl;
       if (url) {
         const batchName = `${getOrdinalDate()} - Labels.pdf`;
-        try { const pr = await fetch(url); const bl = await pr.blob(); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = batchName; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(bu); } catch { window.open(url, '_blank'); }
+        try { const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(batchName)}`; const pr = await fetch(proxyUrl); const bl = await pr.blob(); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = batchName; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(bu); } catch { window.open(url, '_blank'); }
       }
       setToast({ msg: 'Labels generated' });
     } catch (e) { setToast({ msg: `Labels failed: ${e.response?.data?.error||e.message}`, err: true }); }
@@ -644,10 +644,11 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0" onClick={onClose} />
       <motion.div initial={{ scale: 0.92, y: 30, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.96, opacity: 0 }}
         transition={{ type: 'spring', damping: 24, stiffness: 200 }}
-        className="relative w-full max-w-4xl max-h-[85vh] glass-panel rounded-[32px] border border-[rgba(227,207,216,0.15)] shadow-[0_25px_80px_rgba(0,0,0,0.7)] flex flex-col overflow-hidden">
+        className="relative w-full max-w-4xl max-h-[85vh] rounded-[32px] border border-[rgba(255,255,255,0.12)] shadow-[0_25px_80px_rgba(0,0,0,0.7),inset_0_1px_0_rgba(255,255,255,0.06)] flex flex-col overflow-hidden"
+        style={{ background: 'linear-gradient(160deg, rgba(30,30,40,0.55) 0%, rgba(18,18,24,0.5) 100%)', backdropFilter: 'blur(40px) saturate(1.5)', WebkitBackdropFilter: 'blur(40px) saturate(1.5)' }}>
 
         {/* Header */}
-        <div className="flex items-center justify-between px-7 py-5 border-b border-[rgba(255,255,255,0.05)] shrink-0">
+        <div className="flex items-center justify-between px-7 py-5 border-b border-[rgba(255,255,255,0.07)] shrink-0" style={{ background: 'rgba(255,255,255,0.02)' }}>
           <div>
             <h1 className="text-lg font-black text-white tracking-wide">Fulfill Orders</h1>
             <p className="text-xs text-[rgba(245,245,245,0.35)]">{uniqueIds.length} orders · {workingOrders.length} units</p>
@@ -656,7 +657,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
         </div>
 
         {/* Step Bar */}
-        <div className="flex items-center gap-1 px-5 py-3 overflow-x-auto shrink-0 border-b border-[rgba(255,255,255,0.04)]">
+        <div className="flex items-center gap-1 px-5 py-3 overflow-x-auto shrink-0 border-b border-[rgba(255,255,255,0.05)]" style={{ background: 'rgba(255,255,255,0.015)' }}>
           {STEPS.map((s, i) => {
             const Icon = s.icon; const active = i === step; const completed = done.has(i);
             return (
