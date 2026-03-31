@@ -295,10 +295,15 @@ function App() {
       }
 
       // Enrich orders with RTO risk data
-      // Step 1: Load persistent RTO cache from localStorage (survives Vercel cold starts)
+      // Step 1: Load persistent RTO cache from localStorage
       const orders = res.data?.orders || [];
       let rtoLocalCache = {};
       try { rtoLocalCache = JSON.parse(localStorage.getItem('rto_cache') || '{}'); } catch {}
+
+      // Step 1b: Warm server cache from localStorage (so server has data after cold start)
+      if (Object.keys(rtoLocalCache).length > 0) {
+        axios.post(`${API_URL}/rto-cache/warm`, { cache: rtoLocalCache }).catch(() => {});
+      }
 
       // Step 2: Apply cached RTO data to orders that the server returned as Unknown
       let ordersWithCache = orders.map(o => {
