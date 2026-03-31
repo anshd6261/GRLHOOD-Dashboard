@@ -71,7 +71,8 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
             phone: shipping.phone || order.phone || order.customer?.phone || '',
             address1: shipping.address1 || '',
             city: shipping.city || '',
-            zip: shipping.zip || ''
+            zip: shipping.zip || '',
+            state: shipping.province || shipping.provinceCode || '',
         };
 
         const customer = order.customer || {};
