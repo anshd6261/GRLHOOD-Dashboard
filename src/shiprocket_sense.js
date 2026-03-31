@@ -46,7 +46,8 @@ function loadCache() {
         if (fs.existsSync(CACHE_FILE)) {
             const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
             for (const [k, v] of Object.entries(raw)) {
-                if (v.risk && v.risk !== 'unknown') {
+                const risk = v.risk || (v.aiRiskLevel ? v.aiRiskLevel.toLowerCase() : null);
+                if (risk && risk !== 'unknown') {
                     rtoCache.set(k, v);
                     loaded++;
                 }
@@ -64,7 +65,8 @@ function loadCache() {
                 const raw = JSON.parse(fs.readFileSync(REPO_CACHE_FILE, 'utf8'));
                 let repoLoaded = 0;
                 for (const [k, v] of Object.entries(raw)) {
-                    if (v.risk && v.risk !== 'unknown') {
+                    const risk = v.risk || (v.aiRiskLevel ? v.aiRiskLevel.toLowerCase() : null);
+                    if (risk && risk !== 'unknown') {
                         rtoCache.set(k, v);
                         repoLoaded++;
                     }
