@@ -8,3 +8,4 @@ error_state_*.png
 .vercel
 .cursor/
 .env*
+CLAUDE.md
