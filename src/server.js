@@ -39,7 +39,11 @@ app.get('/api/status', (req, res) => {
     res.json({
         status: 'online',
         store: process.env.SHOPIFY_STORE_DOMAIN,
-        connected: !!(process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET)
+        connected: !!(process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET),
+        shiprocketToken: !!(process.env.SHIPROCKET_TOKEN),
+        shiprocketTokenLen: (process.env.SHIPROCKET_TOKEN || '').trim().length,
+        rapidshypJwt: !!(process.env.RAPIDSHYP_JWT),
+        senseKey: !!(process.env.SHIPROCKET_SENSE_API_KEY),
     });
 });
 
