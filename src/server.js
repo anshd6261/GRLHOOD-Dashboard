@@ -679,46 +679,60 @@ app.get('/api/rapidshyp/debug-order/:id', async (req, res) => {
         const publicHeaders = rapidshyp.getPublicHeaders();
         const sessionHeaders = rapidshyp.getSessionHeaders();
 
-        // Test 1: Public API approve with MongoDB ObjectId
+        // Test 1: Public API approve with market_place_order_id (Shopify internal ID)
         try {
             const r = await ax.post('https://api.rapidshyp.com/rapidshyp/apis/v1/approve_orders', {
-                order_id: [match.order_id], store_name: match.store_name || 'DEFAULT'
+                order_id: [match.market_place_order_id], store_name: match.store_name || 'DEFAULT'
             }, { headers: publicHeaders, timeout: 10000 });
-            tests.publicApprove_mongoId = r.data;
+            tests.publicApprove_marketPlaceId = r.data;
         } catch (e) {
-            tests.publicApprove_mongoId = { error: e.response?.data || e.message, status: e.response?.status };
+            tests.publicApprove_marketPlaceId = { error: e.response?.data || e.message, status: e.response?.status };
         }
 
-        // Test 2: Public API approve with seller_order_id (#3925)
-        try {
-            const r = await ax.post('https://api.rapidshyp.com/rapidshyp/apis/v1/approve_orders', {
-                order_id: [match.seller_order_id], store_name: match.store_name || 'DEFAULT'
-            }, { headers: publicHeaders, timeout: 10000 });
-            tests.publicApprove_sellerOrderId = r.data;
-        } catch (e) {
-            tests.publicApprove_sellerOrderId = { error: e.response?.data || e.message, status: e.response?.status };
-        }
-
-        // Test 3: Public API approve with clean Shopify ID (3925)
-        try {
-            const r = await ax.post('https://api.rapidshyp.com/rapidshyp/apis/v1/approve_orders', {
-                order_id: [cleanId], store_name: match.store_name || 'DEFAULT'
-            }, { headers: publicHeaders, timeout: 10000 });
-            tests.publicApprove_cleanId = r.data;
-        } catch (e) {
-            tests.publicApprove_cleanId = { error: e.response?.data || e.message, status: e.response?.status };
-        }
-
-        // Test 4: Session API approve with MongoDB ObjectId
+        // Test 2: Session API approve_order (plural)
         if (sessionHeaders) {
             try {
-                const r = await ax.post('https://api.rapidshyp.com/session/orders/approve_order', {
+                const r = await ax.post('https://api.rapidshyp.com/session/orders/approve_orders', {
                     order_ids: [match.order_id]
                 }, { headers: sessionHeaders, timeout: 10000 });
-                tests.sessionApprove_mongoId = r.data;
+                tests.sessionApprove_plural = r.data;
             } catch (e) {
-                tests.sessionApprove_mongoId = { error: e.response?.data || e.message, status: e.response?.status };
+                tests.sessionApprove_plural = { error: e.response?.data || e.message, status: e.response?.status };
             }
+        }
+
+        // Test 3: Session API bulk_approve
+        if (sessionHeaders) {
+            try {
+                const r = await ax.post('https://api.rapidshyp.com/session/orders/bulk_approve', {
+                    order_ids: [match.order_id]
+                }, { headers: sessionHeaders, timeout: 10000 });
+                tests.sessionBulkApprove = r.data;
+            } catch (e) {
+                tests.sessionBulkApprove = { error: e.response?.data || e.message, status: e.response?.status };
+            }
+        }
+
+        // Test 4: Session API update_order_status
+        if (sessionHeaders) {
+            try {
+                const r = await ax.post('https://api.rapidshyp.com/session/orders/update_order_status', {
+                    order_ids: [match.order_id], status: 'APPROVED'
+                }, { headers: sessionHeaders, timeout: 10000 });
+                tests.sessionUpdateStatus = r.data;
+            } catch (e) {
+                tests.sessionUpdateStatus = { error: e.response?.data || e.message, status: e.response?.status };
+            }
+        }
+
+        // Test 5: Public API approve with numeric string of mongoId (try parseInt)
+        try {
+            const r = await ax.post('https://api.rapidshyp.com/rapidshyp/apis/v1/approve_orders', {
+                order_id: [match.order_id], store_name: match.store_name || 'GRLHOOD'
+            }, { headers: publicHeaders, timeout: 10000 });
+            tests.publicApprove_mongoId_storeGRLHOOD = r.data;
+        } catch (e) {
+            tests.publicApprove_mongoId_storeGRLHOOD = { error: e.response?.data || e.message, status: e.response?.status };
         }
 
         res.json({
