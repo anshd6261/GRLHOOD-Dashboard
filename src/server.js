@@ -538,23 +538,26 @@ app.post('/api/rapidshyp/label', async (req, res) => {
 // Proxy PDF download (avoids CORS issues with cross-origin label PDFs)
 app.get('/api/proxy-pdf', async (req, res) => {
     try {
-        const { url } = req.query;
+        const { url, filename } = req.query;
         if (!url) return res.status(400).json({ error: 'Missing url parameter' });
 
-        // Only allow known label domains
-        const allowed = ['rapidshyp.com', 'googleapis.com', 'storage.google', 'cloudfront.net', 'amazonaws.com'];
-        const urlHost = new URL(url).hostname;
-        if (!allowed.some(d => urlHost.includes(d))) {
-            return res.status(403).json({ error: 'Domain not allowed' });
-        }
+        console.log(`[API] PDF Proxy fetching: ${url}`);
+        const response = await axios.get(url, {
+            responseType: 'arraybuffer',
+            timeout: 30000,
+            headers: { 'Accept': 'application/pdf,*/*' },
+        });
 
-        const response = await axios.get(url, { responseType: 'arraybuffer', timeout: 30000 });
+        const contentType = response.headers['content-type'] || 'application/pdf';
+        console.log(`[API] PDF Proxy got ${response.data.length} bytes, type: ${contentType}`);
+
         res.set({
-            'Content-Type': response.headers['content-type'] || 'application/pdf',
-            'Content-Disposition': req.query.filename ? `attachment; filename="${req.query.filename}"` : 'attachment',
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': filename ? `attachment; filename="${filename}"` : 'attachment; filename="label.pdf"',
+            'Content-Length': response.data.length,
             'Cache-Control': 'no-cache',
         });
-        res.send(response.data);
+        res.send(Buffer.from(response.data));
     } catch (e) {
         console.error('[API] PDF Proxy Error:', e.message);
         res.status(500).json({ error: 'Failed to fetch PDF' });
