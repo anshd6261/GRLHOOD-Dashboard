@@ -318,32 +318,35 @@ const trackOrder = async (awb) => {
 
 /**
  * Generate Shipping Label(s) (public API — works with API key).
- * Per docs: GET /generate_label with body { shipmentId: ["id1", "id2"] }
+ * Docs: GET /generate_label with body { shipmentId: ["id1", "id2"] }
+ * Response: { status: true, remarks: "...", labelData: [{ shipmentId, labelURL, labelRemarks }] }
+ * https://docs.rapidshyp.com/docs/DocumentationSidebar/Forward%20B2C/Shipments/GET%20Label%20PDF
  */
 const generateLabel = async (shipmentIds) => {
     try {
         const headers = getPublicHeaders();
+        const payload = { shipmentId: shipmentIds };
         console.log(`[RAPIDSHYP] Generating label for shipments:`, shipmentIds);
-        // RapidShyp docs say GET with body, but Vercel strips body from GET.
-        // Try POST first, fall back to GET with query params.
+
+        // Docs say GET with JSON body. Use axios request() to send GET with body.
         let response;
         try {
-            response = await rsApi.post(`${PUBLIC_API_BASE}/generate_label`, { shipmentId: shipmentIds }, { headers });
-        } catch (postErr) {
-            // Fallback: GET with shipmentId as query param
-            const ids = shipmentIds.join(',');
-            response = await rsApi.get(`${PUBLIC_API_BASE}/generate_label`, {
+            response = await rsApi.request({
+                method: 'GET',
+                url: `${PUBLIC_API_BASE}/generate_label`,
                 headers,
-                params: { shipmentId: ids }
+                data: payload,
             });
+        } catch (getErr) {
+            // Some proxies strip GET body — fallback to POST
+            console.warn(`[RAPIDSHYP] GET with body failed (${getErr.response?.status || getErr.message}), trying POST...`);
+            response = await rsApi.post(`${PUBLIC_API_BASE}/generate_label`, payload, { headers });
         }
 
-        console.log(`[RAPIDSHYP] Label API Response:`, response.data);
-        // Response format varies:
-        // New: { label_created, label_url, response }
-        // Old: { status, labelData: [{ shipmentId, labelURL }] }
+        console.log(`[RAPIDSHYP] Label API Response:`, JSON.stringify(response.data));
+        // Docs response: { status: true, labelData: [{ shipmentId, labelURL, labelRemarks }] }
         const data = response.data || {};
-        const labelUrl = data.label_url || data.labelUrl || (data.labelData?.[0]?.labelURL) || '';
+        const labelUrl = (data.labelData?.[0]?.labelURL) || data.label_url || data.labelUrl || '';
         return { success: true, data: { ...data, label_url: labelUrl, labelUrl, label_pdf_url: labelUrl } };
     } catch (e) {
         const errMsg = e.response?.data?.remarks || e.response?.data?.message || e.response?.data || e.message;
@@ -555,18 +558,24 @@ const getWalletBalance = async () => {
 const bulkGenerateLabels = async (shipmentIds) => {
     try {
         const headers = getPublicHeaders();
+        const payload = { shipmentId: shipmentIds };
         console.log(`[RAPIDSHYP] Generating labels for ${shipmentIds.length} shipments...`);
 
         let response;
         try {
-            response = await rsApi.post(`${PUBLIC_API_BASE}/generate_label`, { shipmentId: shipmentIds }, { headers });
-        } catch (postErr) {
-            const ids = shipmentIds.join(',');
-            response = await rsApi.get(`${PUBLIC_API_BASE}/generate_label`, { headers, params: { shipmentId: ids } });
+            response = await rsApi.request({
+                method: 'GET',
+                url: `${PUBLIC_API_BASE}/generate_label`,
+                headers,
+                data: payload,
+            });
+        } catch (getErr) {
+            console.warn(`[RAPIDSHYP] GET with body failed, trying POST...`);
+            response = await rsApi.post(`${PUBLIC_API_BASE}/generate_label`, payload, { headers });
         }
 
         const data = response.data || {};
-        const labelUrl = data.label_url || data.labelUrl || (data.labelData?.[0]?.labelURL) || '';
+        const labelUrl = (data.labelData?.[0]?.labelURL) || data.label_url || data.labelUrl || '';
 
         console.log(`[RAPIDSHYP] Labels generated. URL: ${labelUrl || 'check individual labels'}`);
         return { success: true, labelUrl, labels: data.labelData || [], data: { ...data, label_url: labelUrl, label_pdf_url: labelUrl } };
