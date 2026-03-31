@@ -596,7 +596,7 @@ const findOrderIdByAWB = async (awb) => {
     }
 
     // Use public shipment_details endpoint (reliable, works with API key)
-    // Docs: GET /shipment_details?shipment_id=X — but AWB may also work as shipment_id
+    // Docs: GET /shipment_details?shipment_id=X
     try {
         const headers = getPublicHeaders();
         const detailRes = await rsApi.get(`${PUBLIC_API_BASE}/shipment_details`, {

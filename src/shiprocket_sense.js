@@ -43,10 +43,21 @@ function loadCache() {
     try {
         if (fs.existsSync(CACHE_FILE)) {
             const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+            let loaded = 0, purged = 0;
             for (const [k, v] of Object.entries(raw)) {
-                rtoCache.set(k, v);
+                // Purge cached errors — only keep successful predictions
+                if (v.risk && v.risk !== 'unknown') {
+                    rtoCache.set(k, v);
+                    loaded++;
+                } else {
+                    purged++;
+                }
             }
-            console.log(`[SENSE] Loaded ${rtoCache.size} cached RTO results from disk.`);
+            if (purged > 0) {
+                console.log(`[SENSE] Purged ${purged} stale error entries from cache.`);
+                saveCache();
+            }
+            console.log(`[SENSE] Loaded ${loaded} cached RTO results from disk.`);
         }
     } catch (e) {
         console.warn('[SENSE] Cache load failed (non-fatal):', e.message);
@@ -355,7 +366,11 @@ function getCachedResults(shopifyOrders) {
     for (const order of shopifyOrders) {
         const orderId = order.name || order.id;
         if (rtoCache.has(orderId)) {
-            results[orderId] = rtoCache.get(orderId);
+            const cached = rtoCache.get(orderId);
+            // Skip cached errors — let them be re-checked
+            if (cached.risk && cached.risk !== 'unknown') {
+                results[orderId] = cached;
+            }
         }
     }
     return results;

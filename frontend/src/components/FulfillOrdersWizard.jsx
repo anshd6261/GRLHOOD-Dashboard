@@ -552,14 +552,11 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       const awbs = successResults.map(r => r.awb).filter(Boolean);
 
       // Fallback: if no AWBs/shipmentIds from ship step, use order IDs from the CSV
-      // The server will resolve Shopify order IDs → RapidShyp shipment IDs via AWB lookup
       if (!shipmentIds.length && !awbs.length && uniqueIds.length > 0) {
-        // Use the existing working orders to find any AWBs assigned earlier
         const orderAwbs = workingOrders.map(o => o.awb).filter(Boolean);
         if (orderAwbs.length > 0) {
           awbs.push(...orderAwbs);
         } else {
-          // Last resort: send order IDs to server, it will search RapidShyp by Shopify order ID
           const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-by-orders`, { orderIds: uniqueIds });
           setLabelResult(r.data);
           const url = r.data?.label_pdf_url || r.data?.labelUrl;
