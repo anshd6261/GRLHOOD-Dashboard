@@ -339,8 +339,25 @@ async function batchPredictRisk(shopifyOrders) {
     return results;
 }
 
+/**
+ * Quick cache-only lookup — returns cached results without making API calls.
+ * Used by /api/orders to return instant results for already-checked orders.
+ */
+function getCachedResults(shopifyOrders) {
+    loadCache();
+    const results = {};
+    for (const order of shopifyOrders) {
+        const orderId = order.name || order.id;
+        if (rtoCache.has(orderId)) {
+            results[orderId] = rtoCache.get(orderId);
+        }
+    }
+    return results;
+}
+
 module.exports = {
     predictRisk: async () => defaultResult('Use batchPredictRisk instead'),
     batchPredictRisk,
+    getCachedResults,
     detectPayment,
 };
