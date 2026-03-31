@@ -40,10 +40,9 @@ app.get('/api/status', (req, res) => {
         status: 'online',
         store: process.env.SHOPIFY_STORE_DOMAIN,
         connected: !!(process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET),
-        shiprocketToken: !!(process.env.SHIPROCKET_TOKEN),
-        shiprocketTokenLen: (process.env.SHIPROCKET_TOKEN || '').trim().length,
         rapidshypJwt: !!(process.env.RAPIDSHYP_JWT),
         senseKey: !!(process.env.SHIPROCKET_SENSE_API_KEY),
+        senseSecret: !!(process.env.SHIPROCKET_SENSE_API_SECRET),
     });
 });
 
@@ -69,7 +68,7 @@ app.post('/api/login', (req, res) => {
     password = (password || '').trim();
     
     // Hardcoded credentials as per user request
-    if (username === 'Anshd6261@' && password === 'Anshd62616@') {
+    if (username === 'Anshd6261' && password === 'Anshd6261') {
         return res.json({ success: true, role: 'admin', token: 'mock-jwt-admin-token-7x9' });
     }
     
@@ -124,13 +123,13 @@ app.get('/api/orders', async (req, res) => {
             console.log(`[API] Built shipping map with ${Object.keys(rtoMap).length} entries from RapidShyp.`);
         }
 
-        // Fetch RTO risk from Shiprocket Sense API (non-blocking — dashboard loads even if Sense is slow)
+        // RTO risk: try quick cache lookup only (don't block order loading with Sense API calls)
+        // Full Sense API calls happen via separate /api/rto-check endpoint
         let senseRiskMap = {};
         try {
-            senseRiskMap = await shiprocketSense.batchPredictRisk(rawOrders);
-            console.log(`[API] Shiprocket Sense RTO risk loaded for ${Object.keys(senseRiskMap).length} orders.`);
+            senseRiskMap = await shiprocketSense.getCachedResults(rawOrders);
         } catch (e) {
-            console.warn('[API] Shiprocket Sense failed (non-blocking):', e.message);
+            console.warn('[API] Sense cache lookup failed (non-blocking):', e.message);
         }
 
         // Process orders with shipping map + Sense RTO risk
@@ -171,6 +170,72 @@ app.get('/api/orders', async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 });
+
+// 2.3 RTO Risk Check — Dedicated endpoint for Sense API (gets full 10s budget)
+// Frontend calls this after loading orders to enrich them with RTO data
+app.post('/api/rto-check', async (req, res) => {
+    try {
+        const { orders } = req.body; // Array of order objects from frontend
+        if (!orders || !Array.isArray(orders) || orders.length === 0) {
+            return res.status(400).json({ success: false, error: 'Missing orders array' });
+        }
+
+        console.log(`[API] RTO check requested for ${orders.length} orders.`);
+
+        // Convert frontend order format to Shopify-like format for Sense
+        const shopifyLikeOrders = orders.map(o => ({
+            name: `#${o.orderId}`,
+            id: o.orderId,
+            displayFulfillmentStatus: o.fulfillmentStatus || 'UNFULFILLED',
+            displayFinancialStatus: o.payment === 'Cash on Delivery' ? 'PENDING' : 'PAID',
+            paymentGatewayNames: o.payment === 'Cash on Delivery' ? ['Cash on Delivery'] : ['Prepaid'],
+            shippingAddress: o.shippingDetails ? {
+                phone: o.shippingDetails.phone || '',
+                address1: o.shippingDetails.address1 || '',
+                city: o.shippingDetails.city || '',
+                zip: o.shippingDetails.zip || '',
+                province: o.shippingDetails.state || '',
+            } : {},
+            email: '',
+            customer: { numberOfOrders: o.customerOrdersCount || 1 },
+            lineItems: { edges: [{ node: { title: 'Product', quantity: 1, originalUnitPrice: o.price || 0 } }] },
+        }));
+
+        const riskMap = await shiprocketSense.batchPredictRisk(shopifyLikeOrders);
+
+        // Transform to frontend-friendly format
+        const results = {};
+        for (const [orderId, result] of Object.entries(riskMap)) {
+            const cleanId = orderId.replace('#', '');
+            const risk = (result.risk || '').toLowerCase();
+            results[cleanId] = {
+                aiRiskScore: calculateRtoScore(result),
+                aiRiskLevel: risk === 'high' || risk === 'very high' ? 'High' : risk === 'low' ? 'Low' : risk === 'medium' ? 'Medium' : 'Unknown',
+                aiRiskReasons: [
+                    ...(result.reasons || []),
+                    ...(result.riskTags || []).map(t => t.reason),
+                ].filter(Boolean),
+            };
+        }
+
+        const checked = Object.values(results).filter(r => r.aiRiskLevel !== 'Unknown').length;
+        console.log(`[API] RTO check done: ${checked}/${orders.length} with risk data.`);
+        res.json({ success: true, results });
+    } catch (e) {
+        console.error('[API] RTO check error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Helper for RTO percentage calculation (same logic as processor.js)
+function calculateRtoScore(senseResult) {
+    const prob = senseResult.probability || 0;
+    const risk = (senseResult.risk || '').toLowerCase();
+    if (risk === 'high' || risk === 'very high') return Math.round(Math.max(prob * 100, 60));
+    if (risk === 'low') return Math.round(Math.max((1 - prob) * 100, 5));
+    if (risk === 'medium') return Math.round(prob > 0 ? prob * 100 : 45);
+    return 0;
+}
 
 // 2.5 Search ALL Orders
 app.get('/api/orders/search', async (req, res) => {
@@ -404,9 +469,10 @@ app.post('/api/rapidshyp/label', async (req, res) => {
                         r.seller_order_id === `#${shopifyOrderId}` ||
                         r.seller_order_id === shopifyOrderId.toString()
                     );
-                    if (match?.order_id) {
-                        resolvedIds.push(match.order_id);
-                        console.log(`[API] Found RS order ${match.order_id} for Shopify #${shopifyOrderId}`);
+                    if (match) {
+                        const shipId = match.shipment_id || match.order_id;
+                        resolvedIds.push(shipId);
+                        console.log(`[API] Found RS shipment ${shipId} for Shopify #${shopifyOrderId}`);
                     }
                 } catch (searchErr) {
                     console.warn(`[API] Session search failed:`, searchErr.message);
@@ -467,15 +533,28 @@ app.get('/api/rapidshyp/wallet', async (req, res) => {
 // Bulk Generate Labels + Upload to Dropbox
 app.post('/api/rapidshyp/bulk-labels-dropbox', async (req, res) => {
     try {
-        const { orderIds, orders } = req.body;
-        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
-            return res.status(400).json({ error: 'Missing or invalid orderIds array' });
+        const { orderIds, awbs, orders } = req.body;
+
+        // Resolve shipment IDs: prefer AWBs (reliable public API), fall back to orderIds
+        let shipmentIds = [];
+        if (awbs && Array.isArray(awbs) && awbs.length > 0) {
+            console.log(`[API] Resolving ${awbs.length} AWBs to shipment IDs...`);
+            for (const awb of awbs.filter(Boolean)) {
+                const shipId = await rapidshyp.findOrderIdByAWB(awb);
+                if (shipId) shipmentIds.push(shipId);
+            }
+        }
+        if (shipmentIds.length === 0 && orderIds && Array.isArray(orderIds)) {
+            shipmentIds = orderIds.filter(Boolean);
+        }
+        if (shipmentIds.length === 0) {
+            return res.status(400).json({ error: 'No valid shipment IDs or AWBs provided' });
         }
 
-        console.log(`[API] Generating labels for ${orderIds.length} orders + Dropbox upload...`);
+        console.log(`[API] Generating labels for ${shipmentIds.length} shipments + Dropbox upload...`);
 
         // Generate labels
-        const labelResult = await rapidshyp.bulkGenerateLabels(orderIds);
+        const labelResult = await rapidshyp.bulkGenerateLabels(shipmentIds);
         if (!labelResult.success) {
             return res.status(500).json({ success: false, error: labelResult.message || 'Label generation failed' });
         }

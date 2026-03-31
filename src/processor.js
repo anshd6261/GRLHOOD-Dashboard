@@ -1,3 +1,35 @@
+/**
+ * Convert Sense API probability to a user-friendly RTO risk percentage.
+ * Higher risk = higher percentage. Sense's model_probability is confidence in its prediction,
+ * so for "low" risk orders we invert it (high confidence in low risk → low RTO %).
+ */
+const mapRiskLevel = (risk) => {
+    const r = (risk || '').toLowerCase();
+    if (r === 'high' || r === 'very high') return 'High';
+    if (r === 'low') return 'Low';
+    if (r === 'medium') return 'Medium';
+    return 'Unknown'; // timeouts, errors, unchecked
+};
+
+const calculateRtoPercentage = (senseResult) => {
+    const prob = senseResult.probability || 0;
+    const risk = (senseResult.risk || '').toLowerCase();
+
+    if (risk === 'high' || risk === 'very high') {
+        // High risk: probability represents RTO likelihood — use directly (typically 55-95%)
+        return Math.round(Math.max(prob * 100, 60));
+    }
+    if (risk === 'low') {
+        // Low risk: probability is delivery confidence — invert to get RTO risk (typically 5-30%)
+        return Math.round(Math.max((1 - prob) * 100, 5));
+    }
+    if (risk === 'medium') {
+        // Medium risk: show 40-55% range
+        return Math.round(prob > 0 ? prob * 100 : 45);
+    }
+    return 0;
+};
+
 const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => {
     // 1. Pre-process to find duplicated phone numbers with different names
     const phoneToNamesMap = {};
@@ -244,8 +276,9 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
                     fulfillmentStatus: order.displayFulfillmentStatus || 'UNFULFILLED',
                     createdAt: order.createdAt,
                     // Shiprocket Sense RTO Risk Data
-                    aiRiskScore: senseResult ? Math.round((senseResult.probability || senseResult.score || 0) * 100) : 0,
-                    aiRiskLevel: senseResult ? (senseResult.risk === 'high' || senseResult.risk === 'very high' ? 'High' : senseResult.risk === 'low' ? 'Low' : 'Medium') : 'Unknown',
+                    // model_probability is confidence in the prediction — invert for low risk so higher % = higher risk
+                    aiRiskScore: senseResult ? calculateRtoPercentage(senseResult) : 0,
+                    aiRiskLevel: senseResult ? mapRiskLevel(senseResult.risk) : 'Unknown',
                     aiRiskReasons: senseResult ? [
                         ...senseResult.reasons,
                         ...(senseResult.riskTags || []).map(t => t.reason),

@@ -257,7 +257,9 @@ function App() {
     if (!hasOrderIds && !hasAwbs) return;
     setLoading(true);
     try {
-      const payload = hasOrderIds ? { orderIds: orderIds.filter(Boolean) } : { awbs: awbs.filter(Boolean) };
+      const payload = {};
+      if (hasAwbs) payload.awbs = awbs.filter(Boolean);
+      if (hasOrderIds) payload.orderIds = orderIds.filter(Boolean);
       const res = await axios.post(`${API_URL}/rapidshyp/label`, payload);
       const url = res.data?.label_pdf_url || res.data?.label_url || res.data?.labelUrl || res.data?.pdf_url;
       if (url) {
@@ -290,6 +292,38 @@ function App() {
         setData({ ...res.data, orders: res.data?.orders || [] });
       } else {
         setData(res.data);
+      }
+
+      // Enrich orders with RTO risk data (separate call — gets full 10s budget for Sense API)
+      const orders = res.data?.orders || [];
+      const uncheckedOrders = orders.filter(o =>
+        o.aiRiskLevel === 'Unknown' && o.payment === 'Cash on Delivery' &&
+        (!o.fulfillmentStatus || o.fulfillmentStatus === 'UNFULFILLED')
+      );
+      // Deduplicate by orderId
+      const uniqueUnchecked = [];
+      const seenIds = new Set();
+      for (const o of uncheckedOrders) {
+        if (!seenIds.has(o.orderId)) {
+          seenIds.add(o.orderId);
+          uniqueUnchecked.push(o);
+        }
+      }
+      if (uniqueUnchecked.length > 0) {
+        try {
+          const rtoRes = await axios.post(`${API_URL}/rto-check`, { orders: uniqueUnchecked });
+          if (rtoRes.data?.success && rtoRes.data?.results) {
+            const rtoResults = rtoRes.data.results;
+            const enrichedOrders = orders.map(o => {
+              const rto = rtoResults[o.orderId];
+              if (rto) return { ...o, ...rto };
+              return o;
+            });
+            setData(prev => ({ ...prev, orders: enrichedOrders }));
+          }
+        } catch (rtoErr) {
+          console.warn('RTO enrichment failed (non-blocking):', rtoErr.message);
+        }
       }
     } catch (e) {
       console.error("Sync Error:", e);

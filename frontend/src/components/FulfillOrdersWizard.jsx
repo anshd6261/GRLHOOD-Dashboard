@@ -501,9 +501,11 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const handleLabels = async () => {
     setLabelLoading(true);
     try {
-      const ids = shipResults?.results?.filter(r=>r.success).map(r=>r.rsOrderId).filter(Boolean) || [];
-      if (!ids.length) { setToast({ msg: 'No shipped orders for labels', err: true }); setLabelLoading(false); return; }
-      const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-dropbox`, { orderIds: ids, orders: workingOrders });
+      const successResults = shipResults?.results?.filter(r => r.success) || [];
+      const shipmentIds = successResults.map(r => r.shipmentId).filter(Boolean);
+      const awbs = successResults.map(r => r.awb).filter(Boolean);
+      if (!shipmentIds.length && !awbs.length) { setToast({ msg: 'No shipped orders for labels', err: true }); setLabelLoading(false); return; }
+      const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-dropbox`, { orderIds: shipmentIds, awbs, orders: workingOrders });
       setLabelResult(r.data);
       if (r.data?.labelUrl) window.open(r.data.labelUrl, '_blank');
       setToast({ msg: 'Labels generated' });

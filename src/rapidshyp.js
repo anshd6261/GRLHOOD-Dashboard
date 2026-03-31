@@ -144,6 +144,72 @@ const fetchOrdersWithRTO = async (status = 'ALL', maxPages = 10) => {
     }
 };
 
+// ==========================================
+// CACHED ORDER MAP (works around broken session search)
+// ==========================================
+
+let _orderMapCache = null;
+let _orderMapTimestamp = 0;
+const ORDER_MAP_TTL = 2 * 60 * 1000; // 2 minutes
+
+/**
+ * Fetch ALL orders from session API via pagination and build a lookup map.
+ * The session search param is broken (returns all orders regardless of search term),
+ * so we paginate everything and build our own Map<seller_order_id, record>.
+ * Cached for 2 minutes to avoid re-fetching during bulk operations.
+ */
+const fetchAllOrders = async () => {
+    if (_orderMapCache && (Date.now() - _orderMapTimestamp < ORDER_MAP_TTL)) {
+        return _orderMapCache;
+    }
+
+    const sessionHeaders = getSessionHeaders();
+    if (!sessionHeaders) return new Map();
+
+    const orderMap = new Map();
+    const PAGE_SIZE = 200;
+    let page = 1;
+    let totalFetched = 0;
+
+    try {
+        while (true) {
+            const res = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, {
+                page, limit: PAGE_SIZE
+            }, { headers: sessionHeaders, timeout: 15000 });
+
+            const records = res.data?.records || [];
+            const totalRecords = res.data?.total_records || 0;
+
+            for (const r of records) {
+                if (r.seller_order_id) {
+                    const clean = r.seller_order_id.replace('#', '');
+                    orderMap.set(clean, r);
+                    orderMap.set(r.seller_order_id, r);
+                }
+                if (r.awb_number) {
+                    orderMap.set(r.awb_number, r);
+                }
+                if (r.order_id) {
+                    orderMap.set(r.order_id, r);
+                }
+            }
+
+            totalFetched += records.length;
+            if (records.length < PAGE_SIZE || totalFetched >= totalRecords) break;
+            page++;
+            await new Promise(r => setTimeout(r, 200));
+        }
+
+        console.log(`[RAPIDSHYP] Order map built: ${orderMap.size} entries from ${totalFetched} orders (${page} pages)`);
+        _orderMapCache = orderMap;
+        _orderMapTimestamp = Date.now();
+        return orderMap;
+    } catch (e) {
+        console.error(`[RAPIDSHYP] Failed to build order map:`, e.response?.status || e.message);
+        return orderMap.size > 0 ? orderMap : new Map();
+    }
+};
+
 /**
  * Cancel an order on RapidShyp.
  * Uses session API for order lookup (if JWT available), then public API for cancellation.
@@ -271,10 +337,12 @@ const generateLabel = async (shipmentIds) => {
         }
 
         console.log(`[RAPIDSHYP] Label API Response:`, response.data);
-        // Response: { status: true, remarks: "...", labelData: [{ shipmentId, labelURL, labelRemarks }] }
-        const labelData = response.data?.labelData || [];
-        const labelUrl = labelData[0]?.labelURL || '';
-        return { success: true, data: { ...response.data, label_url: labelUrl, labelUrl, label_pdf_url: labelUrl } };
+        // Response format varies:
+        // New: { label_created, label_url, response }
+        // Old: { status, labelData: [{ shipmentId, labelURL }] }
+        const data = response.data || {};
+        const labelUrl = data.label_url || data.labelUrl || (data.labelData?.[0]?.labelURL) || '';
+        return { success: true, data: { ...data, label_url: labelUrl, labelUrl, label_pdf_url: labelUrl } };
     } catch (e) {
         const errMsg = e.response?.data?.remarks || e.response?.data?.message || e.response?.data || e.message;
         console.error(`[RAPIDSHYP] Label Generation Failed:`, errMsg);
@@ -288,32 +356,20 @@ const generateLabel = async (shipmentIds) => {
  */
 const bulkAssignAWB = async (orderNames) => {
     const headers = getPublicHeaders();
-    const sessionHeaders = getSessionHeaders();
     const results = [];
+
+    // Build order map once for all lookups (cached for 2 min)
+    const orderMap = await fetchAllOrders();
+    console.log(`[RAPIDSHYP] Using order map with ${orderMap.size} entries for ${orderNames.length} orders`);
 
     for (const name of orderNames) {
         const cleanId = name.toString().replace('#', '');
         try {
-            let match = null;
-
-            // Try session API search if JWT available
-            if (sessionHeaders) {
-                try {
-                    const searchRes = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, {
-                        search: cleanId, page: 1, limit: 10
-                    }, { headers: sessionHeaders });
-                    const records = searchRes.data?.records || [];
-                    match = records.find(r =>
-                        r.seller_order_id === `#${cleanId}` || r.seller_order_id === cleanId
-                    );
-                } catch (searchErr) {
-                    console.warn(`[RAPIDSHYP] Session search failed for ${cleanId}: ${searchErr.response?.status || searchErr.message}`);
-                }
-            }
+            const match = orderMap.get(cleanId) || null;
 
             if (!match) {
-                // Without JWT we can't look up the RS order ID for AWB assignment
-                // Try assigning directly with the Shopify order ID
+                // Order not found in RapidShyp — try assigning directly with order name
+                console.warn(`[RAPIDSHYP] Order ${cleanId} not found in order map, trying direct assign...`);
                 try {
                     const assignRes = await rsApi.post(`${PUBLIC_API_BASE}/assign_awb`, {
                         shipment_id: cleanId
@@ -324,7 +380,8 @@ const bulkAssignAWB = async (orderNames) => {
                         success: true,
                         awb: data.awb || '',
                         courier: data.courier_name || '',
-                        shipmentId: data.shipment_id || cleanId
+                        shipmentId: data.shipment_id || cleanId,
+                        rsOrderId: cleanId
                     });
                     console.log(`[RAPIDSHYP] Assigned AWB for ${cleanId}: ${data.awb}`);
                 } catch (directErr) {
@@ -336,7 +393,15 @@ const bulkAssignAWB = async (orderNames) => {
             }
 
             if (match.awb_number) {
-                results.push({ orderId: cleanId, success: true, awb: match.awb_number, courier: match.courier_name || '', message: 'Already assigned' });
+                results.push({
+                    orderId: cleanId,
+                    success: true,
+                    awb: match.awb_number,
+                    courier: match.courier_name || '',
+                    shipmentId: match.shipment_id || match.order_id,
+                    rsOrderId: match.order_id,
+                    message: 'Already assigned'
+                });
                 continue;
             }
 
@@ -411,12 +476,11 @@ const bulkGenerateLabels = async (shipmentIds) => {
             response = await rsApi.get(`${PUBLIC_API_BASE}/generate_label`, { headers, params: { shipmentId: ids } });
         }
 
-        const data = response.data;
-        const labelData = data.labelData || [];
-        const labelUrl = labelData[0]?.labelURL || '';
+        const data = response.data || {};
+        const labelUrl = data.label_url || data.labelUrl || (data.labelData?.[0]?.labelURL) || '';
 
         console.log(`[RAPIDSHYP] Labels generated. URL: ${labelUrl || 'check individual labels'}`);
-        return { success: true, labelUrl, labels: labelData, data: { ...data, label_pdf_url: labelUrl } };
+        return { success: true, labelUrl, labels: data.labelData || [], data: { ...data, label_url: labelUrl, label_pdf_url: labelUrl } };
     } catch (e) {
         const errMsg = e.response?.data?.remarks || e.response?.data?.message || e.response?.data || e.message;
         console.error(`[RAPIDSHYP] Bulk label generation failed:`, errMsg);
@@ -432,33 +496,25 @@ const bulkGenerateLabels = async (shipmentIds) => {
 const findOrderIdByAWB = async (awb) => {
     if (!awb) return null;
 
-    // Try session API search first (can search by AWB)
-    const sessionHeaders = getSessionHeaders();
-    if (sessionHeaders) {
-        try {
-            const searchRes = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, {
-                search: awb, page: 1, limit: 10
-            }, { headers: sessionHeaders });
-            const records = searchRes.data?.records || [];
-            const match = records.find(r => r.awb_number === awb);
-            if (match) {
-                const shipId = match.shipment_id || match.order_id;
-                console.log(`[RAPIDSHYP] Found shipment ${shipId} for AWB ${awb}`);
-                return shipId;
-            }
-        } catch (e) {
-            console.warn(`[RAPIDSHYP] Session search by AWB failed: ${e.response?.status || e.message}`);
+    // Check cached order map first (fast, no API call if cached)
+    if (_orderMapCache) {
+        const cached = _orderMapCache.get(awb);
+        if (cached) {
+            const shipId = cached.shipment_id || cached.order_id;
+            console.log(`[RAPIDSHYP] Found shipment ${shipId} for AWB ${awb} from cache`);
+            return shipId;
         }
     }
 
-    // Fallback: use public shipment_details endpoint
+    // Use public shipment_details endpoint (reliable, works with API key)
     try {
         const headers = getPublicHeaders();
         const detailRes = await rsApi.get(`${PUBLIC_API_BASE}/shipment_details`, {
             headers,
             params: { awb }
         });
-        const shipId = detailRes.data?.shipment_id;
+        // Response: { success, shipment_details: { shipment_id, awb, ... } }
+        const shipId = detailRes.data?.shipment_details?.shipment_id || detailRes.data?.shipment_id;
         if (shipId) {
             console.log(`[RAPIDSHYP] Found shipment ${shipId} for AWB ${awb} via shipment_details`);
             return shipId;
