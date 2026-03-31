@@ -533,15 +533,28 @@ app.get('/api/rapidshyp/wallet', async (req, res) => {
 // Bulk Generate Labels + Upload to Dropbox
 app.post('/api/rapidshyp/bulk-labels-dropbox', async (req, res) => {
     try {
-        const { orderIds, orders } = req.body;
-        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
-            return res.status(400).json({ error: 'Missing or invalid orderIds array' });
+        const { orderIds, awbs, orders } = req.body;
+
+        // Resolve shipment IDs: prefer AWBs (reliable public API), fall back to orderIds
+        let shipmentIds = [];
+        if (awbs && Array.isArray(awbs) && awbs.length > 0) {
+            console.log(`[API] Resolving ${awbs.length} AWBs to shipment IDs...`);
+            for (const awb of awbs.filter(Boolean)) {
+                const shipId = await rapidshyp.findOrderIdByAWB(awb);
+                if (shipId) shipmentIds.push(shipId);
+            }
+        }
+        if (shipmentIds.length === 0 && orderIds && Array.isArray(orderIds)) {
+            shipmentIds = orderIds.filter(Boolean);
+        }
+        if (shipmentIds.length === 0) {
+            return res.status(400).json({ error: 'No valid shipment IDs or AWBs provided' });
         }
 
-        console.log(`[API] Generating labels for ${orderIds.length} orders + Dropbox upload...`);
+        console.log(`[API] Generating labels for ${shipmentIds.length} shipments + Dropbox upload...`);
 
         // Generate labels
-        const labelResult = await rapidshyp.bulkGenerateLabels(orderIds);
+        const labelResult = await rapidshyp.bulkGenerateLabels(shipmentIds);
         if (!labelResult.success) {
             return res.status(500).json({ success: false, error: labelResult.message || 'Label generation failed' });
         }

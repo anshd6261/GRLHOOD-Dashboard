@@ -257,7 +257,9 @@ function App() {
     if (!hasOrderIds && !hasAwbs) return;
     setLoading(true);
     try {
-      const payload = hasOrderIds ? { orderIds: orderIds.filter(Boolean) } : { awbs: awbs.filter(Boolean) };
+      const payload = {};
+      if (hasAwbs) payload.awbs = awbs.filter(Boolean);
+      if (hasOrderIds) payload.orderIds = orderIds.filter(Boolean);
       const res = await axios.post(`${API_URL}/rapidshyp/label`, payload);
       const url = res.data?.label_pdf_url || res.data?.label_url || res.data?.labelUrl || res.data?.pdf_url;
       if (url) {

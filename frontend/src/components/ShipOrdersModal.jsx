@@ -111,9 +111,12 @@ export default function ShipOrdersModal({ orders, onClose, onSuccess }) {
       if (!assignRes.data.success) throw new Error(assignRes.data.error || 'Courier assignment failed');
       markComplete(3);
 
-      // Step 4: Generate Labels
+      // Step 4: Generate Labels — use shipment IDs and AWBs from assign results
       setCurrentStep(4);
-      const labelRes = await axios.post(`${API_URL}/rapidshyp/bulk-labels-dropbox`, { orderIds: uniqueOrderIds, orders });
+      const assignedResults = assignRes.data?.results?.filter(r => r.success) || [];
+      const shipmentIds = assignedResults.map(r => r.shipmentId).filter(Boolean);
+      const awbs = assignedResults.map(r => r.awb).filter(Boolean);
+      const labelRes = await axios.post(`${API_URL}/rapidshyp/bulk-labels-dropbox`, { orderIds: shipmentIds, awbs, orders });
       if (!labelRes.data.success) throw new Error(labelRes.data.error || 'Label generation failed');
       markComplete(4);
 
