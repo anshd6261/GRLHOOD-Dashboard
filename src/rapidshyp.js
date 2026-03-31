@@ -417,15 +417,28 @@ const resolveAllShipmentIds = async (shopifyOrderIds) => {
 
 /**
  * Bulk assign AWB to multiple orders.
- * Pre-resolves ALL shipment_ids in parallel first (handles auto-approved orders),
- * then assigns AWB sequentially.
+ * Accepts optional shipmentMap (from bulkApproveOrders response) to avoid
+ * Vercel serverless isolation issues. Falls back to track_order if no map.
+ * @param {string[]} orderNames - Shopify order IDs
+ * @param {Object} [shipmentMap] - Map of cleanId → shipment_id from approve step
  */
-const bulkAssignAWB = async (orderNames) => {
-    // Pre-resolve ALL shipment_ids in parallel (covers auto-approved orders too)
-    const resolveResult = await resolveAllShipmentIds(orderNames);
-    console.log(`[RAPIDSHYP] Pre-resolved: ${resolveResult.totalCached}/${resolveResult.total} shipment IDs ready`);
-
+const bulkAssignAWB = async (orderNames, shipmentMap = {}) => {
     const headers = getPublicHeaders();
+
+    // Warm the in-memory cache from the passed shipmentMap (from approve step)
+    let warmed = 0;
+    for (const [k, v] of Object.entries(shipmentMap)) {
+        if (v && !_shipmentIdCache.has(k)) {
+            _shipmentIdCache.set(k, v);
+            warmed++;
+        }
+    }
+    if (warmed > 0) console.log(`[RAPIDSHYP] Warmed ${warmed} shipment IDs from frontend cache`);
+
+    // Resolve any remaining shipment_ids not in cache (parallel track_order)
+    const resolveResult = await resolveAllShipmentIds(orderNames);
+    console.log(`[RAPIDSHYP] Total shipment IDs ready: ${resolveResult.totalCached}/${resolveResult.total}`);
+
     const orderMap = await fetchAllOrders();
     const results = [];
 
@@ -444,7 +457,7 @@ const bulkAssignAWB = async (orderNames) => {
                 continue;
             }
 
-            // Use pre-resolved shipment_id from cache
+            // Use shipment_id from cache (warmed from approve + resolved via track_order)
             const shipmentId = _shipmentIdCache.get(cleanId) || match?.shipment_id || null;
 
             if (!shipmentId) {
@@ -579,11 +592,18 @@ const bulkApproveOrders = async (shopifyOrderIds) => {
     _orderMapCache = null;
     _orderMapTimestamp = 0;
 
+    // Build shipment map to return to caller (survives Vercel serverless isolation)
+    const shipmentMap = {};
+    for (const [k, v] of _shipmentIdCache.entries()) {
+        shipmentMap[k] = v;
+    }
+
     return {
         success: approvedCount > 0 || alreadyApproved > 0,
         approved: approvedCount,
         alreadyApproved,
         notFound,
+        shipmentMap, // Frontend stores this and passes to bulk-assign
         shipmentsCached: _shipmentIdCache.size,
         errors: errors.length > 0 ? errors : undefined,
         message: `${approvedCount} approved, ${alreadyApproved} already approved, ${notFound} not in RapidShyp`

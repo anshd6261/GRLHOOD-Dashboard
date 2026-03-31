@@ -649,8 +649,9 @@ app.post('/api/rapidshyp/bulk-assign', async (req, res) => {
             return res.status(400).json({ error: 'Missing or invalid orderNames array' });
         }
 
-        console.log(`[API] Bulk assigning AWB for ${orderNames.length} orders...`);
-        const result = await rapidshyp.bulkAssignAWB(orderNames);
+        const shipmentMap = req.body.shipmentMap || {};
+        console.log(`[API] Bulk assigning AWB for ${orderNames.length} orders (${Object.keys(shipmentMap).length} shipment IDs from frontend)...`);
+        const result = await rapidshyp.bulkAssignAWB(orderNames, shipmentMap);
         res.json(result);
     } catch (e) {
         console.error('[API] Bulk Assign Error:', e);

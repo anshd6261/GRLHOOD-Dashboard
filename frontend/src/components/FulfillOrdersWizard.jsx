@@ -469,6 +469,37 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
 
   const renderDownload = () => (
     <div className="space-y-4">
+      {/* Approve status — shown during and after auto-approve */}
+      <div className="glass-card-sm p-4">
+        {approveLoading ? (
+          <div className="flex items-center gap-3 text-xs">
+            <RefreshCw size={14} className="animate-spin text-[#e3cfd8] shrink-0" />
+            <div>
+              <span className="text-white font-bold">Approving {uniqueIds.length} orders in RapidShyp...</span>
+              <p className="text-[10px] text-[rgba(245,245,245,0.35)] mt-0.5">Checking CSV orders & bulk approving unapproved ones</p>
+            </div>
+          </div>
+        ) : approveResult ? (
+          <div className="flex items-center gap-3 text-xs">
+            {approveResult.error ? (
+              <><AlertTriangle size={14} className="text-amber-400 shrink-0" /><span className="text-amber-400">Approve failed: {approveResult.error}</span></>
+            ) : (
+              <><CheckCircle size={14} className="text-emerald-400 shrink-0" />
+              <div>
+                <span className="text-white font-bold">
+                  {approveResult.approved > 0 && <span className="text-emerald-400">{approveResult.approved} approved</span>}
+                  {approveResult.approved > 0 && (approveResult.alreadyApproved > 0 || approveResult.notFound > 0) && ' · '}
+                  {approveResult.alreadyApproved > 0 && `${approveResult.alreadyApproved} already approved`}
+                  {approveResult.notFound > 0 && ` · ${approveResult.notFound} not in RapidShyp`}
+                  {approveResult.approved === 0 && approveResult.alreadyApproved === 0 && 'All orders ready'}
+                </span>
+                {approveResult.shipmentsCached > 0 && <p className="text-[10px] text-[rgba(245,245,245,0.3)] mt-0.5">{approveResult.shipmentsCached} shipment IDs cached for AWB assignment</p>}
+              </div></>
+            )}
+          </div>
+        ) : null}
+      </div>
+
       <div className="glass-card-sm p-6 text-center space-y-5">
         <div className="flex justify-center gap-10">
           <div><div className="text-3xl font-black text-white">{uniqueIds.length}</div><div className="text-[10px] text-[rgba(245,245,245,0.3)] uppercase tracking-wider mt-1">orders</div></div>
@@ -497,7 +528,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   };
   useEffect(() => { if (step === 5 && walletBalance === null) fetchWallet(); }, [step]);
 
-  // ═══ Auto-approve unapproved orders in RapidShyp before shipping ═══
+  // ═══ Auto-approve unapproved orders when CSV step confirmed (entering step 4) ═══
   const handleApprove = async () => {
     if (approveResult || approveLoading) return;
     setApproveLoading(true);
@@ -515,13 +546,15 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
     }
   };
 
-  // Auto-approve when entering DOWNLOAD step (step 4) so orders are pre-approved by Ship step
+  // Auto-approve when entering DOWNLOAD step (step 4) — triggered right after CSV confirm
   useEffect(() => { if (step === 4 && !approveResult && !approveLoading) handleApprove(); }, [step]);
 
   const handleShip = async () => {
     setShipLoading(true);
     try {
-      const r = await axios.post(`${API_URL}/rapidshyp/bulk-assign`, { orderNames: uniqueIds });
+      // Pass shipmentMap from approve step (survives Vercel serverless isolation)
+      const shipmentMap = approveResult?.shipmentMap || {};
+      const r = await axios.post(`${API_URL}/rapidshyp/bulk-assign`, { orderNames: uniqueIds, shipmentMap });
       setShipResults(r.data);
       setToast({ msg: `${r.data?.results?.filter(x=>x.success).length}/${uniqueIds.length} shipped` });
     } catch (e) { setToast({ msg: `Ship failed: ${e.response?.data?.error||e.message}`, err: true }); }
@@ -534,29 +567,6 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
 
   const renderShip = () => (
     <div className="space-y-3">
-      {/* Auto-approve status */}
-      <div className="glass-card-sm p-3">
-        {approveLoading ? (
-          <div className="flex items-center gap-2 text-[11px] text-[rgba(245,245,245,0.5)]">
-            <RefreshCw size={11} className="animate-spin text-[#e3cfd8]" /> Approving orders in RapidShyp...
-          </div>
-        ) : approveResult ? (
-          <div className="flex items-center gap-2 text-[11px]">
-            {approveResult.error ? (
-              <><AlertTriangle size={11} className="text-amber-400" /><span className="text-amber-400">Approve: {approveResult.error}</span></>
-            ) : (
-              <><CheckCircle size={11} className="text-emerald-400" />
-              <span className="text-[rgba(245,245,245,0.5)]">
-                {approveResult.approved > 0 && <span className="text-emerald-400 font-bold">{approveResult.approved} approved</span>}
-                {approveResult.approved > 0 && approveResult.alreadyApproved > 0 && ' · '}
-                {approveResult.alreadyApproved > 0 && `${approveResult.alreadyApproved} already approved`}
-                {approveResult.notFound > 0 && ` · ${approveResult.notFound} not in RS`}
-              </span></>
-            )}
-          </div>
-        ) : null}
-      </div>
-
       <div className="glass-card-sm p-4 space-y-4">
         <div className="flex justify-between items-center">
           <span className="text-xs text-[rgba(245,245,245,0.4)]">Estimated cost</span>
@@ -638,17 +648,36 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   };
   useEffect(() => { if (step === 6 && !labelResult && !labelLoading) handleLabels(); }, [step]);
 
+  // Build failure report from ship results
+  const failedOrders = useMemo(() => {
+    if (!shipResults?.results) return [];
+    return shipResults.results.filter(r => !r.success).map(r => ({
+      orderId: r.orderId,
+      reason: r.message || 'Unknown error'
+    }));
+  }, [shipResults]);
+
+  const downloadFailureReport = () => {
+    if (!failedOrders.length) return;
+    const csv = ['Order ID,Reason', ...failedOrders.map(f => `#${f.orderId},"${f.reason}"`)].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = `${getOrdinalDate()} - Failed Orders.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const renderLabels = () => {
     const labelUrl = labelResult?.label_pdf_url || labelResult?.labelUrl;
+    const successCount = shipResults?.results?.filter(r => r.success).length || 0;
     return (
     <div className="space-y-3">
       <div className="glass-card-sm p-6 text-center space-y-3">
         {labelLoading ? (
-          <div><RefreshCw size={28} className="mx-auto text-[#e3cfd8] animate-spin" /><p className="text-xs text-[rgba(245,245,245,0.4)] mt-2">generating...</p></div>
+          <div><RefreshCw size={28} className="mx-auto text-[#e3cfd8] animate-spin" /><p className="text-xs text-[rgba(245,245,245,0.4)] mt-2">generating labels for {successCount} orders...</p></div>
         ) : labelResult ? (
-          <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="space-y-2">
+          <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="space-y-3">
             <CheckCircle size={40} className="mx-auto text-emerald-400" />
-            <p className="text-sm font-bold text-white">labels ready</p>
+            <p className="text-sm font-bold text-white">Labels ready</p>
             {labelUrl && <a href={labelUrl} target="_blank" rel="noopener noreferrer" className="glass-btn-accent px-5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2"><Download size={12} /> Download PDF</a>}
             {labelResult.dropboxPath && <p className="text-[9px] text-[rgba(245,245,245,0.2)]">Dropbox: {labelResult.dropboxPath}</p>}
           </motion.div>
@@ -658,6 +687,25 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           </div>
         )}
       </div>
+      {/* Failure report */}
+      {failedOrders.length > 0 && (
+        <div className="glass-card-sm p-4 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-[#ff1493]"><AlertTriangle size={11} className="inline mr-1" />{failedOrders.length} orders failed</span>
+            <button onClick={downloadFailureReport} className="glass-btn px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1.5 text-amber-400">
+              <Download size={10} /> Failure Report
+            </button>
+          </div>
+          <div className="max-h-32 overflow-y-auto space-y-1">
+            {failedOrders.map((f, i) => (
+              <div key={i} className="flex items-center justify-between text-[10px] px-2 py-1 rounded-lg bg-[rgba(255,20,147,0.05)]">
+                <span className="font-bold text-white">#{f.orderId}</span>
+                <span className="text-[rgba(245,245,245,0.4)] truncate ml-2">{f.reason}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
     );
   };
