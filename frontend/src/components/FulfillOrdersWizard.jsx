@@ -59,14 +59,14 @@ const RiskReasonPills = React.memo(function RiskReasonPills({ reasons }) {
   );
 });
 
-const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, cancellingId, hideActions, hidePrice, showDate, showRiskDetail }) {
+const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, cancellingId, hideActions, hidePrice, showDate, showRiskDetail, onVerify, isVerified }) {
   const [open, setOpen] = useState(false);
   const phone = group.shippingDetails?.phone || '';
   const cleanPhone = phone.replace(/\D/g, '').slice(-10);
   const shopifyLink = group.items[0]?.id ? `https://${SHOPIFY_DOMAIN}/admin/orders/${group.items[0].id}` : group.orderLink || null;
   const riskColor = group.aiRiskLevel === 'High' ? '#ff1493' : group.aiRiskLevel === 'Low' ? '#34d399' : '#e3cfd8';
   return (
-    <div className="glass-card-sm overflow-hidden" style={showRiskDetail ? { borderLeft: `2px solid ${riskColor}30` } : {}}>
+    <div className="glass-card-sm overflow-hidden" style={isVerified ? { borderLeft: '2px solid #34d399' } : showRiskDetail ? { borderLeft: `2px solid ${riskColor}30` } : {}}>
       <div className="p-3 flex items-center justify-between cursor-pointer select-none" onClick={() => setOpen(!open)}>
         <div className="flex items-center gap-3 min-w-0">
           {group.items[0]?.thumbnail && <img src={group.items[0].thumbnail} alt="" className="w-9 h-9 rounded-lg object-cover border border-[rgba(255,255,255,0.06)]" />}
@@ -90,6 +90,12 @@ const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, c
               <a href={`https://wa.me/91${cleanPhone}?text=${encodeURIComponent(`Hi ${group.customerName}, this is GRLHOOD!\n\nWe'd like to confirm your order #${group.orderId} before dispatch.\n\nPlease reply YES to confirm so we can ship it out right away!\n\nThank you`)}`}
                 target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="glass-btn p-1.5 rounded-lg"><MessageSquare size={12} className="text-emerald-400" /></a>
             </>
+          )}
+          {onVerify && (
+            <button onClick={e => { e.stopPropagation(); onVerify(group.orderId); }}
+              className={`glass-btn p-1.5 rounded-lg transition-colors ${isVerified ? 'text-emerald-400 bg-[rgba(52,211,153,0.15)]' : 'text-[rgba(245,245,245,0.25)] hover:text-emerald-400 hover:bg-[rgba(52,211,153,0.08)]'}`}>
+              <CheckCircle size={12} />
+            </button>
           )}
           <button onClick={e => { e.stopPropagation(); onCancel(group.orderId, group.shopifyId); }} disabled={cancellingId === group.orderId}
             className="glass-btn p-1.5 rounded-lg text-[#ff1493] hover:bg-[rgba(255,20,147,0.1)]">
@@ -188,6 +194,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const [labelLoading, setLabelLoading] = useState(false);
   const [dlStatus, setDlStatus] = useState(null);
   const [toast, setToast] = useState(null);
+  const [verifiedIds, setVerifiedIds] = useState(new Set());
 
   useEffect(() => {
     setWorkingOrders(orders.map(o => {
@@ -195,6 +202,27 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       return { ...o, model: saved || o.model || '' };
     }));
   }, [orders]);
+
+  useEffect(() => {
+    axios.get(`${API_URL}/orders/verified`).then(r => {
+      if (r.data?.orderIds) setVerifiedIds(new Set(r.data.orderIds));
+    }).catch(() => {});
+  }, []);
+
+  const handleVerify = useCallback(async (orderId) => {
+    const wasVerified = verifiedIds.has(orderId);
+    try {
+      if (wasVerified) {
+        await axios.post(`${API_URL}/orders/unverify`, { orderId });
+        setVerifiedIds(prev => { const s = new Set(prev); s.delete(orderId); return s; });
+        setToast({ msg: `#${orderId} unverified` });
+      } else {
+        await axios.post(`${API_URL}/orders/verify`, { orderId });
+        setVerifiedIds(prev => new Set([...prev, orderId]));
+        setToast({ msg: `#${orderId} verified ✓` });
+      }
+    } catch (e) { setToast({ msg: `Verify failed: ${e.message}`, err: true }); }
+  }, [verifiedIds]);
 
   const markDone = (s) => setDone(prev => new Set([...prev, s]));
   const goNext = () => { markDone(step); setStep(s => Math.min(s + 1, STEPS.length - 1)); };
@@ -273,7 +301,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
               </div>
               <span className="text-[10px] font-bold text-amber-400 bg-[rgba(251,191,36,0.1)] px-2.5 py-0.5 rounded-full border border-amber-400/20">REPEAT</span>
             </div>
-            {custOrders.map(g => <OrderDetailCard key={g.orderId} group={g} onCancel={handleCancel} cancellingId={cancellingId} hideActions showDate hidePrice={isSupplier} />)}
+            {custOrders.map(g => <OrderDetailCard key={g.orderId} group={g} onCancel={handleCancel} cancellingId={cancellingId} showDate hidePrice={isSupplier} showRiskDetail onVerify={handleVerify} isVerified={verifiedIds.has(g.orderId)} />)}
           </div>
         ))
       )}
@@ -294,15 +322,33 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       ) : (
         <div className="space-y-2">
           {highRisk.length > 0 && (
-            <div className="glass-card-sm p-2.5 flex items-center gap-2 border-l-2 border-[#ff1493]">
-              <AlertTriangle size={14} className="text-[#ff1493]" />
-              <span className="text-xs font-bold text-[rgba(245,245,245,0.6)]">{highRisk.length} high-risk out of {codOrders.length} COD orders</span>
-            </div>
+            <>
+              <div className="glass-card-sm p-2.5 flex items-center gap-2 border-l-2 border-[#ff1493]">
+                <AlertTriangle size={14} className="text-[#ff1493]" />
+                <span className="text-xs font-bold text-[rgba(245,245,245,0.6)]">{highRisk.length} high-risk out of {codOrders.length} COD orders</span>
+              </div>
+              {highRisk.filter(g => !verifiedIds.has(g.orderId)).length > 0 && (
+                <button onClick={() => {
+                  const unverified = highRisk.filter(g => !verifiedIds.has(g.orderId));
+                  unverified.forEach((g, i) => {
+                    const ph = (g.shippingDetails?.phone || '').replace(/\D/g, '').slice(-10);
+                    if (ph) {
+                      setTimeout(() => {
+                        window.open(`https://wa.me/91${ph}?text=${encodeURIComponent(`Hi ${g.customerName}, this is GRLHOOD!\n\nWe'd like to confirm your order #${g.orderId} before dispatch.\n\nPlease reply YES to confirm so we can ship it out right away!\n\nThank you`)}`, '_blank');
+                      }, i * 1500);
+                    }
+                  });
+                  setToast({ msg: `Opening ${unverified.length} WhatsApp chats...` });
+                }} className="glass-btn-accent w-full py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2">
+                  <MessageSquare size={13} /> Confirm {highRisk.filter(g => !verifiedIds.has(g.orderId)).length} High-Risk Orders on WhatsApp
+                </button>
+              )}
+            </>
           )}
           {sortedCodOrders.map(g => (
             <div key={g.orderId} className="flex items-start gap-2">
               <div className={`text-lg font-black pt-2.5 w-12 text-center shrink-0 ${g.aiRiskLevel === 'High' ? 'text-[#ff1493]' : g.aiRiskLevel === 'Low' ? 'text-emerald-400' : 'text-[#e3cfd8]'}`}>{g.aiRiskScore || 0}%</div>
-              <div className="flex-1"><OrderDetailCard group={g} onCancel={handleCancel} cancellingId={cancellingId} hidePrice={isSupplier} showRiskDetail /></div>
+              <div className="flex-1"><OrderDetailCard group={g} onCancel={handleCancel} cancellingId={cancellingId} hidePrice={isSupplier} showRiskDetail onVerify={handleVerify} isVerified={verifiedIds.has(g.orderId)} /></div>
             </div>
           ))}
         </div>

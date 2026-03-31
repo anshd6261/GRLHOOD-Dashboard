@@ -18,6 +18,7 @@ const { generateExcel } = require('./excel');
 const { getHistory, saveBatch, updateBatch } = require('./history');
 const emailService = require('./email');
 const { getAggregatedPandL, getDailyPandL, getCashPosition } = require('./calculations');
+const verification = require('./verification');
 const { getAllAlerts } = require('./alerts');
 const { syncPayUApi } = require('./sync_payu');
 const { uploadOrderPayload } = require('./dropbox');
@@ -454,6 +455,40 @@ app.post('/api/orders/:id/cancel', async (req, res) => {
     } catch (e) {
         console.error('[API] Cancellation Error:', e);
         res.status(500).json({ success: false, error: e.message || 'Failed to cancel order' });
+    }
+});
+
+// 7.6 Order Verification (manual checkmark in wizard)
+app.post('/api/orders/verify', (req, res) => {
+    try {
+        const { orderId } = req.body;
+        if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
+        verification.markVerified(orderId);
+        console.log(`[API] Order #${orderId} marked as verified`);
+        res.json({ success: true, orderId });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/orders/unverify', (req, res) => {
+    try {
+        const { orderId } = req.body;
+        if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
+        verification.removeVerified(orderId);
+        console.log(`[API] Order #${orderId} verification removed`);
+        res.json({ success: true, orderId });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.get('/api/orders/verified', (req, res) => {
+    try {
+        const orderIds = verification.getAll();
+        res.json({ success: true, orderIds });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
