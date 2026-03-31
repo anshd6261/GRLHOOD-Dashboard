@@ -245,6 +245,7 @@ const cancelOrder = async (channelOrderId) => {
             try {
                 const cancelRes = await rsApi.post(`${PUBLIC_API_BASE}/cancel_order`, {
                     orderId: cleanId,
+                    storeName: 'DEFAULT'
                 }, { headers });
                 return { success: true, data: cancelRes.data };
             } catch (directErr) {
@@ -252,6 +253,7 @@ const cancelOrder = async (channelOrderId) => {
                 try {
                     const cancelRes = await rsApi.post(`${PUBLIC_API_BASE}/cancel_order`, {
                         orderId: `#${cleanId}`,
+                        storeName: 'DEFAULT'
                     }, { headers });
                     return { success: true, data: cancelRes.data };
                 } catch (prefixErr) {
@@ -594,13 +596,13 @@ const findOrderIdByAWB = async (awb) => {
     }
 
     // Use public shipment_details endpoint (reliable, works with API key)
+    // Docs: GET /shipment_details?shipment_id=X — but AWB may also work as shipment_id
     try {
         const headers = getPublicHeaders();
         const detailRes = await rsApi.get(`${PUBLIC_API_BASE}/shipment_details`, {
             headers,
-            params: { awb }
+            params: { shipment_id: awb }
         });
-        // Response: { success, shipment_details: { shipment_id, awb, ... } }
         const shipId = detailRes.data?.shipment_details?.shipment_id || detailRes.data?.shipment_id;
         if (shipId) {
             console.log(`[RAPIDSHYP] Found shipment ${shipId} for AWB ${awb} via shipment_details`);
