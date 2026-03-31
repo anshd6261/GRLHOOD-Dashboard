@@ -77,19 +77,24 @@ function defaultResult(fallbackReason) {
 
 async function batchViaShippingAPI(shopifyOrders) {
     const token = await getSRToken();
-    if (!token) return null; // Signal to fall back to Sense
+    if (!token) {
+        console.log('[SHIPROCKET] No token available for Shipping API.');
+        return null;
+    }
+    console.log(`[SHIPROCKET] Shipping API: token available (${token.length} chars), fetching orders...`);
 
     const results = {};
     try {
         const rtoMap = {};
         let page = 1;
-        const maxPages = process.env.VERCEL ? 3 : 10;
+        const maxPages = process.env.VERCEL ? 2 : 10;
+        const perPage = process.env.VERCEL ? 50 : 100;
 
         while (page <= maxPages) {
             const res = await axios.get(`${SR_API_BASE}/orders`, {
                 headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                params: { per_page: 100, page, sort_by: 'created_at', sort: 'desc' },
-                timeout: 8000,
+                params: { per_page: perPage, page, sort_by: 'created_at', sort: 'desc' },
+                timeout: 6000,
             });
 
             const orders = res.data?.data || [];
@@ -135,7 +140,7 @@ async function batchViaShippingAPI(shopifyOrders) {
 
         return results;
     } catch (e) {
-        console.error('[SHIPROCKET] Shipping API error:', e.message);
+        console.error('[SHIPROCKET] Shipping API error:', e.response?.status, e.response?.data?.message || e.message);
         return null; // Fall back to Sense
     }
 }
