@@ -376,7 +376,8 @@ function getCachedResults(shopifyOrders) {
         if (rtoCache.has(orderId)) {
             const cached = rtoCache.get(orderId);
             // Skip cached errors — let them be re-checked
-            if (cached.risk && cached.risk !== 'unknown') {
+            const risk = cached.risk || (cached.aiRiskLevel ? cached.aiRiskLevel.toLowerCase() : null);
+            if (risk && risk !== 'unknown') {
                 results[orderId] = cached;
             }
         }
@@ -392,10 +393,23 @@ function warmCache(cacheData) {
     loadCache();
     let added = 0;
     for (const [orderId, rto] of Object.entries(cacheData)) {
-        if (!rtoCache.has(orderId) && rto.risk && rto.risk !== 'unknown') {
-            rtoCache.set(orderId, rto);
-            added++;
-        }
+        if (rtoCache.has(orderId)) continue;
+
+        // Accept both server format (risk) and frontend format (aiRiskLevel)
+        const risk = rto.risk || (rto.aiRiskLevel ? rto.aiRiskLevel.toLowerCase() : null);
+        if (!risk || risk === 'unknown') continue;
+
+        // Normalize to server format if coming from frontend
+        const entry = rto.risk ? rto : {
+            risk: risk,
+            score: rto.aiRiskScore || 0,
+            probability: (rto.aiRiskScore || 0) / 100,
+            reasons: rto.aiRiskReasons || [],
+            reasonCodes: [],
+            riskTags: [],
+        };
+        rtoCache.set(orderId, entry);
+        added++;
     }
     if (added > 0) {
         saveCache();
@@ -411,7 +425,8 @@ function exportCache() {
     loadCache();
     const obj = {};
     for (const [k, v] of rtoCache) {
-        if (v.risk && v.risk !== 'unknown') {
+        const risk = v.risk || (v.aiRiskLevel ? v.aiRiskLevel.toLowerCase() : null);
+        if (risk && risk !== 'unknown') {
             obj[k] = v;
         }
     }

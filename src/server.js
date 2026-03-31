@@ -235,7 +235,13 @@ app.post('/api/rto-cache/warm', (req, res) => {
         if (!cache || typeof cache !== 'object') {
             return res.json({ success: true, added: 0, total: 0 });
         }
-        const result = shiprocketSense.warmCache(cache);
+        // Normalize keys: frontend sends "3419", server uses "#3419"
+        const normalized = {};
+        for (const [k, v] of Object.entries(cache)) {
+            normalized[k.startsWith('#') ? k : `#${k}`] = v;
+            normalized[k] = v; // Keep original key too for getCachedResults lookup
+        }
+        const result = shiprocketSense.warmCache(normalized);
         res.json({ success: true, ...result });
     } catch (e) {
         console.warn('[API] Cache warm failed:', e.message);
