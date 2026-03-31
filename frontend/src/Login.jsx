@@ -45,12 +45,12 @@ const Login = () => {
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, ease: "easeOut" }}
-        className="relative z-10 w-full max-w-md p-8 sm:p-12 rounded-[32px] border border-white/[0.08] shadow-2xl flex flex-col items-center"
+        className="relative z-10 w-full max-w-md p-8 sm:p-12 rounded-[32px] flex flex-col items-center"
         style={{
-          background: 'linear-gradient(160deg, rgba(30,30,40,0.5) 0%, rgba(18,18,24,0.45) 100%)',
-          backdropFilter: 'blur(40px) saturate(1.4)',
-          WebkitBackdropFilter: 'blur(40px) saturate(1.4)',
-          boxShadow: '0 25px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)',
+          background: 'rgba(255,255,255,0.04)',
+          backdropFilter: 'blur(60px) saturate(1)',
+          WebkitBackdropFilter: 'blur(60px) saturate(1)',
+          boxShadow: '0 30px 80px rgba(0,0,0,0.4), inset 0 0.5px 0 rgba(255,255,255,0.06)',
         }}
       >
         <div className="w-full flex justify-center mb-12">
