@@ -495,26 +495,25 @@ app.post('/api/rapidshyp/label', async (req, res) => {
             }
         }
 
-        // Priority 4: Use get_orders_info public API (no JWT needed, works for any order)
+        // Priority 4: Use track_order public API (no JWT needed, works for any order)
         if (resolvedIds.length === 0 && shopifyOrderId) {
-            console.log(`[API] Trying get_orders_info for Shopify #${shopifyOrderId}...`);
+            console.log(`[API] Trying track_order for Shopify #${shopifyOrderId}...`);
             try {
                 const infoResult = await rapidshyp.getOrderInfo(shopifyOrderId);
                 if (infoResult.success && infoResult.data) {
-                    const shipLines = infoResult.data.shipment_lines || infoResult.data.shipments || [];
+                    const shipLines = infoResult.data.shipment_lines || [];
                     for (const s of shipLines) {
                         if (s.shipment_id) resolvedIds.push(s.shipment_id);
                     }
-                    // Also check top-level fields
                     if (resolvedIds.length === 0 && infoResult.data.shipment_id) {
                         resolvedIds.push(infoResult.data.shipment_id);
                     }
                     if (resolvedIds.length > 0) {
-                        console.log(`[API] Found shipment IDs via get_orders_info:`, resolvedIds);
+                        console.log(`[API] Found shipment IDs via track_order:`, resolvedIds);
                     }
                 }
             } catch (infoErr) {
-                console.warn(`[API] get_orders_info failed:`, infoErr.message);
+                console.warn(`[API] track_order lookup failed:`, infoErr.message);
             }
         }
 

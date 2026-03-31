@@ -284,30 +284,43 @@ const cancelOrder = async (channelOrderId) => {
 };
 
 /**
- * Get order info by channel order ID (public API).
- * Per docs: GET /get_orders_info?order_id=X&channel_order_id=Y
+ * Get order info by Shopify order number (public API).
+ * Uses track_order with orderId param — works for any order (fulfilled or unfulfilled).
+ * Returns shipment_details with shipment_id and awb.
  */
 const getOrderInfo = async (channelOrderId) => {
     try {
         const headers = getPublicHeaders();
         const cleanId = channelOrderId.toString().replace('#', '');
-        // Try with channel_order_id (Shopify order number)
-        // Docs: GET /get_orders_info?order_id=X&channel_order_id=Y
-        // Try #-prefixed first (RS stores seller_order_id as #3434)
-        let response;
-        try {
-            response = await rsApi.get(`${PUBLIC_API_BASE}/get_orders_info`, {
-                headers,
-                params: { channel_order_id: `#${cleanId}` }
-            });
-        } catch {
-            response = await rsApi.get(`${PUBLIC_API_BASE}/get_orders_info`, {
-                headers,
-                params: { channel_order_id: cleanId }
-            });
+        const response = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, {
+            orderId: `#${cleanId}`
+        }, { headers });
+
+        const record = response.data?.records?.[0];
+        if (!record) {
+            console.warn(`[RAPIDSHYP] No tracking data for order #${cleanId}`);
+            return { success: false, data: null };
         }
-        console.log(`[RAPIDSHYP] Order Info for #${cleanId}:`, JSON.stringify(response.data).slice(0, 500));
-        return { success: true, data: response.data };
+
+        // Extract shipment_id and awb from shipment_details
+        const shipmentDetails = record.shipment_details || [];
+        const shipmentLines = shipmentDetails.map(s => ({
+            shipment_id: s.shipment_id,
+            awb: s.awb,
+            courier_name: s.courier_name,
+            shipment_status: s.shipment_status
+        }));
+
+        console.log(`[RAPIDSHYP] Order #${cleanId}: ${shipmentLines.length} shipment(s), IDs: ${shipmentLines.map(s => s.shipment_id).join(', ')}`);
+        return {
+            success: true,
+            data: {
+                ...record,
+                shipment_lines: shipmentLines,
+                shipment_id: shipmentDetails[0]?.shipment_id,
+                awb: shipmentDetails[0]?.awb
+            }
+        };
     } catch (e) {
         console.error(`[RAPIDSHYP] Get Order Info Error:`, e.response?.status, e.response?.data || e.message);
         return { success: false, data: null };
@@ -340,25 +353,12 @@ const generateLabel = async (shipmentIds) => {
         const payload = { shipmentId: shipmentIds };
         console.log(`[RAPIDSHYP] Generating label for shipments:`, shipmentIds);
 
-        // Docs say GET with JSON body. Use axios request() to send GET with body.
-        let response;
-        try {
-            response = await rsApi.request({
-                method: 'GET',
-                url: `${PUBLIC_API_BASE}/generate_label`,
-                headers,
-                data: payload,
-            });
-        } catch (getErr) {
-            // Some proxies strip GET body — fallback to POST
-            console.warn(`[RAPIDSHYP] GET with body failed (${getErr.response?.status || getErr.message}), trying POST...`);
-            response = await rsApi.post(`${PUBLIC_API_BASE}/generate_label`, payload, { headers });
-        }
+        // POST works reliably (GET-with-body gets 400 from proxies/CDNs)
+        const response = await rsApi.post(`${PUBLIC_API_BASE}/generate_label`, payload, { headers });
 
         console.log(`[RAPIDSHYP] Label API Response:`, JSON.stringify(response.data));
-        // Docs response: { status: true, labelData: [{ shipmentId, labelURL, labelRemarks }] }
         const data = response.data || {};
-        const labelUrl = (data.labelData?.[0]?.labelURL) || data.label_url || data.labelUrl || '';
+        const labelUrl = data.label_url || data.labelUrl || (data.labelData?.[0]?.labelURL) || '';
         return { success: true, data: { ...data, label_url: labelUrl, labelUrl, label_pdf_url: labelUrl } };
     } catch (e) {
         const errMsg = e.response?.data?.remarks || e.response?.data?.message || e.response?.data || e.message;
@@ -573,21 +573,10 @@ const bulkGenerateLabels = async (shipmentIds) => {
         const payload = { shipmentId: shipmentIds };
         console.log(`[RAPIDSHYP] Generating labels for ${shipmentIds.length} shipments...`);
 
-        let response;
-        try {
-            response = await rsApi.request({
-                method: 'GET',
-                url: `${PUBLIC_API_BASE}/generate_label`,
-                headers,
-                data: payload,
-            });
-        } catch (getErr) {
-            console.warn(`[RAPIDSHYP] GET with body failed, trying POST...`);
-            response = await rsApi.post(`${PUBLIC_API_BASE}/generate_label`, payload, { headers });
-        }
+        const response = await rsApi.post(`${PUBLIC_API_BASE}/generate_label`, payload, { headers });
 
         const data = response.data || {};
-        const labelUrl = (data.labelData?.[0]?.labelURL) || data.label_url || data.labelUrl || '';
+        const labelUrl = data.label_url || data.labelUrl || (data.labelData?.[0]?.labelURL) || '';
 
         console.log(`[RAPIDSHYP] Labels generated. URL: ${labelUrl || 'check individual labels'}`);
         return { success: true, labelUrl, labels: data.labelData || [], data: { ...data, label_url: labelUrl, label_pdf_url: labelUrl } };
