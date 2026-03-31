@@ -291,13 +291,25 @@ const getOrderInfo = async (channelOrderId) => {
     try {
         const headers = getPublicHeaders();
         const cleanId = channelOrderId.toString().replace('#', '');
-        const response = await rsApi.get(`${PUBLIC_API_BASE}/get_orders_info`, {
-            headers,
-            params: { channel_order_id: cleanId, order_id: cleanId }
-        });
+        // Try with channel_order_id (Shopify order number)
+        // Docs: GET /get_orders_info?order_id=X&channel_order_id=Y
+        // Try #-prefixed first (RS stores seller_order_id as #3434)
+        let response;
+        try {
+            response = await rsApi.get(`${PUBLIC_API_BASE}/get_orders_info`, {
+                headers,
+                params: { channel_order_id: `#${cleanId}` }
+            });
+        } catch {
+            response = await rsApi.get(`${PUBLIC_API_BASE}/get_orders_info`, {
+                headers,
+                params: { channel_order_id: cleanId }
+            });
+        }
+        console.log(`[RAPIDSHYP] Order Info for #${cleanId}:`, JSON.stringify(response.data).slice(0, 500));
         return { success: true, data: response.data };
     } catch (e) {
-        console.error(`[RAPIDSHYP] Get Order Info Error:`, e.response?.data || e.message);
+        console.error(`[RAPIDSHYP] Get Order Info Error:`, e.response?.status, e.response?.data || e.message);
         return { success: false, data: null };
     }
 };
