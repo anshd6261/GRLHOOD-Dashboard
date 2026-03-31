@@ -658,33 +658,48 @@ app.post('/api/rapidshyp/bulk-assign', async (req, res) => {
     }
 });
 
-// Debug: inspect raw RapidShyp record for an order (temporary)
+// Debug: inspect raw RapidShyp record + test session API approve/assign (temporary)
 app.get('/api/rapidshyp/debug-order/:id', async (req, res) => {
     try {
         const orderMap = await rapidshyp.fetchAllOrders();
         const cleanId = req.params.id.replace('#', '');
         const match = orderMap.get(cleanId);
 
-        // Also try track_order to get shipment_id
-        let trackResult = null;
-        try {
-            trackResult = await rapidshyp.getOrderInfo(cleanId);
-        } catch (e) { trackResult = { error: e.message }; }
+        // Try session API approve with MongoDB ObjectId
+        let sessionApproveResult = null;
+        if (match && match.order_id) {
+            const sessionHeaders = rapidshyp.getSessionHeaders();
+            if (sessionHeaders) {
+                try {
+                    const approveRes = await require('axios').post(
+                        'https://api.rapidshyp.com/session/orders/approve_order',
+                        { order_ids: [match.order_id] },
+                        { headers: sessionHeaders, timeout: 10000 }
+                    );
+                    sessionApproveResult = approveRes.data;
+                } catch (e) {
+                    sessionApproveResult = {
+                        error: e.response?.data || e.message,
+                        status: e.response?.status,
+                        url: 'POST /session/orders/approve_order'
+                    };
+                }
+            } else {
+                sessionApproveResult = { error: 'No JWT configured' };
+            }
+        }
 
-        if (!match) return res.json({ found: false, mapSize: orderMap.size, triedKey: cleanId, trackResult });
+        if (!match) return res.json({ found: false, mapSize: orderMap.size, triedKey: cleanId });
         res.json({
             found: true,
             mapSize: orderMap.size,
-            fields: Object.keys(match),
             order_id: match.order_id,
-            shipment_id: match.shipment_id,
             seller_order_id: match.seller_order_id,
             order_status: match.order_status,
             awb_number: match.awb_number,
             store_name: match.store_name,
-            id: match.id,
             contact_name: match.contact_name,
-            trackResult,
+            sessionApproveResult,
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
