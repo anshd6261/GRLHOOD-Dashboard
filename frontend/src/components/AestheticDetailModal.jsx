@@ -91,7 +91,7 @@ export default function AestheticDetailModal({ order, onClose, isSupplier }) {
   const cleanPhone = phone.replace(/[^0-9]/g, '');
 
   const handleDownloadLabel = async () => {
-    if (!order.rsOrderId && !order.awb) return;
+    if (!order.rsOrderId && !order.awb && !order.orderId) return;
     setLabelLoading(true);
     setLabelError(null);
     try {
@@ -102,7 +102,7 @@ export default function AestheticDetailModal({ order, onClose, isSupplier }) {
         shopifyOrderId: order.orderId,
       };
       const res = await axios.post(`${API_URL}/rapidshyp/label`, payload);
-      const url = res.data?.label_url || res.data?.labelUrl || res.data?.pdf_url;
+      const url = res.data?.label_pdf_url || res.data?.label_url || res.data?.labelUrl || res.data?.pdf_url;
       if (url) {
         window.open(url, '_blank');
       } else {
@@ -345,7 +345,7 @@ export default function AestheticDetailModal({ order, onClose, isSupplier }) {
                 </div>
                 <div className="flex flex-col">
                   <span className="text-[10px] uppercase text-[rgba(245,245,245,0.3)] font-bold mb-1">Label</span>
-                  {(order.rsOrderId || order.awb) ? (
+                  {(order.rsOrderId || order.awb || order.orderId) ? (
                     <button
                       onClick={handleDownloadLabel}
                       disabled={labelLoading}

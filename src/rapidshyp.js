@@ -548,6 +548,7 @@ const findOrderIdByAWB = async (awb) => {
 module.exports = {
     getPublicHeaders,
     getSessionHeaders,
+    fetchAllOrders,
     fetchOrdersWithRTO,
     cancelOrder,
     trackOrder,

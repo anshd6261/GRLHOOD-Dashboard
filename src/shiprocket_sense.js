@@ -138,11 +138,11 @@ async function predictSingleOrder(order, authHeader) {
     const payload = {
         customer: {
             mobile_no: phone,
-            email: order.email || order.customer?.email || '',
+            email: order.email || order.customer?.email || `${phone || 'customer'}@noemail.local`,
             address,
-            pincode: shipping.zip || '',
-            city: shipping.city || '',
-            state: shipping.province || '',
+            pincode: shipping.zip || 'NA',
+            city: shipping.city || 'NA',
+            state: shipping.province || shipping.state || 'NA',
         },
         products,
         order_total: orderTotal,
@@ -248,11 +248,14 @@ async function batchPredictRisk(shopifyOrders) {
     for (const order of shopifyOrders) {
         const orderId = order.name || order.id;
 
-        // 1. Check cache
+        // 1. Check cache — only use successful predictions, re-check errors
         if (rtoCache.has(orderId)) {
-            results[orderId] = rtoCache.get(orderId);
-            cachedCount++;
-            continue;
+            const cached = rtoCache.get(orderId);
+            if (cached.risk && cached.risk !== 'unknown') {
+                results[orderId] = cached;
+                cachedCount++;
+                continue;
+            }
         }
 
         // 2. Skip fulfilled/delivered orders — only unfulfilled need RTO check
@@ -309,7 +312,10 @@ async function batchPredictRisk(shopifyOrders) {
 
             const result = await predictSingleOrder(order, authHeader);
             results[orderId] = result;
-            rtoCache.set(orderId, result);
+            // Only cache successful predictions — don't persist errors
+            if (result.risk && result.risk !== 'unknown') {
+                rtoCache.set(orderId, result);
+            }
         });
 
         try {

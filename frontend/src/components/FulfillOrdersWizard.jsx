@@ -504,17 +504,40 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       const successResults = shipResults?.results?.filter(r => r.success) || [];
       const shipmentIds = successResults.map(r => r.shipmentId).filter(Boolean);
       const awbs = successResults.map(r => r.awb).filter(Boolean);
+
+      // Fallback: if no AWBs/shipmentIds from ship step, use order IDs from the CSV
+      // The server will resolve Shopify order IDs → RapidShyp shipment IDs via AWB lookup
+      if (!shipmentIds.length && !awbs.length && uniqueIds.length > 0) {
+        // Use the existing working orders to find any AWBs assigned earlier
+        const orderAwbs = workingOrders.map(o => o.awb).filter(Boolean);
+        if (orderAwbs.length > 0) {
+          awbs.push(...orderAwbs);
+        } else {
+          // Last resort: send order IDs to server, it will search RapidShyp by Shopify order ID
+          const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-by-orders`, { orderIds: uniqueIds });
+          setLabelResult(r.data);
+          const url = r.data?.label_pdf_url || r.data?.labelUrl;
+          if (url) window.open(url, '_blank');
+          setToast({ msg: 'Labels generated' });
+          setLabelLoading(false);
+          return;
+        }
+      }
+
       if (!shipmentIds.length && !awbs.length) { setToast({ msg: 'No shipped orders for labels', err: true }); setLabelLoading(false); return; }
       const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-dropbox`, { orderIds: shipmentIds, awbs, orders: workingOrders });
       setLabelResult(r.data);
-      if (r.data?.labelUrl) window.open(r.data.labelUrl, '_blank');
+      const url = r.data?.label_pdf_url || r.data?.labelUrl;
+      if (url) window.open(url, '_blank');
       setToast({ msg: 'Labels generated' });
     } catch (e) { setToast({ msg: `Labels failed: ${e.response?.data?.error||e.message}`, err: true }); }
     finally { setLabelLoading(false); }
   };
-  useEffect(() => { if (step === 6 && !labelResult && !labelLoading && shipResults) handleLabels(); }, [step]);
+  useEffect(() => { if (step === 6 && !labelResult && !labelLoading) handleLabels(); }, [step]);
 
-  const renderLabels = () => (
+  const renderLabels = () => {
+    const labelUrl = labelResult?.label_pdf_url || labelResult?.labelUrl;
+    return (
     <div className="space-y-3">
       <div className="glass-card-sm p-6 text-center space-y-3">
         {labelLoading ? (
@@ -523,17 +546,18 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="space-y-2">
             <CheckCircle size={40} className="mx-auto text-emerald-400" />
             <p className="text-sm font-bold text-white">labels ready</p>
-            {labelResult.labelUrl && <a href={labelResult.labelUrl} target="_blank" rel="noopener noreferrer" className="glass-btn-accent px-5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2"><Download size={12} /> Download PDF</a>}
+            {labelUrl && <a href={labelUrl} target="_blank" rel="noopener noreferrer" className="glass-btn-accent px-5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2"><Download size={12} /> Download PDF</a>}
             {labelResult.dropboxPath && <p className="text-[9px] text-[rgba(245,245,245,0.2)]">Dropbox: {labelResult.dropboxPath}</p>}
           </motion.div>
         ) : (
-          <div><AlertTriangle size={28} className="mx-auto text-amber-400" /><p className="text-xs text-[rgba(245,245,245,0.4)] mt-2">{shipResults ? 'click to generate' : 'ship orders first'}</p>
-            <button onClick={handleLabels} disabled={!shipResults} className="glass-btn-accent px-5 py-2 rounded-xl text-xs font-bold mt-2 disabled:opacity-30"><FileText size={12} /> Generate Labels</button>
+          <div><AlertTriangle size={28} className="mx-auto text-amber-400" /><p className="text-xs text-[rgba(245,245,245,0.4)] mt-2">click to generate labels</p>
+            <button onClick={handleLabels} className="glass-btn-accent px-5 py-2 rounded-xl text-xs font-bold mt-2"><FileText size={12} /> Generate Labels</button>
           </div>
         )}
       </div>
     </div>
-  );
+    );
+  };
 
   // ═══ STEP 7: Done ═══
   const renderDone = () => (
