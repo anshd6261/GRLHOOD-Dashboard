@@ -22,7 +22,7 @@ const path = require('path');
 const SENSE_URL = 'https://sense.shiprocket.in/v3/rto/predict';
 const API_KEY = (process.env.SHIPROCKET_SENSE_API_KEY || '').trim();
 const API_SECRET = (process.env.SHIPROCKET_SENSE_API_SECRET || '').trim();
-const CONCURRENCY = 3;
+const CONCURRENCY = 2;
 const ON_VERCEL = !!process.env.VERCEL;
 const GLOBAL_TIMEOUT_MS = ON_VERCEL ? 6000 : 30000;
 const PER_REQUEST_TIMEOUT = 8000;
@@ -234,7 +234,18 @@ async function batchPredictRisk(shopifyOrders) {
             continue;
         }
 
-        // 2. Skip prepaid orders
+        // 2. Skip fulfilled/delivered orders — only unfulfilled need RTO check
+        const fulfillmentStatus = (order.displayFulfillmentStatus || '').toUpperCase();
+        if (fulfillmentStatus === 'FULFILLED' || fulfillmentStatus === 'DELIVERED' || fulfillmentStatus === 'SHIPPED') {
+            const result = defaultResult('Already fulfilled — RTO check skipped');
+            result.risk = 'low';
+            result.probability = 0.05;
+            results[orderId] = result;
+            rtoCache.set(orderId, result);
+            continue;
+        }
+
+        // 3. Skip prepaid orders — COD only
         const payment = detectPayment(order);
         if (payment === 'Prepaid') {
             const result = defaultResult('Prepaid order — RTO check skipped');
@@ -246,7 +257,7 @@ async function batchPredictRisk(shopifyOrders) {
             continue;
         }
 
-        // 3. Skip customers with a delivered order in current batch
+        // 4. Skip customers with a delivered order in current batch
         const phone = normalizePhone(order);
         if (phone && deliveredCustomers.has(phone)) {
             const result = defaultResult('Repeat customer with delivered order — RTO check skipped');
@@ -258,7 +269,7 @@ async function batchPredictRisk(shopifyOrders) {
             continue;
         }
 
-        // 4. Queue for Sense API call
+        // 5. Queue for Sense API call
         pendingOrders.push({ order, orderId });
     }
 

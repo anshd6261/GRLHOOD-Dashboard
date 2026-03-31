@@ -3,6 +3,14 @@
  * Higher risk = higher percentage. Sense's model_probability is confidence in its prediction,
  * so for "low" risk orders we invert it (high confidence in low risk → low RTO %).
  */
+const mapRiskLevel = (risk) => {
+    const r = (risk || '').toLowerCase();
+    if (r === 'high' || r === 'very high') return 'High';
+    if (r === 'low') return 'Low';
+    if (r === 'medium') return 'Medium';
+    return 'Unknown'; // timeouts, errors, unchecked
+};
+
 const calculateRtoPercentage = (senseResult) => {
     const prob = senseResult.probability || 0;
     const risk = (senseResult.risk || '').toLowerCase();
@@ -270,7 +278,7 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
                     // Shiprocket Sense RTO Risk Data
                     // model_probability is confidence in the prediction — invert for low risk so higher % = higher risk
                     aiRiskScore: senseResult ? calculateRtoPercentage(senseResult) : 0,
-                    aiRiskLevel: senseResult ? (senseResult.risk === 'high' || senseResult.risk === 'very high' ? 'High' : senseResult.risk === 'low' ? 'Low' : 'Medium') : 'Unknown',
+                    aiRiskLevel: senseResult ? mapRiskLevel(senseResult.risk) : 'Unknown',
                     aiRiskReasons: senseResult ? [
                         ...senseResult.reasons,
                         ...(senseResult.riskTags || []).map(t => t.reason),
