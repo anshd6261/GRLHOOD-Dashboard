@@ -64,7 +64,7 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
         if (!awb && order.fulfillments?.length > 0) {
             const f = order.fulfillments[0];
             if (f.trackingInfo?.length > 0) {
-                awb = f.trackingInfo[0].url || f.trackingInfo[0].number || "";
+                awb = f.trackingInfo[0].number || "";
             }
         }
 
