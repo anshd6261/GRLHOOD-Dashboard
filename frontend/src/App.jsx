@@ -306,10 +306,12 @@ function App() {
       if (endDate instanceof Date && !isNaN(endDate)) {
         const e = new Date(endDate); e.setHours(23, 59, 59, 999); endStr = e.toISOString();
       }
-      // Step 0: Warm server RTO cache from localStorage BEFORE fetching orders
-      // This ensures getCachedResults() on the server finds all 195+ cached entries
+      // Step 0: Load localStorage RTO cache
       let rtoLocalCache = {};
       try { rtoLocalCache = JSON.parse(localStorage.getItem('rto_cache') || '{}'); } catch {}
+      console.log(`[RTO] localStorage cache: ${Object.keys(rtoLocalCache).length} entries`, Object.keys(rtoLocalCache).slice(0, 5));
+
+      // Warm server cache (best-effort, Vercel serverless may not share instance with GET)
       if (Object.keys(rtoLocalCache).length > 0) {
         await axios.post(`${API_URL}/rto-cache/warm`, { cache: rtoLocalCache }).catch(() => {});
       }
@@ -327,12 +329,20 @@ function App() {
       const orders = res.data?.orders || [];
 
       // Step 2: Apply cached RTO data to orders that the server returned as Unknown
+      const unknownCount = orders.filter(o => o.aiRiskLevel === 'Unknown').length;
+      const sampleOrderIds = orders.slice(0, 3).map(o => o.orderId);
+      const sampleCacheKeys = Object.keys(rtoLocalCache).slice(0, 3);
+      console.log(`[RTO] Server returned ${orders.length} orders, ${unknownCount} Unknown`);
+      console.log(`[RTO] Sample order IDs: ${JSON.stringify(sampleOrderIds)}, Sample cache keys: ${JSON.stringify(sampleCacheKeys)}`);
       let ordersWithCache = orders.map(o => {
-        if (o.aiRiskLevel === 'Unknown' && rtoLocalCache[o.orderId] && rtoLocalCache[o.orderId].aiRiskLevel !== 'Unknown') {
-          return { ...o, ...rtoLocalCache[o.orderId] };
+        const cached = rtoLocalCache[o.orderId];
+        if (o.aiRiskLevel === 'Unknown' && cached && cached.aiRiskLevel !== 'Unknown') {
+          return { ...o, ...cached };
         }
         return o;
       });
+      const enrichedCount = ordersWithCache.filter(o => o.aiRiskLevel !== 'Unknown').length;
+      console.log(`[RTO] After localStorage enrichment: ${enrichedCount}/${ordersWithCache.length} have risk data`);
 
       // Step 3: Find truly unchecked orders (not in server cache AND not in localStorage)
       const uncheckedOrders = ordersWithCache.filter(o =>
