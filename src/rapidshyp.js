@@ -371,19 +371,63 @@ const generateLabel = async (shipmentIds) => {
 };
 
 /**
+ * Pre-resolve shipment_ids for ALL orders via parallel track_order calls.
+ * Session API doesn't return shipment_id, so we must call track_order per order.
+ * Uses concurrency control to avoid rate limiting.
+ */
+const resolveAllShipmentIds = async (shopifyOrderIds) => {
+    const headers = getPublicHeaders();
+    const orderMap = await fetchAllOrders();
+    const toResolve = [];
+
+    for (const id of shopifyOrderIds) {
+        const cleanId = id.toString().replace('#', '');
+        if (_shipmentIdCache.has(cleanId)) continue; // already cached from approve
+        const match = orderMap.get(cleanId);
+        if (!match?.market_place_order_id) continue;
+        toResolve.push({ cleanId, mpId: match.market_place_order_id });
+    }
+
+    console.log(`[RAPIDSHYP] Resolving shipment IDs: ${toResolve.length} to look up, ${_shipmentIdCache.size} already cached`);
+
+    const CONCURRENCY = 10;
+    let resolved = 0;
+    for (let i = 0; i < toResolve.length; i += CONCURRENCY) {
+        const batch = toResolve.slice(i, i + CONCURRENCY);
+        const promises = batch.map(async ({ cleanId, mpId }) => {
+            try {
+                const res = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, {
+                    orderId: mpId
+                }, { headers, timeout: 10000 });
+                const shipments = res.data?.records?.[0]?.shipment_details || [];
+                if (shipments.length > 0) {
+                    _shipmentIdCache.set(cleanId, shipments[0].shipment_id);
+                    resolved++;
+                }
+            } catch (e) {
+                // Silent — will surface as "no shipment_id" in assign step
+            }
+        });
+        await Promise.all(promises);
+    }
+
+    console.log(`[RAPIDSHYP] Resolved ${resolved} new shipment IDs. Total cached: ${_shipmentIdCache.size}`);
+    return { resolved, totalCached: _shipmentIdCache.size, total: shopifyOrderIds.length };
+};
+
+/**
  * Bulk assign AWB to multiple orders.
- * Uses session API for lookup (if JWT available), then public API for AWB assignment.
+ * Pre-resolves ALL shipment_ids in parallel first (handles auto-approved orders),
+ * then assigns AWB sequentially.
  */
 const bulkAssignAWB = async (orderNames) => {
+    // Pre-resolve ALL shipment_ids in parallel (covers auto-approved orders too)
+    const resolveResult = await resolveAllShipmentIds(orderNames);
+    console.log(`[RAPIDSHYP] Pre-resolved: ${resolveResult.totalCached}/${resolveResult.total} shipment IDs ready`);
+
     const headers = getPublicHeaders();
-    const results = [];
-
-    // Invalidate cache to get fresh data (approval may have just happened)
-    _orderMapCache = null;
-    _orderMapTimestamp = 0;
-
     const orderMap = await fetchAllOrders();
-    console.log(`[RAPIDSHYP] Using order map with ${orderMap.size} entries for ${orderNames.length} orders. Shipment cache: ${_shipmentIdCache.size}`);
+    const results = [];
 
     for (const name of orderNames) {
         const cleanId = name.toString().replace('#', '');
@@ -400,24 +444,8 @@ const bulkAssignAWB = async (orderNames) => {
                 continue;
             }
 
-            // Resolve shipment_id: cache first, then match fields, then track_order fallback
-            let shipmentId = _shipmentIdCache.get(cleanId) || match?.shipment_id || null;
-
-            if (!shipmentId && match?.market_place_order_id) {
-                // Try track_order with marketplace ID to get shipment_id
-                try {
-                    const trackRes = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, {
-                        orderId: match.market_place_order_id
-                    }, { headers, timeout: 10000 });
-                    const shipments = trackRes.data?.records?.[0]?.shipment_details || [];
-                    if (shipments.length > 0) {
-                        shipmentId = shipments[0].shipment_id;
-                        _shipmentIdCache.set(cleanId, shipmentId);
-                    }
-                } catch (trackErr) {
-                    console.warn(`[RAPIDSHYP] Track failed for ${cleanId}: ${trackErr.response?.status || trackErr.message}`);
-                }
-            }
+            // Use pre-resolved shipment_id from cache
+            const shipmentId = _shipmentIdCache.get(cleanId) || match?.shipment_id || null;
 
             if (!shipmentId) {
                 results.push({ orderId: cleanId, success: false, message: 'No shipment_id — order may need approval first' });
@@ -679,6 +707,7 @@ module.exports = {
     getOrderInfo,
     generateLabel,
     bulkAssignAWB,
+    resolveAllShipmentIds,
     getWalletBalance,
     bulkGenerateLabels,
     findOrderIdByAWB,
