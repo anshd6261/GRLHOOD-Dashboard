@@ -665,41 +665,67 @@ app.get('/api/rapidshyp/debug-order/:id', async (req, res) => {
         const cleanId = req.params.id.replace('#', '');
         const match = orderMap.get(cleanId);
 
-        // Try session API approve with MongoDB ObjectId
-        let sessionApproveResult = null;
-        if (match && match.order_id) {
-            const sessionHeaders = rapidshyp.getSessionHeaders();
-            if (sessionHeaders) {
-                try {
-                    const approveRes = await require('axios').post(
-                        'https://api.rapidshyp.com/session/orders/approve_order',
-                        { order_ids: [match.order_id] },
-                        { headers: sessionHeaders, timeout: 10000 }
-                    );
-                    sessionApproveResult = approveRes.data;
-                } catch (e) {
-                    sessionApproveResult = {
-                        error: e.response?.data || e.message,
-                        status: e.response?.status,
-                        url: 'POST /session/orders/approve_order'
-                    };
-                }
-            } else {
-                sessionApproveResult = { error: 'No JWT configured' };
+        if (!match) return res.json({ found: false, mapSize: orderMap.size, triedKey: cleanId });
+
+        // Dump ALL raw fields so we can find the correct IDs
+        const allFields = {};
+        for (const [k, v] of Object.entries(match)) {
+            allFields[k] = typeof v === 'object' ? JSON.stringify(v) : v;
+        }
+
+        // Try multiple approve approaches
+        const tests = {};
+        const ax = require('axios');
+        const publicHeaders = rapidshyp.getPublicHeaders();
+        const sessionHeaders = rapidshyp.getSessionHeaders();
+
+        // Test 1: Public API approve with MongoDB ObjectId
+        try {
+            const r = await ax.post('https://api.rapidshyp.com/rapidshyp/apis/v1/approve_orders', {
+                order_id: [match.order_id], store_name: match.store_name || 'DEFAULT'
+            }, { headers: publicHeaders, timeout: 10000 });
+            tests.publicApprove_mongoId = r.data;
+        } catch (e) {
+            tests.publicApprove_mongoId = { error: e.response?.data || e.message, status: e.response?.status };
+        }
+
+        // Test 2: Public API approve with seller_order_id (#3925)
+        try {
+            const r = await ax.post('https://api.rapidshyp.com/rapidshyp/apis/v1/approve_orders', {
+                order_id: [match.seller_order_id], store_name: match.store_name || 'DEFAULT'
+            }, { headers: publicHeaders, timeout: 10000 });
+            tests.publicApprove_sellerOrderId = r.data;
+        } catch (e) {
+            tests.publicApprove_sellerOrderId = { error: e.response?.data || e.message, status: e.response?.status };
+        }
+
+        // Test 3: Public API approve with clean Shopify ID (3925)
+        try {
+            const r = await ax.post('https://api.rapidshyp.com/rapidshyp/apis/v1/approve_orders', {
+                order_id: [cleanId], store_name: match.store_name || 'DEFAULT'
+            }, { headers: publicHeaders, timeout: 10000 });
+            tests.publicApprove_cleanId = r.data;
+        } catch (e) {
+            tests.publicApprove_cleanId = { error: e.response?.data || e.message, status: e.response?.status };
+        }
+
+        // Test 4: Session API approve with MongoDB ObjectId
+        if (sessionHeaders) {
+            try {
+                const r = await ax.post('https://api.rapidshyp.com/session/orders/approve_order', {
+                    order_ids: [match.order_id]
+                }, { headers: sessionHeaders, timeout: 10000 });
+                tests.sessionApprove_mongoId = r.data;
+            } catch (e) {
+                tests.sessionApprove_mongoId = { error: e.response?.data || e.message, status: e.response?.status };
             }
         }
 
-        if (!match) return res.json({ found: false, mapSize: orderMap.size, triedKey: cleanId });
         res.json({
             found: true,
             mapSize: orderMap.size,
-            order_id: match.order_id,
-            seller_order_id: match.seller_order_id,
-            order_status: match.order_status,
-            awb_number: match.awb_number,
-            store_name: match.store_name,
-            contact_name: match.contact_name,
-            sessionApproveResult,
+            allFields,
+            tests,
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
