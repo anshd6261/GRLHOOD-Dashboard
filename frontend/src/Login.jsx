@@ -3,6 +3,8 @@ import { motion } from 'framer-motion';
 import { LogIn, Lock, User, AlertCircle } from 'lucide-react';
 import axios from 'axios';
 import { useAuth } from './AuthContext';
+import DottedBackground from './components/DottedBackground';
+import GlowBlobs from './components/GlowBlobs';
 
 const Login = () => {
   const [username, setUsername] = useState('');
@@ -17,7 +19,6 @@ const Login = () => {
     setLoading(true);
 
     try {
-      // Connect to the new /api/login endpoint
       const res = await axios.post('/api/login', { username, password });
       if (res.data.success) {
         login({
@@ -34,31 +35,28 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center relative overflow-hidden bg-[#0A0A0A] font-sans">
-      
-      {/* Background Orbs to match the V2/V3 theme */}
-      <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-white/5 rounded-full blur-[100px] pointer-events-none" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[500px] h-[500px] bg-[#e3cfd8]/5 rounded-full blur-[100px] pointer-events-none" />
-      
-      {/* Optional Dotted Grid Overlay */}
-      <div 
-        className="absolute inset-0 pointer-events-none opacity-20"
-        style={{
-          backgroundImage: 'radial-gradient(circle at center, #ffffff 1px, transparent 1px)',
-          backgroundSize: '40px 40px'
-        }}
-      />
+    <div className="min-h-screen w-full flex items-center justify-center relative overflow-hidden bg-[#0e0e11] font-sans">
 
-      <motion.div 
+      {/* Same background as dashboard */}
+      <DottedBackground />
+      <GlowBlobs />
+
+      <motion.div
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, ease: "easeOut" }}
-        className="relative z-10 w-full max-w-md p-8 sm:p-12 glass-panel rounded-3xl border border-white/10 shadow-2xl flex flex-col items-center"
+        className="relative z-10 w-full max-w-md p-8 sm:p-12 rounded-[32px] flex flex-col items-center"
+        style={{
+          background: 'rgba(255,255,255,0.04)',
+          backdropFilter: 'blur(60px) saturate(1)',
+          WebkitBackdropFilter: 'blur(60px) saturate(1)',
+          boxShadow: '0 30px 80px rgba(0,0,0,0.4), inset 0 0.5px 0 rgba(255,255,255,0.06)',
+        }}
       >
         <div className="w-full flex justify-center mb-12">
-          <img 
-            src="/logo.png" 
-            alt="GRLHOOD" 
+          <img
+            src="/logo.png"
+            alt="GRLHOOD"
             className="h-24 md:h-32 object-contain drop-shadow-[0_0_20px_rgba(255,255,255,0.25)] logo-tint"
           />
         </div>
@@ -67,7 +65,7 @@ const Login = () => {
         <p className="text-white/40 mb-8 text-center text-sm">Sign in to access the fulfillment dashboard</p>
 
         {error && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             className="w-full bg-red-500/10 border border-red-500/20 text-red-400 p-3 rounded-xl flex items-center gap-2 mb-6 text-sm"
@@ -82,9 +80,9 @@ const Login = () => {
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-white/30 group-focus-within:text-white/70 transition-colors">
               <User size={18} />
             </div>
-            <input 
-              type="text" 
-              placeholder="Username" 
+            <input
+              type="text"
+              placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
@@ -96,9 +94,9 @@ const Login = () => {
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-white/30 group-focus-within:text-white/70 transition-colors">
               <Lock size={18} />
             </div>
-            <input 
-              type="password" 
-              placeholder="Password" 
+            <input
+              type="password"
+              placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
@@ -106,8 +104,8 @@ const Login = () => {
             />
           </div>
 
-          <button 
-            type="submit" 
+          <button
+            type="submit"
             disabled={loading}
             className="w-full mt-2 bg-[#e3cfd8] hover:bg-white text-black font-semibold rounded-2xl py-3.5 flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-[0_0_20px_rgba(227,207,216,0.3)] disabled:opacity-50 disabled:pointer-events-none"
           >

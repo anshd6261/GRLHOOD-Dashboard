@@ -23,9 +23,7 @@ const SENSE_URL = 'https://sense.shiprocket.in/v3/rto/predict';
 const API_KEY = (process.env.SHIPROCKET_SENSE_API_KEY || '').trim();
 const API_SECRET = (process.env.SHIPROCKET_SENSE_API_SECRET || '').trim();
 const CONCURRENCY = 2;
-const ON_VERCEL = !!process.env.VERCEL;
-const GLOBAL_TIMEOUT_MS = ON_VERCEL ? 8000 : 30000;
-const PER_REQUEST_TIMEOUT = 8000;
+const PER_REQUEST_TIMEOUT = 60000;
 const CACHE_FILE = '/tmp/rto_cache.json';
 const REPO_CACHE_FILE = path.join(__dirname, '..', 'data', 'rto_cache.json');
 
@@ -48,7 +46,8 @@ function loadCache() {
         if (fs.existsSync(CACHE_FILE)) {
             const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
             for (const [k, v] of Object.entries(raw)) {
-                if (v.risk && v.risk !== 'unknown') {
+                const risk = v.risk || (v.aiRiskLevel ? v.aiRiskLevel.toLowerCase() : null);
+                if (risk && risk !== 'unknown') {
                     rtoCache.set(k, v);
                     loaded++;
                 }
@@ -66,7 +65,8 @@ function loadCache() {
                 const raw = JSON.parse(fs.readFileSync(REPO_CACHE_FILE, 'utf8'));
                 let repoLoaded = 0;
                 for (const [k, v] of Object.entries(raw)) {
-                    if (v.risk && v.risk !== 'unknown') {
+                    const risk = v.risk || (v.aiRiskLevel ? v.aiRiskLevel.toLowerCase() : null);
+                    if (risk && risk !== 'unknown') {
                         rtoCache.set(k, v);
                         repoLoaded++;
                     }
@@ -89,7 +89,14 @@ function saveCache() {
         const obj = Object.fromEntries(rtoCache);
         fs.writeFileSync(CACHE_FILE, JSON.stringify(obj));
     } catch (e) {
-        console.warn('[SENSE] Cache save failed (non-fatal):', e.message);
+        console.warn('[SENSE] /tmp cache save failed (non-fatal):', e.message);
+    }
+    // Also save to repo-level backup (survives deploys + cold starts)
+    try {
+        const obj = Object.fromEntries(rtoCache);
+        fs.writeFileSync(REPO_CACHE_FILE, JSON.stringify(obj));
+    } catch (e) {
+        // Expected to fail on Vercel (read-only filesystem outside /tmp)
     }
 }
 
@@ -330,39 +337,23 @@ async function batchPredictRisk(shopifyOrders) {
     console.log(`[SENSE] Batch: ${cachedCount} cached, ${skippedPrepaid} prepaid skipped, ${skippedDelivered} delivered-customer skipped, ${pendingOrders.length} to check via Sense API.`);
 
     if (pendingOrders.length > 0) {
-        const startTime = Date.now();
-
         const tasks = pendingOrders.map(({ order, orderId }) => async () => {
-            // Early exit if approaching timeout
-            if (Date.now() - startTime > GLOBAL_TIMEOUT_MS) {
-                const result = defaultResult('RTO check timed out — will retry next load');
-                results[orderId] = result;
-                return;
-            }
-
             const result = await predictSingleOrder(order, authHeader);
             results[orderId] = result;
-            // Only cache successful predictions — don't persist errors
             if (result.risk && result.risk !== 'unknown') {
                 rtoCache.set(orderId, result);
             }
         });
 
         try {
-            await Promise.race([
-                runWithConcurrency(tasks, CONCURRENCY),
-                new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Global Sense timeout')), GLOBAL_TIMEOUT_MS + 500)
-                ),
-            ]);
+            await runWithConcurrency(tasks, CONCURRENCY);
         } catch (e) {
             console.warn(`[SENSE] ${e.message} — filling remaining with defaults`);
         }
 
-        // Fill any that didn't complete
         for (const { orderId } of pendingOrders) {
             if (!results[orderId]) {
-                results[orderId] = defaultResult('RTO check timed out');
+                results[orderId] = defaultResult('RTO check failed');
             }
         }
     }
@@ -387,7 +378,8 @@ function getCachedResults(shopifyOrders) {
         if (rtoCache.has(orderId)) {
             const cached = rtoCache.get(orderId);
             // Skip cached errors — let them be re-checked
-            if (cached.risk && cached.risk !== 'unknown') {
+            const risk = cached.risk || (cached.aiRiskLevel ? cached.aiRiskLevel.toLowerCase() : null);
+            if (risk && risk !== 'unknown') {
                 results[orderId] = cached;
             }
         }
@@ -403,10 +395,23 @@ function warmCache(cacheData) {
     loadCache();
     let added = 0;
     for (const [orderId, rto] of Object.entries(cacheData)) {
-        if (!rtoCache.has(orderId) && rto.risk && rto.risk !== 'unknown') {
-            rtoCache.set(orderId, rto);
-            added++;
-        }
+        if (rtoCache.has(orderId)) continue;
+
+        // Accept both server format (risk) and frontend format (aiRiskLevel)
+        const risk = rto.risk || (rto.aiRiskLevel ? rto.aiRiskLevel.toLowerCase() : null);
+        if (!risk || risk === 'unknown') continue;
+
+        // Normalize to server format if coming from frontend
+        const entry = rto.risk ? rto : {
+            risk: risk,
+            score: rto.aiRiskScore || 0,
+            probability: (rto.aiRiskScore || 0) / 100,
+            reasons: rto.aiRiskReasons || [],
+            reasonCodes: [],
+            riskTags: [],
+        };
+        rtoCache.set(orderId, entry);
+        added++;
     }
     if (added > 0) {
         saveCache();
@@ -422,7 +427,8 @@ function exportCache() {
     loadCache();
     const obj = {};
     for (const [k, v] of rtoCache) {
-        if (v.risk && v.risk !== 'unknown') {
+        const risk = v.risk || (v.aiRiskLevel ? v.aiRiskLevel.toLowerCase() : null);
+        if (risk && risk !== 'unknown') {
             obj[k] = v;
         }
     }

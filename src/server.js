@@ -18,6 +18,7 @@ const { generateExcel } = require('./excel');
 const { getHistory, saveBatch, updateBatch } = require('./history');
 const emailService = require('./email');
 const { getAggregatedPandL, getDailyPandL, getCashPosition } = require('./calculations');
+const verification = require('./verification');
 const { getAllAlerts } = require('./alerts');
 const { syncPayUApi } = require('./sync_payu');
 const { uploadOrderPayload } = require('./dropbox');
@@ -234,7 +235,13 @@ app.post('/api/rto-cache/warm', (req, res) => {
         if (!cache || typeof cache !== 'object') {
             return res.json({ success: true, added: 0, total: 0 });
         }
-        const result = shiprocketSense.warmCache(cache);
+        // Normalize keys: frontend sends "3419", server uses "#3419"
+        const normalized = {};
+        for (const [k, v] of Object.entries(cache)) {
+            normalized[k.startsWith('#') ? k : `#${k}`] = v;
+            normalized[k] = v; // Keep original key too for getCachedResults lookup
+        }
+        const result = shiprocketSense.warmCache(normalized);
         res.json({ success: true, ...result });
     } catch (e) {
         console.warn('[API] Cache warm failed:', e.message);
@@ -457,6 +464,40 @@ app.post('/api/orders/:id/cancel', async (req, res) => {
     }
 });
 
+// 7.6 Order Verification (manual checkmark in wizard)
+app.post('/api/orders/verify', (req, res) => {
+    try {
+        const { orderId } = req.body;
+        if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
+        verification.markVerified(orderId);
+        console.log(`[API] Order #${orderId} marked as verified`);
+        res.json({ success: true, orderId });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/orders/unverify', (req, res) => {
+    try {
+        const { orderId } = req.body;
+        if (!orderId) return res.status(400).json({ error: 'Missing orderId' });
+        verification.removeVerified(orderId);
+        console.log(`[API] Order #${orderId} verification removed`);
+        res.json({ success: true, orderId });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.get('/api/orders/verified', (req, res) => {
+    try {
+        const orderIds = verification.getAll();
+        res.json({ success: true, orderIds });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // 7.5 Generate Label (RapidShyp)
 app.post('/api/rapidshyp/label', async (req, res) => {
     try {
@@ -532,6 +573,35 @@ app.post('/api/rapidshyp/label', async (req, res) => {
     } catch (e) {
         console.error('[API] Label Gen Error:', e);
         res.json({ success: false, error: e.message });
+    }
+});
+
+// Proxy PDF download (avoids CORS issues with cross-origin label PDFs)
+app.get('/api/proxy-pdf', async (req, res) => {
+    try {
+        const { url, filename } = req.query;
+        if (!url) return res.status(400).json({ error: 'Missing url parameter' });
+
+        console.log(`[API] PDF Proxy fetching: ${url}`);
+        const response = await axios.get(url, {
+            responseType: 'arraybuffer',
+            timeout: 30000,
+            headers: { 'Accept': 'application/pdf,*/*' },
+        });
+
+        const contentType = response.headers['content-type'] || 'application/pdf';
+        console.log(`[API] PDF Proxy got ${response.data.length} bytes, type: ${contentType}`);
+
+        res.set({
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': filename ? `attachment; filename="${filename}"` : 'attachment; filename="label.pdf"',
+            'Content-Length': response.data.length,
+            'Cache-Control': 'no-cache',
+        });
+        res.send(Buffer.from(response.data));
+    } catch (e) {
+        console.error('[API] PDF Proxy Error:', e.message);
+        res.status(500).json({ error: 'Failed to fetch PDF' });
     }
 });
 

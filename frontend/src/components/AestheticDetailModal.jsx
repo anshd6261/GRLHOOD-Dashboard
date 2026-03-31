@@ -106,8 +106,10 @@ export default function AestheticDetailModal({ order, onClose, isSupplier }) {
       if (url) {
         const fileName = `${order.customerName || 'Label'} - ${order.orderId || 'download'}.pdf`;
         try {
-          const pdfRes = await fetch(url);
-          const blob = await pdfRes.blob();
+          const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(fileName)}`;
+          const pdfRes = await fetch(proxyUrl);
+          if (!pdfRes.ok) throw new Error('Proxy failed');
+          const blob = new Blob([await pdfRes.arrayBuffer()], { type: 'application/pdf' });
           const blobUrl = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = blobUrl;
@@ -115,15 +117,9 @@ export default function AestheticDetailModal({ order, onClose, isSupplier }) {
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
-          URL.revokeObjectURL(blobUrl);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
         } catch {
-          const a = document.createElement('a');
-          a.href = url;
-          a.target = '_blank';
-          a.rel = 'noopener noreferrer';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
+          window.open(url, '_blank');
         }
       } else {
         setLabelError('No label URL returned');

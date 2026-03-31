@@ -269,8 +269,10 @@ function App() {
       if (url) {
         const fileName = customerName && orderId ? `${customerName} - ${orderId}.pdf` : `Label-${orderId || 'download'}.pdf`;
         try {
-          const pdfRes = await fetch(url);
-          const blob = await pdfRes.blob();
+          const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(fileName)}`;
+          const pdfRes = await fetch(proxyUrl);
+          if (!pdfRes.ok) throw new Error('Proxy failed');
+          const blob = new Blob([await pdfRes.arrayBuffer()], { type: 'application/pdf' });
           const blobUrl = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = blobUrl;
@@ -278,15 +280,9 @@ function App() {
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
-          URL.revokeObjectURL(blobUrl);
+          setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
         } catch {
-          const a = document.createElement('a');
-          a.href = url;
-          a.target = '_blank';
-          a.rel = 'noopener noreferrer';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
+          window.open(url, '_blank');
         }
         setToast({ message: "Label Generated!", type: "success" });
       } else {
@@ -310,6 +306,15 @@ function App() {
       if (endDate instanceof Date && !isNaN(endDate)) {
         const e = new Date(endDate); e.setHours(23, 59, 59, 999); endStr = e.toISOString();
       }
+      // Step 0: Warm server RTO cache from localStorage BEFORE fetching orders
+      // This ensures getCachedResults() on the server finds all 195+ cached entries
+      let rtoLocalCache = {};
+      try { rtoLocalCache = JSON.parse(localStorage.getItem('rto_cache') || '{}'); } catch {}
+      if (Object.keys(rtoLocalCache).length > 0) {
+        await axios.post(`${API_URL}/rto-cache/warm`, { cache: rtoLocalCache }).catch(() => {});
+      }
+
+      // Step 1: Now fetch orders (server cache is warm, will return cached RTO data)
       const res = await axios.get(`${API_URL}/orders?status=unfulfilled&startDate=${startStr}&endDate=${endStr}`);
       if (res.headers['content-type']?.includes('text/html')) throw new Error('Server returned HTML. Check logs.');
       if (!res.data || !Array.isArray(res.data.orders)) {
@@ -319,15 +324,7 @@ function App() {
       }
 
       // Enrich orders with RTO risk data
-      // Step 1: Load persistent RTO cache from localStorage
       const orders = res.data?.orders || [];
-      let rtoLocalCache = {};
-      try { rtoLocalCache = JSON.parse(localStorage.getItem('rto_cache') || '{}'); } catch {}
-
-      // Step 1b: Warm server cache from localStorage (so server has data after cold start)
-      if (Object.keys(rtoLocalCache).length > 0) {
-        axios.post(`${API_URL}/rto-cache/warm`, { cache: rtoLocalCache }).catch(() => {});
-      }
 
       // Step 2: Apply cached RTO data to orders that the server returned as Unknown
       let ordersWithCache = orders.map(o => {
