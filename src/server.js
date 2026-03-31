@@ -664,7 +664,14 @@ app.get('/api/rapidshyp/debug-order/:id', async (req, res) => {
         const orderMap = await rapidshyp.fetchAllOrders();
         const cleanId = req.params.id.replace('#', '');
         const match = orderMap.get(cleanId);
-        if (!match) return res.json({ found: false, mapSize: orderMap.size, triedKey: cleanId });
+
+        // Also try track_order to get shipment_id
+        let trackResult = null;
+        try {
+            trackResult = await rapidshyp.getOrderInfo(cleanId);
+        } catch (e) { trackResult = { error: e.message }; }
+
+        if (!match) return res.json({ found: false, mapSize: orderMap.size, triedKey: cleanId, trackResult });
         res.json({
             found: true,
             mapSize: orderMap.size,
@@ -677,6 +684,7 @@ app.get('/api/rapidshyp/debug-order/:id', async (req, res) => {
             store_name: match.store_name,
             id: match.id,
             contact_name: match.contact_name,
+            trackResult,
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
