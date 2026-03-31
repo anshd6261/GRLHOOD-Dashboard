@@ -309,15 +309,13 @@ function App() {
       // Step 0: Load localStorage RTO cache
       let rtoLocalCache = {};
       try { rtoLocalCache = JSON.parse(localStorage.getItem('rto_cache') || '{}'); } catch {}
-      console.log(`[RTO] localStorage cache: ${Object.keys(rtoLocalCache).length} entries`, Object.keys(rtoLocalCache).slice(0, 5));
+      const cacheSize = Object.keys(rtoLocalCache).length;
+      console.log(`[RTO] localStorage cache: ${cacheSize} entries`, Object.keys(rtoLocalCache).slice(0, 5));
 
-      // Warm server cache (best-effort, Vercel serverless may not share instance with GET)
-      if (Object.keys(rtoLocalCache).length > 0) {
-        await axios.post(`${API_URL}/rto-cache/warm`, { cache: rtoLocalCache }).catch(() => {});
-      }
-
-      // Step 1: Now fetch orders (server cache is warm, will return cached RTO data)
-      const res = await axios.get(`${API_URL}/orders?status=unfulfilled&startDate=${startStr}&endDate=${endStr}`);
+      // Step 1: Fetch orders WITH inline cache (same Vercel instance handles both)
+      const res = cacheSize > 0
+        ? await axios.post(`${API_URL}/orders?status=unfulfilled&startDate=${startStr}&endDate=${endStr}`, { rtoCache: rtoLocalCache })
+        : await axios.get(`${API_URL}/orders?status=unfulfilled&startDate=${startStr}&endDate=${endStr}`);
       if (res.headers['content-type']?.includes('text/html')) throw new Error('Server returned HTML. Check logs.');
       if (!res.data || !Array.isArray(res.data.orders)) {
         setData({ ...res.data, orders: res.data?.orders || [] });
