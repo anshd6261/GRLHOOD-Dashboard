@@ -23,9 +23,7 @@ const SENSE_URL = 'https://sense.shiprocket.in/v3/rto/predict';
 const API_KEY = (process.env.SHIPROCKET_SENSE_API_KEY || '').trim();
 const API_SECRET = (process.env.SHIPROCKET_SENSE_API_SECRET || '').trim();
 const CONCURRENCY = 2;
-const ON_VERCEL = !!process.env.VERCEL;
-const GLOBAL_TIMEOUT_MS = ON_VERCEL ? 8000 : 30000;
-const PER_REQUEST_TIMEOUT = 8000;
+const PER_REQUEST_TIMEOUT = 60000;
 const CACHE_FILE = '/tmp/rto_cache.json';
 const REPO_CACHE_FILE = path.join(__dirname, '..', 'data', 'rto_cache.json');
 
@@ -337,39 +335,23 @@ async function batchPredictRisk(shopifyOrders) {
     console.log(`[SENSE] Batch: ${cachedCount} cached, ${skippedPrepaid} prepaid skipped, ${skippedDelivered} delivered-customer skipped, ${pendingOrders.length} to check via Sense API.`);
 
     if (pendingOrders.length > 0) {
-        const startTime = Date.now();
-
         const tasks = pendingOrders.map(({ order, orderId }) => async () => {
-            // Early exit if approaching timeout
-            if (Date.now() - startTime > GLOBAL_TIMEOUT_MS) {
-                const result = defaultResult('RTO check timed out — will retry next load');
-                results[orderId] = result;
-                return;
-            }
-
             const result = await predictSingleOrder(order, authHeader);
             results[orderId] = result;
-            // Only cache successful predictions — don't persist errors
             if (result.risk && result.risk !== 'unknown') {
                 rtoCache.set(orderId, result);
             }
         });
 
         try {
-            await Promise.race([
-                runWithConcurrency(tasks, CONCURRENCY),
-                new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error('Global Sense timeout')), GLOBAL_TIMEOUT_MS + 500)
-                ),
-            ]);
+            await runWithConcurrency(tasks, CONCURRENCY);
         } catch (e) {
             console.warn(`[SENSE] ${e.message} — filling remaining with defaults`);
         }
 
-        // Fill any that didn't complete
         for (const { orderId } of pendingOrders) {
             if (!results[orderId]) {
-                results[orderId] = defaultResult('RTO check timed out');
+                results[orderId] = defaultResult('RTO check failed');
             }
         }
     }
