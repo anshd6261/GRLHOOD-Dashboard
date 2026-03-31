@@ -515,8 +515,8 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
     }
   };
 
-  // Auto-approve when entering SHIP step (step 5)
-  useEffect(() => { if (step === 5 && !approveResult && !approveLoading) handleApprove(); }, [step]);
+  // Auto-approve when entering DOWNLOAD step (step 4) so orders are pre-approved by Ship step
+  useEffect(() => { if (step === 4 && !approveResult && !approveLoading) handleApprove(); }, [step]);
 
   const handleShip = async () => {
     setShipLoading(true);

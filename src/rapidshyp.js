@@ -111,7 +111,7 @@ const fetchOrdersWithRTO = async (status = 'ALL', maxPages = 10) => {
                 order_id: order.order_id,
                 seller_order_id: order.seller_order_id,
                 channel_order_id: order.seller_order_id?.replace('#', ''),
-                market_place_order_id: order.market_place_order_id,
+                market_place_order_id: order.market_place_order_id, // Shopify internal ID — used for public API approve
                 rto_prediction: mapRTORisk(order.address_score?.rto_risk_score),
                 rto_reason: buildRTOReason(order.address_score),
                 address_score: order.address_score,
@@ -167,7 +167,7 @@ const fetchAllOrders = async () => {
     if (!sessionHeaders) return new Map();
 
     const orderMap = new Map();
-    const PAGE_SIZE = 200;
+    const PAGE_SIZE = 50; // Smaller pages = faster responses on Vercel
     let page = 1;
     let totalFetched = 0;
 
@@ -175,7 +175,7 @@ const fetchAllOrders = async () => {
         while (true) {
             const res = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, {
                 page, limit: PAGE_SIZE
-            }, { headers: sessionHeaders, timeout: 15000 });
+            }, { headers: sessionHeaders, timeout: 20000 });
 
             const records = res.data?.records || [];
             const totalRecords = res.data?.total_records || 0;
@@ -192,12 +192,15 @@ const fetchAllOrders = async () => {
                 if (r.order_id) {
                     orderMap.set(r.order_id, r);
                 }
+                if (r.market_place_order_id) {
+                    orderMap.set(r.market_place_order_id, r);
+                }
             }
 
             totalFetched += records.length;
             if (records.length < PAGE_SIZE || totalFetched >= totalRecords) break;
             page++;
-            await new Promise(r => setTimeout(r, 200));
+            // No delay between pages — speed is critical on Vercel
         }
 
         console.log(`[RAPIDSHYP] Order map built: ${orderMap.size} entries from ${totalFetched} orders (${page} pages)`);
@@ -375,70 +378,64 @@ const bulkAssignAWB = async (orderNames) => {
     const headers = getPublicHeaders();
     const results = [];
 
-    // Build order map once for all lookups (cached for 2 min)
+    // Invalidate cache to get fresh data (approval may have just happened)
+    _orderMapCache = null;
+    _orderMapTimestamp = 0;
+
     const orderMap = await fetchAllOrders();
-    console.log(`[RAPIDSHYP] Using order map with ${orderMap.size} entries for ${orderNames.length} orders`);
+    console.log(`[RAPIDSHYP] Using order map with ${orderMap.size} entries for ${orderNames.length} orders. Shipment cache: ${_shipmentIdCache.size}`);
 
     for (const name of orderNames) {
         const cleanId = name.toString().replace('#', '');
         try {
             const match = orderMap.get(cleanId) || null;
 
-            if (!match) {
-                // Order not found in RapidShyp — try assigning directly with order name
-                console.warn(`[RAPIDSHYP] Order ${cleanId} not found in order map, trying direct assign...`);
-                try {
-                    const assignRes = await rsApi.post(`${PUBLIC_API_BASE}/assign_awb`, {
-                        shipment_id: cleanId
-                    }, { headers });
-                    const data = assignRes.data;
-                    results.push({
-                        orderId: cleanId,
-                        success: true,
-                        awb: data.awb || '',
-                        courier: data.courier_name || '',
-                        shipmentId: data.shipment_id || cleanId,
-                        rsOrderId: cleanId
-                    });
-                    console.log(`[RAPIDSHYP] Assigned AWB for ${cleanId}: ${data.awb}`);
-                } catch (directErr) {
-                    const msg = directErr.response?.data?.message || directErr.response?.data?.remarks || directErr.message;
-                    results.push({ orderId: cleanId, success: false, message: typeof msg === 'string' ? msg : JSON.stringify(msg) });
-                }
-                await new Promise(r => setTimeout(r, 300));
-                continue;
-            }
-
-            if (match.awb_number) {
+            // Already has AWB — skip
+            if (match?.awb_number) {
                 results.push({
-                    orderId: cleanId,
-                    success: true,
-                    awb: match.awb_number,
-                    courier: match.courier_name || '',
-                    shipmentId: match.shipment_id || match.order_id,
-                    rsOrderId: match.order_id,
+                    orderId: cleanId, success: true, awb: match.awb_number,
+                    courier: match.courier_name || '', shipmentId: match.shipment_id || '',
                     message: 'Already assigned'
                 });
                 continue;
             }
 
-            const shipmentId = match.shipment_id || match.order_id;
+            // Resolve shipment_id: cache first, then match fields, then track_order fallback
+            let shipmentId = _shipmentIdCache.get(cleanId) || match?.shipment_id || null;
+
+            if (!shipmentId && match?.market_place_order_id) {
+                // Try track_order with marketplace ID to get shipment_id
+                try {
+                    const trackRes = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, {
+                        orderId: match.market_place_order_id
+                    }, { headers, timeout: 10000 });
+                    const shipments = trackRes.data?.records?.[0]?.shipment_details || [];
+                    if (shipments.length > 0) {
+                        shipmentId = shipments[0].shipment_id;
+                        _shipmentIdCache.set(cleanId, shipmentId);
+                    }
+                } catch (trackErr) {
+                    console.warn(`[RAPIDSHYP] Track failed for ${cleanId}: ${trackErr.response?.status || trackErr.message}`);
+                }
+            }
+
+            if (!shipmentId) {
+                results.push({ orderId: cleanId, success: false, message: 'No shipment_id — order may need approval first' });
+                continue;
+            }
+
             const assignRes = await rsApi.post(`${PUBLIC_API_BASE}/assign_awb`, {
                 shipment_id: shipmentId
-            }, { headers });
+            }, { headers, timeout: 15000 });
 
             const data = assignRes.data;
             results.push({
-                orderId: cleanId,
-                success: true,
-                awb: data.awb || '',
-                courier: data.courier_name || '',
-                shipmentId: data.shipment_id || shipmentId,
-                rsOrderId: match.order_id
+                orderId: cleanId, success: true,
+                awb: data.awb || '', courier: data.courier_name || '',
+                shipmentId: data.shipment_id || shipmentId, rsOrderId: data.order_id || ''
             });
-
-            console.log(`[RAPIDSHYP] Assigned AWB for ${cleanId}: ${data.awb}`);
-            await new Promise(r => setTimeout(r, 300));
+            console.log(`[RAPIDSHYP] Assigned AWB for ${cleanId}: ${data.awb} (shipment: ${shipmentId})`);
+            await new Promise(r => setTimeout(r, 200));
         } catch (e) {
             const errMsg = e.response?.data?.message || e.response?.data?.remarks || e.message;
             console.error(`[RAPIDSHYP] Assign AWB failed for ${cleanId}:`, errMsg);
@@ -459,6 +456,13 @@ const bulkAssignAWB = async (orderNames) => {
  * Fetches all orders via session API, finds unapproved ones matching the given
  * Shopify order IDs, and approves them via public API so AWB assignment won't fail.
  */
+/**
+ * Shipment ID cache — populated by bulkApproveOrders response.
+ * Maps Shopify order ID (clean, no #) → shipment_id from approve response.
+ * Used by bulkAssignAWB to avoid needing to re-fetch.
+ */
+const _shipmentIdCache = new Map();
+
 const bulkApproveOrders = async (shopifyOrderIds) => {
     const headers = getPublicHeaders();
     const orderMap = await fetchAllOrders();
@@ -474,14 +478,19 @@ const bulkApproveOrders = async (shopifyOrderIds) => {
             continue;
         }
         const status = (match.order_status || '').toLowerCase();
-        // Orders that are already approved, shipped, or have AWB don't need approval
         if (status === 'approved' || status === 'shipped' || status === 'in_transit' ||
             status === 'delivered' || match.awb_number) {
             alreadyApproved++;
             continue;
         }
-        // Unapproved: new, pending, unapproved, etc.
-        toApprove.push({ orderId: match.order_id, storeName: match.store_name || 'DEFAULT', cleanId });
+        // Use market_place_order_id — this is what the public API accepts
+        const mpId = match.market_place_order_id;
+        if (!mpId) {
+            console.warn(`[RAPIDSHYP] Order ${cleanId} has no market_place_order_id`);
+            notFound++;
+            continue;
+        }
+        toApprove.push({ marketPlaceId: mpId, storeName: match.store_name || 'DEFAULT', cleanId });
     }
 
     console.log(`[RAPIDSHYP] Bulk approve: ${toApprove.length} to approve, ${alreadyApproved} already approved, ${notFound} not found in RS`);
@@ -502,16 +511,30 @@ const bulkApproveOrders = async (shopifyOrderIds) => {
     }
 
     for (const [storeName, items] of Object.entries(byStore)) {
-        const orderIds = items.map(o => o.orderId).filter(Boolean);
+        const marketPlaceIds = items.map(o => o.marketPlaceId).filter(Boolean);
         try {
             const res = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
-                order_id: orderIds,
+                order_id: marketPlaceIds,
                 store_name: storeName
-            }, { headers, timeout: 15000 });
+            }, { headers, timeout: 30000 });
 
             if (res.data?.status === 'success' || res.data?.status === 'SUCCESS' || res.data?.success) {
-                approvedCount += orderIds.length;
-                console.log(`[RAPIDSHYP] Approved ${orderIds.length} orders (store: ${storeName})`);
+                approvedCount += (res.data.success_count || marketPlaceIds.length);
+                console.log(`[RAPIDSHYP] Approved ${res.data.success_count || marketPlaceIds.length} orders (store: ${storeName})`);
+
+                // Cache shipment_ids from approve response for bulkAssignAWB
+                const orderList = res.data.order_list || [];
+                for (const ol of orderList) {
+                    const shipments = ol.shipment || [];
+                    if (shipments.length > 0 && ol.order_id) {
+                        // Find the matching cleanId for this market_place_order_id
+                        const item = items.find(i => i.marketPlaceId === ol.order_id);
+                        if (item) {
+                            _shipmentIdCache.set(item.cleanId, shipments[0].shipment_id);
+                            console.log(`[RAPIDSHYP] Cached shipment ${shipments[0].shipment_id} for order ${item.cleanId}`);
+                        }
+                    }
+                }
             } else {
                 console.warn(`[RAPIDSHYP] Approve response for store ${storeName}:`, res.data);
                 const remark = res.data?.remark || res.data?.remarks || res.data?.message || 'Unknown response';
@@ -533,6 +556,7 @@ const bulkApproveOrders = async (shopifyOrderIds) => {
         approved: approvedCount,
         alreadyApproved,
         notFound,
+        shipmentsCached: _shipmentIdCache.size,
         errors: errors.length > 0 ? errors : undefined,
         message: `${approvedCount} approved, ${alreadyApproved} already approved, ${notFound} not in RapidShyp`
     };
