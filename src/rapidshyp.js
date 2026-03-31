@@ -442,12 +442,18 @@ const findOrderIdByAWB = async (awb) => {
             const records = searchRes.data?.records || [];
             const match = records.find(r => r.awb_number === awb);
             if (match) {
+                // Prefer shipment_id (format: S2603415750) over MongoDB order_id
                 const shipId = match.shipment_id || match.order_id;
                 console.log(`[RAPIDSHYP] Found shipment ${shipId} for AWB ${awb}`);
                 return shipId;
             }
         } catch (e) {
-            console.warn(`[RAPIDSHYP] Session search by AWB failed: ${e.response?.status || e.message}`);
+            const status = e.response?.status;
+            if (status === 401 || status === 403) {
+                console.error(`[RAPIDSHYP] Session API ${status} — RAPIDSHYP_JWT is expired or invalid. Falling back to public API.`);
+            } else {
+                console.warn(`[RAPIDSHYP] Session search by AWB failed: ${status || e.message}`);
+            }
         }
     }
 

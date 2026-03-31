@@ -1,45 +1,69 @@
 /**
- * Shiprocket RTO Risk — via Shiprocket Shipping API
+ * Shiprocket Sense API — RTO Risk Prediction
  *
- * Fetches orders from Shiprocket Shipping API which includes
- * rto_risk, rto_prediction, rto_reason, and rto_show for each order.
- * This is FREE — no Sense credits needed.
+ * Uses Shiprocket Sense (cross-merchant buyer intelligence, 4.8B data points)
+ * to predict RTO risk for unfulfilled COD orders only.
  *
- * Auth: SHIPROCKET_TOKEN (static Bearer token) or SHIPROCKET_EMAIL+PASSWORD
- * Endpoint: GET https://apiv2.shiprocket.in/v1/external/orders
+ * Credit-saving optimizations:
+ *   1. Skip prepaid orders (COD only)
+ *   2. Skip customers who have a delivered order in the current batch
+ *   3. Cache results per order — no re-call on dashboard refresh
+ *   4. /tmp file persistence across Vercel invocations
+ *
+ * Auth: Basic (API_KEY:API_SECRET)
+ * Endpoint: POST https://sense.shiprocket.in/v3/rto/predict
  */
 
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 
-const SR_API_BASE = 'https://apiv2.shiprocket.in/v1/external';
-const SR_STATIC_TOKEN = (process.env.SHIPROCKET_TOKEN || '').trim();
-const SR_EMAIL = (process.env.SHIPROCKET_EMAIL || '').trim();
-const SR_PASSWORD = (process.env.SHIPROCKET_PASSWORD || '').trim();
+// --- Config ---
+const SENSE_URL = 'https://sense.shiprocket.in/v3/rto/predict';
+const API_KEY = (process.env.SHIPROCKET_SENSE_API_KEY || '').trim();
+const API_SECRET = (process.env.SHIPROCKET_SENSE_API_SECRET || '').trim();
+const CONCURRENCY = 3;
+const ON_VERCEL = !!process.env.VERCEL;
+const GLOBAL_TIMEOUT_MS = ON_VERCEL ? 6000 : 30000;
+const PER_REQUEST_TIMEOUT = 8000;
+const CACHE_FILE = '/tmp/rto_cache.json';
 
-let srToken = null;
-let srTokenExpiry = null;
+// --- In-memory cache ---
+const rtoCache = new Map();
+let cacheLoaded = false;
 
-async function getSRToken() {
-    if (SR_STATIC_TOKEN) return SR_STATIC_TOKEN;
-    if (srToken && srTokenExpiry && Date.now() < srTokenExpiry) return srToken;
-    if (!SR_EMAIL || !SR_PASSWORD) {
-        console.warn('[SHIPROCKET] No credentials — set SHIPROCKET_TOKEN or SHIPROCKET_EMAIL+PASSWORD.');
-        return null;
-    }
+function getAuthHeader() {
+    if (!API_KEY || !API_SECRET) return null;
+    return 'Basic ' + Buffer.from(`${API_KEY}:${API_SECRET}`).toString('base64');
+}
+
+// --- Cache I/O ---
+function loadCache() {
+    if (cacheLoaded) return;
     try {
-        const res = await axios.post(`${SR_API_BASE}/auth/login`, {
-            email: SR_EMAIL, password: SR_PASSWORD,
-        }, { timeout: 10000 });
-        srToken = res.data?.token;
-        srTokenExpiry = Date.now() + 9 * 24 * 60 * 60 * 1000;
-        console.log('[SHIPROCKET] Auth token obtained.');
-        return srToken;
+        if (fs.existsSync(CACHE_FILE)) {
+            const raw = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+            for (const [k, v] of Object.entries(raw)) {
+                rtoCache.set(k, v);
+            }
+            console.log(`[SENSE] Loaded ${rtoCache.size} cached RTO results from disk.`);
+        }
     } catch (e) {
-        console.error('[SHIPROCKET] Login failed:', e.response?.data?.message || e.message);
-        return null;
+        console.warn('[SENSE] Cache load failed (non-fatal):', e.message);
+    }
+    cacheLoaded = true;
+}
+
+function saveCache() {
+    try {
+        const obj = Object.fromEntries(rtoCache);
+        fs.writeFileSync(CACHE_FILE, JSON.stringify(obj));
+    } catch (e) {
+        console.warn('[SENSE] Cache save failed (non-fatal):', e.message);
     }
 }
 
+// --- Payment detection ---
 function detectPayment(order) {
     const gateways = (order.paymentGatewayNames || []).join(' ').toLowerCase();
     if (gateways.includes('cash on delivery') || gateways.includes('manual') || gateways.includes('cod')) {
@@ -53,6 +77,7 @@ function detectPayment(order) {
     return 'Cash on Delivery';
 }
 
+// --- Default result ---
 function defaultResult(fallbackReason) {
     return {
         risk: 'unknown',
@@ -64,87 +89,221 @@ function defaultResult(fallbackReason) {
     };
 }
 
-/**
- * Fetch RTO risk from Shiprocket Shipping API for all orders.
- * The API returns rto_risk, rto_prediction, rto_reason for each order.
- */
+// --- Build delivered-customer set ---
+// Returns a Set of normalized phone numbers for customers who have a delivered/fulfilled order
+function buildDeliveredCustomerSet(allOrders) {
+    const delivered = new Set();
+    for (const order of allOrders) {
+        const status = (order.displayFulfillmentStatus || '').toUpperCase();
+        if (status === 'FULFILLED' || status === 'DELIVERED') {
+            const phone = normalizePhone(order);
+            if (phone) delivered.add(phone);
+        }
+    }
+    return delivered;
+}
+
+function normalizePhone(order) {
+    let phone = order.shippingAddress?.phone || order.phone || order.customer?.phone || '';
+    phone = phone.replace(/\D/g, '');
+    if (phone.length > 10) phone = phone.slice(-10);
+    return phone.length >= 10 ? phone : '';
+}
+
+// --- Single order prediction ---
+async function predictSingleOrder(order, authHeader) {
+    const shipping = order.shippingAddress || {};
+    const phone = normalizePhone(order);
+
+    const address = [shipping.address1 || '', shipping.address2 || '']
+        .filter(Boolean).join(', ') || 'NA';
+
+    const products = [];
+    if (order.lineItems?.edges) {
+        for (const edge of order.lineItems.edges) {
+            const item = edge.node;
+            products.push({
+                name: item.title || 'Product',
+                qty: item.quantity || 1,
+                price: parseFloat(item.originalUnitPrice) || 0,
+            });
+        }
+    }
+    if (products.length === 0) {
+        products.push({ name: 'Product', qty: 1, price: 0 });
+    }
+
+    const orderTotal = products.reduce((sum, p) => sum + (p.price * p.qty), 0);
+
+    const payload = {
+        customer: {
+            mobile_no: phone,
+            email: order.email || order.customer?.email || '',
+            address,
+            pincode: shipping.zip || '',
+            city: shipping.city || '',
+            state: shipping.province || '',
+        },
+        products,
+        order_total: orderTotal,
+        cod: 1,
+        source_company: 'SR',
+    };
+
+    try {
+        const res = await axios.post(SENSE_URL, payload, {
+            headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
+            timeout: PER_REQUEST_TIMEOUT,
+        });
+
+        if (res.data?.success && res.data?.data) {
+            const d = res.data.data;
+            return {
+                risk: d.risk || 'unknown',
+                score: d.score || 0,
+                probability: d.model_probability || 0,
+                reasons: (d.reasons || []).map(r => r.reason),
+                reasonCodes: (d.reasons || []).map(r => r.reason_code),
+                riskTags: (d.risk_tags || []).map(t => ({
+                    code: t.code,
+                    reason: t.reason,
+                })),
+            };
+        }
+
+        return defaultResult('Sense API returned unsuccessful response');
+    } catch (e) {
+        const status = e.response?.status;
+        if (status === 402) {
+            console.error('[SENSE] 402 — Sense wallet has no balance. Recharge at sense.shiprocket.in');
+        } else if (status === 429) {
+            console.warn('[SENSE] Rate limited (429)');
+        }
+        return defaultResult(e.response?.data?.message || e.message);
+    }
+}
+
+// --- Concurrency-limited executor ---
+async function runWithConcurrency(tasks, limit) {
+    const results = new Array(tasks.length);
+    let idx = 0;
+
+    const worker = async () => {
+        while (idx < tasks.length) {
+            const i = idx++;
+            results[i] = await tasks[i]();
+        }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, () => worker()));
+    return results;
+}
+
+// --- Main batch prediction ---
 async function batchPredictRisk(shopifyOrders) {
     const results = {};
-    const token = await getSRToken();
 
-    if (!token) {
+    // Load disk cache
+    loadCache();
+
+    const authHeader = getAuthHeader();
+    if (!authHeader) {
+        console.warn('[SENSE] No API key/secret configured — set SHIPROCKET_SENSE_API_KEY + SHIPROCKET_SENSE_API_SECRET');
         for (const order of shopifyOrders) {
-            results[order.name || order.id] = defaultResult('Shiprocket credentials not configured');
+            results[order.name || order.id] = defaultResult('Sense API credentials not configured');
         }
         return results;
     }
 
-    try {
-        // Fetch Shiprocket orders (they contain RTO data)
-        const rtoMap = {};
-        let page = 1;
-        const maxPages = process.env.VERCEL ? 3 : 10;
-        const perPage = process.env.VERCEL ? 20 : 100;
+    // Build set of customers with delivered orders
+    const deliveredCustomers = buildDeliveredCustomerSet(shopifyOrders);
 
-        while (page <= maxPages) {
-            console.log(`[SHIPROCKET] Fetching page ${page} (per_page=${perPage})...`);
-            const res = await axios.get(`${SR_API_BASE}/orders`, {
-                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                params: { per_page: perPage, page, sort_by: 'created_at', sort: 'desc' },
-                timeout: 7000,
-            });
+    // Classify orders
+    const pendingOrders = [];
+    let skippedPrepaid = 0;
+    let skippedDelivered = 0;
+    let cachedCount = 0;
 
-            const orders = res.data?.data || [];
-            if (orders.length === 0) break;
+    for (const order of shopifyOrders) {
+        const orderId = order.name || order.id;
 
-            for (const sr of orders) {
-                const channelId = sr.channel_order_id?.toString() || '';
-                if (!channelId) continue;
-
-                const riskLevel = (sr.rto_risk || sr.rto_prediction || '').toLowerCase();
-                const reason = sr.rto_reason || '';
-
-                rtoMap[channelId] = { risk: riskLevel, reason };
-                rtoMap[`#${channelId}`] = { risk: riskLevel, reason };
-            }
-
-            if (orders.length < perPage) break;
-            page++;
+        // 1. Check cache
+        if (rtoCache.has(orderId)) {
+            results[orderId] = rtoCache.get(orderId);
+            cachedCount++;
+            continue;
         }
 
-        console.log(`[SHIPROCKET] Fetched RTO for ${Object.keys(rtoMap).length / 2} orders (${page} pages).`);
-
-        // Match to Shopify orders
-        for (const order of shopifyOrders) {
-            const orderId = order.name || order.id;
-            const cleanId = orderId?.toString().replace('#', '');
-            const sr = rtoMap[orderId] || rtoMap[cleanId] || rtoMap[`#${cleanId}`];
-
-            if (sr && sr.risk && sr.risk !== 'unknown' && sr.risk !== '') {
-                results[orderId] = {
-                    risk: sr.risk,
-                    score: sr.risk === 'high' || sr.risk === 'very high' ? 0.8 : sr.risk === 'low' ? 0.2 : 0.5,
-                    probability: sr.risk === 'high' || sr.risk === 'very high' ? 0.8 : sr.risk === 'low' ? 0.2 : 0.5,
-                    reasons: sr.reason ? [sr.reason] : [`RTO risk: ${sr.risk}`],
-                    reasonCodes: [],
-                    riskTags: [],
-                };
-            } else {
-                results[orderId] = defaultResult('Order not found in Shiprocket');
-            }
+        // 2. Skip prepaid orders
+        const payment = detectPayment(order);
+        if (payment === 'Prepaid') {
+            const result = defaultResult('Prepaid order — RTO check skipped');
+            result.risk = 'low';
+            result.probability = 0.05;
+            results[orderId] = result;
+            rtoCache.set(orderId, result);
+            skippedPrepaid++;
+            continue;
         }
-    } catch (e) {
-        console.error('[SHIPROCKET] RTO fetch error:', e.response?.status, e.response?.data?.message || e.message);
-        for (const order of shopifyOrders) {
-            const orderId = order.name || order.id;
+
+        // 3. Skip customers with a delivered order in current batch
+        const phone = normalizePhone(order);
+        if (phone && deliveredCustomers.has(phone)) {
+            const result = defaultResult('Repeat customer with delivered order — RTO check skipped');
+            result.risk = 'low';
+            result.probability = 0.1;
+            results[orderId] = result;
+            rtoCache.set(orderId, result);
+            skippedDelivered++;
+            continue;
+        }
+
+        // 4. Queue for Sense API call
+        pendingOrders.push({ order, orderId });
+    }
+
+    console.log(`[SENSE] Batch: ${cachedCount} cached, ${skippedPrepaid} prepaid skipped, ${skippedDelivered} delivered-customer skipped, ${pendingOrders.length} to check via Sense API.`);
+
+    if (pendingOrders.length > 0) {
+        const startTime = Date.now();
+
+        const tasks = pendingOrders.map(({ order, orderId }) => async () => {
+            // Early exit if approaching timeout
+            if (Date.now() - startTime > GLOBAL_TIMEOUT_MS) {
+                const result = defaultResult('RTO check timed out — will retry next load');
+                results[orderId] = result;
+                return;
+            }
+
+            const result = await predictSingleOrder(order, authHeader);
+            results[orderId] = result;
+            rtoCache.set(orderId, result);
+        });
+
+        try {
+            await Promise.race([
+                runWithConcurrency(tasks, CONCURRENCY),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('Global Sense timeout')), GLOBAL_TIMEOUT_MS + 500)
+                ),
+            ]);
+        } catch (e) {
+            console.warn(`[SENSE] ${e.message} — filling remaining with defaults`);
+        }
+
+        // Fill any that didn't complete
+        for (const { orderId } of pendingOrders) {
             if (!results[orderId]) {
-                results[orderId] = defaultResult(e.message);
+                results[orderId] = defaultResult('RTO check timed out');
             }
         }
     }
 
+    // Save cache to disk
+    saveCache();
+
     const checked = Object.values(results).filter(r => r.risk !== 'unknown').length;
-    console.log(`[SHIPROCKET] RTO: ${checked}/${shopifyOrders.length} orders with risk data.`);
+    console.log(`[SENSE] Results: ${checked}/${shopifyOrders.length} with risk data.`);
     return results;
 }
 

@@ -40,10 +40,9 @@ app.get('/api/status', (req, res) => {
         status: 'online',
         store: process.env.SHOPIFY_STORE_DOMAIN,
         connected: !!(process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET),
-        shiprocketToken: !!(process.env.SHIPROCKET_TOKEN),
-        shiprocketTokenLen: (process.env.SHIPROCKET_TOKEN || '').trim().length,
         rapidshypJwt: !!(process.env.RAPIDSHYP_JWT),
         senseKey: !!(process.env.SHIPROCKET_SENSE_API_KEY),
+        senseSecret: !!(process.env.SHIPROCKET_SENSE_API_SECRET),
     });
 });
 
@@ -69,7 +68,7 @@ app.post('/api/login', (req, res) => {
     password = (password || '').trim();
     
     // Hardcoded credentials as per user request
-    if (username === 'Anshd6261@' && password === 'Anshd62616@') {
+    if (username === 'Anshd6261' && password === 'Anshd6261') {
         return res.json({ success: true, role: 'admin', token: 'mock-jwt-admin-token-7x9' });
     }
     
@@ -404,9 +403,10 @@ app.post('/api/rapidshyp/label', async (req, res) => {
                         r.seller_order_id === `#${shopifyOrderId}` ||
                         r.seller_order_id === shopifyOrderId.toString()
                     );
-                    if (match?.order_id) {
-                        resolvedIds.push(match.order_id);
-                        console.log(`[API] Found RS order ${match.order_id} for Shopify #${shopifyOrderId}`);
+                    if (match) {
+                        const shipId = match.shipment_id || match.order_id;
+                        resolvedIds.push(shipId);
+                        console.log(`[API] Found RS shipment ${shipId} for Shopify #${shopifyOrderId}`);
                     }
                 } catch (searchErr) {
                     console.warn(`[API] Session search failed:`, searchErr.message);
