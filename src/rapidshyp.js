@@ -256,12 +256,19 @@ const generateLabel = async (shipmentIds) => {
     try {
         const headers = getPublicHeaders();
         console.log(`[RAPIDSHYP] Generating label for shipments:`, shipmentIds);
-        const response = await rsApi({
-            method: 'GET',
-            url: `${PUBLIC_API_BASE}/generate_label`,
-            headers,
-            data: { shipmentId: shipmentIds }
-        });
+        // RapidShyp docs say GET with body, but Vercel strips body from GET.
+        // Try POST first, fall back to GET with query params.
+        let response;
+        try {
+            response = await rsApi.post(`${PUBLIC_API_BASE}/generate_label`, { shipmentId: shipmentIds }, { headers });
+        } catch (postErr) {
+            // Fallback: GET with shipmentId as query param
+            const ids = shipmentIds.join(',');
+            response = await rsApi.get(`${PUBLIC_API_BASE}/generate_label`, {
+                headers,
+                params: { shipmentId: ids }
+            });
+        }
 
         console.log(`[RAPIDSHYP] Label API Response:`, response.data);
         // Response: { status: true, remarks: "...", labelData: [{ shipmentId, labelURL, labelRemarks }] }
@@ -396,12 +403,13 @@ const bulkGenerateLabels = async (shipmentIds) => {
         const headers = getPublicHeaders();
         console.log(`[RAPIDSHYP] Generating labels for ${shipmentIds.length} shipments...`);
 
-        const response = await rsApi({
-            method: 'GET',
-            url: `${PUBLIC_API_BASE}/generate_label`,
-            headers,
-            data: { shipmentId: shipmentIds }
-        });
+        let response;
+        try {
+            response = await rsApi.post(`${PUBLIC_API_BASE}/generate_label`, { shipmentId: shipmentIds }, { headers });
+        } catch (postErr) {
+            const ids = shipmentIds.join(',');
+            response = await rsApi.get(`${PUBLIC_API_BASE}/generate_label`, { headers, params: { shipmentId: ids } });
+        }
 
         const data = response.data;
         const labelData = data.labelData || [];
