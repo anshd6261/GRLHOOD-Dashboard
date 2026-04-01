@@ -76,7 +76,11 @@ app.post('/api/login', (req, res) => {
     if (username === 'nextbige101' && password === 'nextbige101') {
         return res.json({ success: true, role: 'supplier', token: 'mock-jwt-supplier-token-2a4' });
     }
-    
+
+    if (username === 'care01' && password === 'care01') {
+        return res.json({ success: true, role: 'care', token: 'mock-jwt-care-token-5c8' });
+    }
+
     return res.status(401).json({ success: false, error: 'Invalid credentials' });
 });
 

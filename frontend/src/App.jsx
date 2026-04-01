@@ -19,6 +19,7 @@ import ShipOrdersModal from './components/ShipOrdersModal';
 import FulfillOrdersWizard from './components/FulfillOrdersWizard';
 import Login from './Login';
 import { useAuth } from './AuthContext';
+import CareDashboard from './pages/CareDashboard';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
@@ -514,6 +515,9 @@ function App() {
   /* ─── RENDER ─── */
 
   if (!user) return <Login />;
+
+  // Care role gets its own dedicated dashboard
+  if (user?.role === 'care') return <CareDashboard />;
 
   const isSupplier = user?.role === 'supplier';
   
