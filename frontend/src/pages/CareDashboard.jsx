@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
+import DatePicker from 'react-datepicker';
+import "react-datepicker/dist/react-datepicker.css";
 import {
   Search, RefreshCw, Package, Phone, MessageSquare, ExternalLink,
-  ChevronDown, ChevronUp, X, Filter, User, MapPin, Truck,
-  AlertTriangle, Clock, CreditCard, XOctagon, LogOut, Hash
+  X, User, MapPin, Truck, AlertTriangle, Clock, XOctagon, LogOut,
+  Calendar, Mail, ChevronRight, Smartphone, Shield
 } from 'lucide-react';
 import { useAuth } from '../AuthContext';
 import DottedBackground from '../components/DottedBackground';
@@ -14,19 +16,14 @@ import CareOrderDetail from '../components/CareOrderDetail';
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
 
-/* ═══════════════════════════════════════════
-   CARE DASHBOARD — Customer Care Executive
-   Search-first layout with split panel
-   ═══════════════════════════════════════════ */
-
 const FILTERS = [
-  { id: 'all', label: 'All' },
+  { id: 'all', label: 'All', icon: Package },
   { id: 'cod', label: 'COD' },
   { id: 'prepaid', label: 'Prepaid' },
-  { id: 'high_rto', label: 'High RTO' },
+  { id: 'high_rto', label: 'High RTO', icon: AlertTriangle },
   { id: 'unfulfilled', label: 'Unfulfilled' },
-  { id: 'in_transit', label: 'In Transit' },
-  { id: 'delivered', label: 'Delivered' },
+  { id: 'fulfilled', label: 'Shipped' },
+  { id: 'delivered', label: 'Delivered', icon: Truck },
 ];
 
 function CareDashboard() {
@@ -41,36 +38,45 @@ function CareDashboard() {
   const [initialLoaded, setInitialLoaded] = useState(false);
   const searchInputRef = useRef(null);
 
-  useEffect(() => { if (toast) setTimeout(() => setToast(null), 3000); }, [toast]);
+  // Date range — default last 7 days
+  const [dateRange, setDateRange] = useState([
+    new Date(new Date().setDate(new Date().getDate() - 7)),
+    new Date()
+  ]);
+  const [startDate, endDate] = dateRange;
 
-  // Load orders on mount (last 7 days for care team)
+  useEffect(() => { if (toast) setTimeout(() => setToast(null), 4000); }, [toast]);
+
+  // Load on mount
+  useEffect(() => { loadOrders(); }, []);
+
+  // Reload when date range changes (both dates selected)
   useEffect(() => {
-    loadOrders();
-  }, []);
+    if (startDate && endDate && initialLoaded) loadOrders();
+  }, [startDate, endDate]);
 
   const loadOrders = async () => {
     setLoading(true);
     try {
-      const now = new Date();
-      const weekAgo = new Date(now);
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      weekAgo.setHours(0, 0, 0, 0);
-      const endDate = new Date(now);
-      endDate.setHours(23, 59, 59, 999);
+      const start = new Date(startDate || new Date(new Date().setDate(new Date().getDate() - 7)));
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(endDate || new Date());
+      end.setHours(23, 59, 59, 999);
 
-      // Load RTO cache from localStorage
+      // Load RTO cache
       let rtoLocalCache = {};
       try { rtoLocalCache = JSON.parse(localStorage.getItem('rto_cache') || '{}'); } catch {}
       const cacheSize = Object.keys(rtoLocalCache).length;
 
-      // Fetch orders with inline RTO cache (same pattern as main dashboard)
+      // Fetch ALL orders (not just unfulfilled) so care can see delivered too
+      const url = `${API_URL}/orders?status=all&startDate=${start.toISOString()}&endDate=${end.toISOString()}`;
       const res = cacheSize > 0
-        ? await axios.post(`${API_URL}/orders?startDate=${weekAgo.toISOString()}&endDate=${endDate.toISOString()}`, { rtoCache: rtoLocalCache })
-        : await axios.get(`${API_URL}/orders?startDate=${weekAgo.toISOString()}&endDate=${endDate.toISOString()}`);
+        ? await axios.post(url, { rtoCache: rtoLocalCache })
+        : await axios.get(url);
 
       let fetchedOrders = res.data?.orders || [];
 
-      // Apply cached RTO data for Unknown orders
+      // Apply cached RTO instantly
       fetchedOrders = fetchedOrders.map(o => {
         const cached = rtoLocalCache[o.orderId];
         if (o.aiRiskLevel === 'Unknown' && cached && cached.aiRiskLevel !== 'Unknown') {
@@ -79,41 +85,41 @@ function CareDashboard() {
         return o;
       });
 
-      // Fetch fresh RTO for unchecked COD orders
-      const unchecked = fetchedOrders.filter(o =>
-        o.aiRiskLevel === 'Unknown' && o.payment === 'Cash on Delivery'
-      );
-      const uniqueUnchecked = [];
-      const seenIds = new Set();
-      for (const o of unchecked) {
-        if (!seenIds.has(o.orderId)) { seenIds.add(o.orderId); uniqueUnchecked.push(o); }
-      }
-
-      if (uniqueUnchecked.length > 0) {
-        try {
-          const rtoRes = await axios.post(`${API_URL}/rto-check`, { orders: uniqueUnchecked });
-          if (rtoRes.data?.success && rtoRes.data?.results) {
-            const rtoResults = rtoRes.data.results;
-            const updatedCache = { ...rtoLocalCache };
-            for (const [orderId, rto] of Object.entries(rtoResults)) {
-              if (rto.aiRiskLevel && rto.aiRiskLevel !== 'Unknown') {
-                updatedCache[orderId] = { aiRiskLevel: rto.aiRiskLevel, aiRiskScore: rto.aiRiskScore, aiRiskReasons: rto.aiRiskReasons };
-              }
-            }
-            try { localStorage.setItem('rto_cache', JSON.stringify(updatedCache)); } catch {}
-            fetchedOrders = fetchedOrders.map(o => {
-              const rto = rtoResults[o.orderId];
-              return rto ? { ...o, ...rto } : o;
-            });
-          }
-        } catch {}
-      }
-
+      // Show orders NOW
       setOrders(fetchedOrders);
       setInitialLoaded(true);
+      setLoading(false);
+
+      // Background RTO fetch for unchecked COD
+      const seenIds = new Set();
+      const uniqueUnchecked = fetchedOrders.filter(o => {
+        if (o.aiRiskLevel !== 'Unknown' || o.payment !== 'Cash on Delivery' || seenIds.has(o.orderId)) return false;
+        seenIds.add(o.orderId);
+        return true;
+      });
+
+      if (uniqueUnchecked.length > 0) {
+        axios.post(`${API_URL}/rto-check`, { orders: uniqueUnchecked }).then(rtoRes => {
+          if (!rtoRes.data?.success || !rtoRes.data?.results) return;
+          const rtoResults = rtoRes.data.results;
+          const updatedCache = { ...rtoLocalCache };
+          for (const [orderId, rto] of Object.entries(rtoResults)) {
+            if (rto.aiRiskLevel && rto.aiRiskLevel !== 'Unknown') {
+              updatedCache[orderId] = { aiRiskLevel: rto.aiRiskLevel, aiRiskScore: rto.aiRiskScore, aiRiskReasons: rto.aiRiskReasons };
+            }
+          }
+          try { localStorage.setItem('rto_cache', JSON.stringify(updatedCache)); } catch {}
+          setOrders(prev => prev.map(o => {
+            const rto = rtoResults[o.orderId];
+            return rto ? { ...o, ...rto } : o;
+          }));
+        }).catch(() => {});
+      }
+      return;
     } catch (e) {
-      setToast({ message: `Failed to load orders: ${e.message}`, type: 'error' });
-    } finally { setLoading(false); }
+      setToast({ message: `Load failed: ${e.message}`, type: 'error' });
+      setLoading(false);
+    }
   };
 
   const handleSearch = async () => {
@@ -122,14 +128,11 @@ function CareDashboard() {
     try {
       const res = await axios.get(`${API_URL}/orders/search?q=${encodeURIComponent(searchTerm.trim())}`);
       if (res.data.success && res.data.orders?.length > 0) {
-        // Apply RTO cache to search results too
         let rtoLocalCache = {};
         try { rtoLocalCache = JSON.parse(localStorage.getItem('rto_cache') || '{}'); } catch {}
         const enriched = res.data.orders.map(o => {
           const cached = rtoLocalCache[o.orderId];
-          if (o.aiRiskLevel === 'Unknown' && cached && cached.aiRiskLevel !== 'Unknown') {
-            return { ...o, ...cached };
-          }
+          if (o.aiRiskLevel === 'Unknown' && cached && cached.aiRiskLevel !== 'Unknown') return { ...o, ...cached };
           return o;
         });
         setOrders(enriched);
@@ -145,7 +148,7 @@ function CareDashboard() {
 
   const handleCancelOrder = async (order) => {
     if (!order?.id || !order?.orderId) return;
-    if (!confirm(`Cancel and DELETE order ${order.orderId}?`)) return;
+    if (!confirm(`Cancel and DELETE order ${order.orderId} from Shopify & RapidShyp?`)) return;
     setCancellingOrder(order);
     try {
       const res = await axios.post(`${API_URL}/orders/${order.id}/cancel`, { orderName: order.orderId });
@@ -159,7 +162,7 @@ function CareDashboard() {
     } finally { setCancellingOrder(null); }
   };
 
-  // Group orders by orderId (multiple line items per order)
+  // Group line items by orderId
   const groupedOrders = useMemo(() => {
     const groups = {};
     orders.forEach(o => {
@@ -172,6 +175,7 @@ function CareDashboard() {
           aiRiskLevel: o.aiRiskLevel, aiRiskScore: o.aiRiskScore, aiRiskReasons: o.aiRiskReasons,
           awb: o.awb, courier: o.courier, id: o.id,
           trackingUrl: o.trackingUrl, rsOrderId: o.rsOrderId,
+          email: o.email,
         };
       }
       groups[o.orderId].items.push(o);
@@ -179,41 +183,56 @@ function CareDashboard() {
     return Object.values(groups).sort((a, b) => (parseInt(b.orderId) || 0) - (parseInt(a.orderId) || 0));
   }, [orders]);
 
-  // Apply filters
+  // Filter
   const filteredGroups = useMemo(() => {
     return groupedOrders.filter(g => {
       switch (activeFilter) {
         case 'cod': return g.payment === 'Cash on Delivery';
-        case 'prepaid': return g.payment === 'Prepaid';
+        case 'prepaid': return g.payment !== 'Cash on Delivery';
         case 'high_rto': return g.aiRiskLevel === 'High';
         case 'unfulfilled': return !g.fulfillmentStatus || g.fulfillmentStatus === 'UNFULFILLED';
-        case 'in_transit': return g.fulfillmentStatus === 'FULFILLED' && !g.items[0]?.deliveredAt;
-        case 'delivered': return g.items[0]?.deliveredAt || g.fulfillmentStatus === 'DELIVERED';
+        case 'fulfilled': return g.fulfillmentStatus === 'FULFILLED';
+        case 'delivered': return g.fulfillmentStatus === 'DELIVERED';
         default: return true;
       }
     });
   }, [groupedOrders, activeFilter]);
 
   const filterCounts = useMemo(() => {
-    const counts = {};
+    const c = {};
     FILTERS.forEach(f => {
       switch (f.id) {
-        case 'all': counts[f.id] = groupedOrders.length; break;
-        case 'cod': counts[f.id] = groupedOrders.filter(g => g.payment === 'Cash on Delivery').length; break;
-        case 'prepaid': counts[f.id] = groupedOrders.filter(g => g.payment === 'Prepaid').length; break;
-        case 'high_rto': counts[f.id] = groupedOrders.filter(g => g.aiRiskLevel === 'High').length; break;
-        case 'unfulfilled': counts[f.id] = groupedOrders.filter(g => !g.fulfillmentStatus || g.fulfillmentStatus === 'UNFULFILLED').length; break;
-        case 'in_transit': counts[f.id] = groupedOrders.filter(g => g.fulfillmentStatus === 'FULFILLED' && !g.items[0]?.deliveredAt).length; break;
-        case 'delivered': counts[f.id] = groupedOrders.filter(g => g.items[0]?.deliveredAt || g.fulfillmentStatus === 'DELIVERED').length; break;
-        default: counts[f.id] = 0;
+        case 'all': c[f.id] = groupedOrders.length; break;
+        case 'cod': c[f.id] = groupedOrders.filter(g => g.payment === 'Cash on Delivery').length; break;
+        case 'prepaid': c[f.id] = groupedOrders.filter(g => g.payment !== 'Cash on Delivery').length; break;
+        case 'high_rto': c[f.id] = groupedOrders.filter(g => g.aiRiskLevel === 'High').length; break;
+        case 'unfulfilled': c[f.id] = groupedOrders.filter(g => !g.fulfillmentStatus || g.fulfillmentStatus === 'UNFULFILLED').length; break;
+        case 'fulfilled': c[f.id] = groupedOrders.filter(g => g.fulfillmentStatus === 'FULFILLED').length; break;
+        case 'delivered': c[f.id] = groupedOrders.filter(g => g.fulfillmentStatus === 'DELIVERED').length; break;
+        default: c[f.id] = 0;
       }
     });
-    return counts;
+    return c;
   }, [groupedOrders]);
 
-  const getOrderAge = (createdAt) => {
-    const d = Math.floor((Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24));
-    return d === 0 ? 'Today' : d === 1 ? '1d ago' : `${d}d ago`;
+  const getAge = (d) => {
+    const days = Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
+    return days === 0 ? 'Today' : days === 1 ? '1d ago' : `${days}d ago`;
+  };
+
+  const getEDD = (createdAt, fulfillmentStatus) => {
+    if (fulfillmentStatus === 'DELIVERED') return 'Delivered';
+    const created = new Date(createdAt);
+    const edd = new Date(created);
+    edd.setDate(edd.getDate() + (fulfillmentStatus === 'FULFILLED' ? 5 : 7));
+    if (edd < new Date()) return 'Overdue';
+    return edd.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  };
+
+  const getStatusColor = (fs) => {
+    if (fs === 'FULFILLED') return { bg: 'rgba(52,211,153,0.08)', border: 'rgba(52,211,153,0.2)', text: '#34d399', label: 'Shipped' };
+    if (fs === 'DELIVERED') return { bg: 'rgba(99,102,241,0.08)', border: 'rgba(99,102,241,0.2)', text: '#818cf8', label: 'Delivered' };
+    return { bg: 'rgba(245,245,245,0.04)', border: 'rgba(245,245,245,0.08)', text: 'rgba(245,245,245,0.4)', label: 'Unfulfilled' };
   };
 
   return (
@@ -224,63 +243,75 @@ function CareDashboard() {
       <div className="relative z-10 flex flex-col min-h-screen">
 
         {/* ═══ TOP BAR ═══ */}
-        <header className="sticky top-0 z-50 glass-topbar px-5 lg:px-8 py-3">
-          <div className="max-w-[1400px] mx-auto flex items-center justify-between gap-4">
+        <div className="pt-3 px-5 lg:px-8">
+          <header className="sticky top-0 z-50 glass-card px-6 py-4 mx-auto max-w-[1400px]" style={{ borderRadius: '20px' }}>
+            <div className="flex items-center justify-between gap-5">
 
-            {/* Left: Logo */}
-            <div className="flex items-center gap-3 shrink-0">
-              <img src="/logo.png" alt="GRLHOOD" className="h-6 object-contain opacity-80 logo-tint" />
-              <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-[rgba(245,245,245,0.3)] border border-[rgba(227,207,216,0.15)] px-2 py-0.5 rounded-full bg-[rgba(227,207,216,0.05)]">
-                Care
-              </span>
-            </div>
+              {/* Left: Logo + Badge */}
+              <div className="flex items-center gap-4 shrink-0">
+                <img src="/logo.png" alt="GRLHOOD" className="h-8 object-contain opacity-90 logo-tint" />
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[#e3cfd8] border border-[rgba(227,207,216,0.2)] px-3 py-1 rounded-full bg-[rgba(227,207,216,0.06)]">
+                  Customer Care
+                </span>
+              </div>
 
-            {/* Center: Search */}
-            <div className="flex-1 max-w-xl mx-4">
-              <div className="relative flex items-center glass-card-sm px-4 py-2">
-                <Search size={14} className="text-[#e3cfd8] opacity-50 shrink-0 mr-3" />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                  placeholder="Search by Order ID, Name, Phone, Email, AWB..."
-                  className="bg-transparent text-[13px] font-semibold text-white outline-none w-full placeholder-[rgba(245,245,245,0.25)]"
-                />
-                {searchTerm && (
-                  <button onClick={() => { setSearchTerm(''); loadOrders(); }} className="ml-2 text-[rgba(245,245,245,0.3)] hover:text-white">
-                    <X size={14} />
-                  </button>
-                )}
+              {/* Center: Search */}
+              <div className="flex-1 max-w-2xl">
+                <div className="relative flex items-center glass-card-sm px-5 py-3">
+                  <Search size={16} className="text-[#e3cfd8] opacity-60 shrink-0 mr-3" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                    placeholder="Search by Order ID, Name, Phone, Email, AWB..."
+                    className="bg-transparent text-sm font-semibold text-white outline-none w-full placeholder-[rgba(245,245,245,0.25)]"
+                  />
+                  {searchTerm && (
+                    <button onClick={() => { setSearchTerm(''); loadOrders(); }} className="ml-2 text-[rgba(245,245,245,0.3)] hover:text-white transition-colors">
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Right: Date + Refresh + Logout */}
+              <div className="flex items-center gap-3 shrink-0">
+                <div className="relative flex items-center gap-2 glass-card-sm px-4 py-2.5">
+                  <Calendar size={14} className="text-[#e3cfd8] opacity-50 shrink-0" />
+                  <DatePicker
+                    selectsRange={true}
+                    startDate={startDate}
+                    endDate={endDate}
+                    onChange={(update) => setDateRange(update)}
+                    dateFormat="do MMM"
+                    className="bg-transparent text-[12px] font-semibold text-white outline-none w-[140px] placeholder-[rgba(245,245,245,0.25)] cursor-pointer"
+                    placeholderText="Select dates"
+                  />
+                </div>
+                <button onClick={loadOrders} disabled={loading} className="glass-icon-btn" style={{ width: 42, height: 42 }} title="Refresh">
+                  <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+                </button>
+                <button onClick={logout} className="glass-icon-btn hover:text-[#ffb6c1] hover:bg-[rgba(255,182,193,0.1)] transition-colors" style={{ width: 42, height: 42 }} title="Logout">
+                  <LogOut size={16} />
+                </button>
               </div>
             </div>
+          </header>
+        </div>
 
-            {/* Right: Refresh + Logout */}
-            <div className="flex items-center gap-2 shrink-0">
-              <button onClick={loadOrders} disabled={loading} className="glass-icon-btn" title="Refresh">
-                <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-              </button>
-              <button onClick={logout} className="glass-icon-btn hover:text-[#ffb6c1] hover:bg-[rgba(255,182,193,0.1)] transition-colors" title="Logout">
-                <LogOut size={15} />
-              </button>
-            </div>
-          </div>
-        </header>
+        {/* ═══ CONTENT ═══ */}
+        <main className="flex-1 px-5 lg:px-8 py-6 max-w-[1400px] mx-auto w-full">
 
-        {/* ═══ MAIN CONTENT ═══ */}
-        <div className="flex-1 flex flex-col lg:flex-row max-w-[1400px] mx-auto w-full px-5 lg:px-8 py-4 gap-4">
-
-          {/* LEFT: Order List */}
-          <div className={`flex-1 flex flex-col min-w-0 transition-all ${selectedOrder ? 'lg:max-w-[55%]' : ''}`}>
-
-            {/* Filter Pills */}
-            <div className="flex items-center gap-2 flex-wrap mb-4 overflow-x-auto pb-1">
+          {/* Filter Row */}
+          <div className="flex items-center justify-between gap-4 mb-6">
+            <div className="flex items-center gap-2.5 flex-wrap">
               {FILTERS.map(f => (
                 <button
                   key={f.id}
                   onClick={() => setActiveFilter(f.id)}
-                  className={`glass-pill text-[10px] font-bold tracking-wider cursor-pointer transition-all whitespace-nowrap ${
+                  className={`glass-pill text-[11px] font-bold tracking-wider cursor-pointer transition-all whitespace-nowrap ${
                     activeFilter === f.id
                       ? 'glass-pill-active'
                       : 'text-[rgba(245,245,245,0.35)] hover:text-[rgba(245,245,245,0.6)] hover:border-[rgba(227,207,216,0.12)]'
@@ -290,87 +321,127 @@ function CareDashboard() {
                 </button>
               ))}
             </div>
-
-            {/* Order Count */}
-            <div className="text-[10px] text-[rgba(245,245,245,0.25)] font-medium tracking-wider mb-3 px-1">
+            <div className="text-[11px] text-[rgba(245,245,245,0.25)] font-medium tracking-wider shrink-0">
               {filteredGroups.length} order{filteredGroups.length !== 1 ? 's' : ''}
             </div>
+          </div>
 
-            {/* Loading */}
-            {loading && !initialLoaded && (
-              <div className="flex flex-col items-center justify-center py-24">
-                <RefreshCw size={32} className="animate-spin text-[#e3cfd8] opacity-40 mb-4" />
-                <div className="text-xs text-[rgba(245,245,245,0.3)] tracking-widest uppercase">Loading orders...</div>
-              </div>
-            )}
+          {/* Loading */}
+          {loading && !initialLoaded && (
+            <div className="flex flex-col items-center justify-center py-32">
+              <RefreshCw size={36} className="animate-spin text-[#e3cfd8] opacity-30 mb-5" />
+              <div className="text-sm text-[rgba(245,245,245,0.25)] tracking-widest uppercase font-bold">Loading orders...</div>
+            </div>
+          )}
 
-            {/* Order Cards */}
-            <div className="flex flex-col gap-3 pb-8 overflow-y-auto">
+          {/* Order Grid */}
+          {initialLoaded && (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 pb-12">
               {filteredGroups.map((group) => {
-                const isActive = selectedOrder?.orderId === group.orderId;
-                const riskLevel = group.aiRiskLevel;
-                const age = getOrderAge(group.createdAt);
                 const phone = group.shippingDetails?.phone || group.customer?.phone;
+                const status = getStatusColor(group.fulfillmentStatus);
+                const edd = getEDD(group.createdAt, group.fulfillmentStatus);
+                const riskLevel = group.aiRiskLevel;
 
                 return (
                   <motion.div
                     key={group.orderId}
-                    initial={{ opacity: 0, y: 20 }}
+                    initial={{ opacity: 0, y: 16 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3 }}
+                    transition={{ duration: 0.25 }}
+                    whileHover={{ y: -2 }}
                   >
                     <div
-                      onClick={() => setSelectedOrder(isActive ? null : group)}
-                      className={`glass-card p-4 cursor-pointer transition-all hover:border-[rgba(227,207,216,0.15)] ${
-                        isActive ? 'ring-1 ring-[rgba(227,207,216,0.25)] bg-[rgba(227,207,216,0.03)]' : ''
-                      }`}
+                      onClick={() => setSelectedOrder(group)}
+                      className="glass-card p-5 cursor-pointer transition-all hover:border-[rgba(227,207,216,0.18)] group"
                     >
-                      {/* Row 1: Order ID + Status + Age */}
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono font-black text-sm text-white">{group.orderId}</span>
-                          <span className={`text-[8px] uppercase font-black px-2 py-0.5 rounded-full tracking-wider ${
-                            group.payment === 'Prepaid' ? 'badge-prepaid' : 'badge-cod'
+                      {/* Header: ID + Status Badge */}
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2.5">
+                          <span className="font-mono font-black text-base text-white">#{group.orderId}</span>
+                          <span className={`text-[8px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider ${
+                            group.payment === 'Cash on Delivery' ? 'badge-cod' : 'badge-prepaid'
                           }`}>
                             {group.payment === 'Cash on Delivery' ? 'COD' : 'Prepaid'}
                           </span>
+                        </div>
+                        <span className="text-[8px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider"
+                          style={{ background: status.bg, border: `1px solid ${status.border}`, color: status.text }}>
+                          {status.label}
+                        </span>
+                      </div>
+
+                      {/* Customer */}
+                      <div className="flex items-center gap-2 mb-2">
+                        <User size={13} className="text-[rgba(245,245,245,0.2)] shrink-0" />
+                        <span className="text-[13px] text-[rgba(245,245,245,0.6)] font-semibold truncate">{group.customerName}</span>
+                        {(group.customerOrdersCount || 1) > 1 && (
+                          <span className="text-[8px] font-bold text-indigo-400 bg-[rgba(99,102,241,0.1)] px-1.5 py-0.5 rounded-md shrink-0">
+                            x{group.customerOrdersCount}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Info Grid */}
+                      <div className="grid grid-cols-3 gap-3 mb-3 mt-3">
+                        <div>
+                          <div className="text-[8px] uppercase font-bold text-[rgba(245,245,245,0.2)] tracking-widest mb-0.5">Items</div>
+                          <div className="text-[12px] font-bold text-[rgba(245,245,245,0.6)]">{group.items.length}</div>
+                        </div>
+                        <div>
+                          <div className="text-[8px] uppercase font-bold text-[rgba(245,245,245,0.2)] tracking-widest mb-0.5">Age</div>
+                          <div className="text-[12px] font-bold text-[rgba(245,245,245,0.6)]">{getAge(group.createdAt)}</div>
+                        </div>
+                        <div>
+                          <div className="text-[8px] uppercase font-bold text-[rgba(245,245,245,0.2)] tracking-widest mb-0.5">EDD</div>
+                          <div className={`text-[12px] font-bold ${edd === 'Overdue' ? 'text-orange-400' : edd === 'Delivered' ? 'text-indigo-400' : 'text-[rgba(245,245,245,0.6)]'}`}>
+                            {edd}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* AWB Row */}
+                      {group.awb ? (
+                        <div className="flex items-center gap-2 mb-3">
+                          <Truck size={11} className="text-[rgba(227,207,216,0.4)] shrink-0" />
+                          <a
+                            href={group.trackingUrl || `https://www.google.com/search?q=${encodeURIComponent(group.awb + ' tracking')}`}
+                            target="_blank"
+                            onClick={e => e.stopPropagation()}
+                            className="text-[11px] font-mono text-[#e3cfd8] hover:text-white hover:underline transition-colors truncate"
+                          >
+                            {group.courier ? `${group.courier}: ` : ''}{group.awb}
+                          </a>
+                          <ExternalLink size={10} className="text-[rgba(227,207,216,0.3)] shrink-0" />
+                        </div>
+                      ) : (
+                        <div className="text-[10px] text-[rgba(245,245,245,0.15)] italic mb-3">No tracking yet</div>
+                      )}
+
+                      {/* RTO Risk + Bottom Row */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
                           {riskLevel && riskLevel !== 'Unknown' && (
                             <span className={`text-[8px] uppercase font-black px-2 py-0.5 rounded-full tracking-wider ${
-                              riskLevel === 'High' ? 'bg-[rgba(255,20,147,0.15)] border border-[rgba(255,20,147,0.3)] text-[#ff1493]' :
+                              riskLevel === 'High' ? 'bg-[rgba(255,20,147,0.15)] border border-[rgba(255,20,147,0.3)] text-[#ff1493] drop-shadow-[0_0_6px_rgba(255,20,147,0.3)]' :
                               riskLevel === 'Medium' ? 'bg-[rgba(227,207,216,0.1)] border border-[rgba(227,207,216,0.2)] text-[#e3cfd8]' :
-                              'bg-[rgba(245,245,245,0.05)] border border-[rgba(245,245,245,0.1)] text-[rgba(245,245,245,0.5)]'
+                              'bg-[rgba(52,211,153,0.08)] border border-[rgba(52,211,153,0.15)] text-emerald-400'
                             }`}>
                               RTO: {riskLevel}
                             </span>
                           )}
+                          {(() => {
+                            const ageDays = (Date.now() - new Date(group.createdAt).getTime()) / 86400000;
+                            return ageDays > 15 && group.fulfillmentStatus !== 'DELIVERED' ? (
+                              <span className="text-[8px] uppercase font-black px-2 py-0.5 rounded-full tracking-wider bg-[rgba(255,100,0,0.12)] border border-[rgba(255,100,0,0.25)] text-orange-400 animate-pulse">
+                                Late
+                              </span>
+                            ) : null;
+                          })()}
                         </div>
-                        <span className="text-[9px] text-[rgba(245,245,245,0.3)] font-medium">{age}</span>
-                      </div>
 
-                      {/* Row 2: Customer + Items count */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <User size={12} className="text-[rgba(245,245,245,0.2)] shrink-0" />
-                          <span className="text-xs text-[rgba(245,245,245,0.5)] font-medium truncate">{group.customerName}</span>
-                        </div>
-                        <span className="text-[9px] text-[rgba(245,245,245,0.25)] font-bold shrink-0">
-                          {group.items.length} item{group.items.length > 1 ? 's' : ''}
-                        </span>
-                      </div>
-
-                      {/* Row 3: Courier/AWB + Quick Actions */}
-                      <div className="flex items-center justify-between mt-2">
-                        <div className="flex items-center gap-2">
-                          {group.awb ? (
-                            <span className="text-[9px] font-mono text-[rgba(227,207,216,0.6)] bg-[rgba(227,207,216,0.06)] px-2 py-0.5 rounded-md">
-                              <Truck size={10} className="inline mr-1 opacity-50" />
-                              {group.courier || 'Courier'}: {group.awb}
-                            </span>
-                          ) : (
-                            <span className="text-[9px] text-[rgba(245,245,245,0.2)] italic">No AWB yet</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1">
+                        {/* Quick Contact */}
+                        <div className="flex items-center gap-1.5">
                           {phone && (
                             <>
                               <a href={`tel:${phone}`} className="glass-icon-btn-sm" title="Call" onClick={e => e.stopPropagation()}>
@@ -387,88 +458,52 @@ function CareDashboard() {
                               </a>
                             </>
                           )}
+                          <div className="glass-icon-btn-sm text-[rgba(245,245,245,0.2)] group-hover:text-[rgba(245,245,245,0.5)] transition-colors">
+                            <ChevronRight size={12} />
+                          </div>
                         </div>
-                      </div>
-
-                      {/* Row 4: Status indicators */}
-                      <div className="flex items-center gap-1.5 mt-2">
-                        {group.fulfillmentStatus === 'FULFILLED' && (
-                          <span className="text-[8px] uppercase font-bold px-2 py-0.5 rounded-full tracking-wider bg-[rgba(52,211,153,0.08)] border border-[rgba(52,211,153,0.15)] text-emerald-400">
-                            Fulfilled
-                          </span>
-                        )}
-                        {(!group.fulfillmentStatus || group.fulfillmentStatus === 'UNFULFILLED') && (
-                          <span className="text-[8px] uppercase font-bold px-2 py-0.5 rounded-full tracking-wider bg-[rgba(245,245,245,0.04)] border border-[rgba(245,245,245,0.08)] text-[rgba(245,245,245,0.35)]">
-                            Unfulfilled
-                          </span>
-                        )}
-                        {(group.customerOrdersCount || 1) > 1 && (
-                          <span className="text-[8px] uppercase font-bold px-2 py-0.5 rounded-full tracking-wider bg-[rgba(99,102,241,0.08)] border border-[rgba(99,102,241,0.15)] text-indigo-400">
-                            Repeat ({group.customerOrdersCount})
-                          </span>
-                        )}
-                        {(() => {
-                          const ageDays = (Date.now() - new Date(group.createdAt).getTime()) / (1000 * 60 * 60 * 24);
-                          return ageDays > 15 ? (
-                            <span className="text-[8px] uppercase font-bold px-2 py-0.5 rounded-full tracking-wider bg-[rgba(255,100,0,0.12)] border border-[rgba(255,100,0,0.25)] text-orange-400 animate-pulse">
-                              Late
-                            </span>
-                          ) : null;
-                        })()}
                       </div>
                     </div>
                   </motion.div>
                 );
               })}
-
-              {filteredGroups.length === 0 && initialLoaded && !loading && (
-                <div className="flex flex-col items-center justify-center py-20 opacity-25">
-                  <Package size={40} />
-                  <div className="mt-3 font-medium tracking-wider text-sm">No orders found</div>
-                </div>
-              )}
             </div>
-          </div>
+          )}
 
-          {/* RIGHT: Detail Panel (slide-in) */}
-          <AnimatePresence>
-            {selectedOrder && (
-              <motion.div
-                initial={{ opacity: 0, x: 40, width: 0 }}
-                animate={{ opacity: 1, x: 0, width: 'auto' }}
-                exit={{ opacity: 0, x: 40, width: 0 }}
-                transition={{ duration: 0.3, ease: 'easeInOut' }}
-                className="lg:w-[45%] shrink-0 overflow-hidden"
-              >
-                <CareOrderDetail
-                  group={selectedOrder}
-                  onClose={() => setSelectedOrder(null)}
-                  onCancel={handleCancelOrder}
-                  allOrders={orders}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+          {filteredGroups.length === 0 && initialLoaded && !loading && (
+            <div className="flex flex-col items-center justify-center py-32 opacity-20">
+              <Package size={48} />
+              <div className="mt-4 font-bold tracking-wider text-sm">No orders match this filter</div>
+            </div>
+          )}
+        </main>
       </div>
+
+      {/* ═══ ORDER DETAIL MODAL ═══ */}
+      <AnimatePresence>
+        {selectedOrder && (
+          <CareOrderDetail
+            group={selectedOrder}
+            onClose={() => setSelectedOrder(null)}
+            onCancel={handleCancelOrder}
+            allOrders={orders}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Cancel overlay */}
       <AnimatePresence>
         {cancellingOrder && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[400] bg-black/90 flex flex-col items-center justify-center p-8 backdrop-blur-xl"
+            className="fixed inset-0 z-[500] bg-black/90 flex flex-col items-center justify-center p-8 backdrop-blur-xl"
           >
-            <motion.div
-              animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
-              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-              className="mb-8"
-            >
-              <XOctagon size={80} className="text-[#e3cfd8] drop-shadow-[0_0_30px_rgba(227,207,216,0.4)]" />
+            <motion.div animate={{ scale: [1, 1.1, 1] }} transition={{ duration: 2, repeat: Infinity }} className="mb-8">
+              <XOctagon size={72} className="text-[#e3cfd8] drop-shadow-[0_0_30px_rgba(227,207,216,0.4)]" />
             </motion.div>
-            <h2 className="text-2xl font-black text-white tracking-widest uppercase mb-4">Cancelling Order {cancellingOrder.orderId}</h2>
+            <h2 className="text-xl font-black text-white tracking-widest uppercase mb-4">Cancelling {cancellingOrder.orderId}</h2>
             <div className="flex items-center gap-3">
-              <RefreshCw size={18} className="animate-spin text-[#e3cfd8]" />
+              <RefreshCw size={16} className="animate-spin text-[#e3cfd8]" />
               <span className="text-xs font-bold text-[rgba(245,245,245,0.4)] tracking-widest uppercase">Processing...</span>
             </div>
           </motion.div>
@@ -484,7 +519,7 @@ function CareDashboard() {
             exit={{ opacity: 0, scale: 0.9 }}
             className="fixed bottom-8 right-8 z-[300] px-5 py-3 rounded-2xl shadow-2xl border flex items-center gap-3 backdrop-blur-xl bg-[rgba(26,26,30,0.9)] border-[rgba(227,207,216,0.2)] text-[#f5f5f5]"
           >
-            {toast.type === 'error' ? <X size={16} className="text-[#e3cfd8] opacity-60" /> : <Package size={16} className="text-[#e3cfd8]" />}
+            {toast.type === 'error' ? <X size={16} className="text-red-400 opacity-60" /> : <Package size={16} className="text-[#e3cfd8]" />}
             <span className="font-bold text-sm">{toast.message}</span>
           </motion.div>
         )}

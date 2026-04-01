@@ -274,6 +274,8 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
                     cogs: cogs,
                     price: price,
                     payment: payment,
+                    email: order.email || customer.email || '',
+                    trackingUrl: (order.fulfillments?.[0]?.trackingInfo?.[0]?.url) || '',
                     fulfillmentStatus: order.displayFulfillmentStatus || 'UNFULFILLED',
                     createdAt: order.createdAt,
                     // Shiprocket Sense RTO Risk Data
