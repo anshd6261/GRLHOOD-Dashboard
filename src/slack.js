@@ -6,7 +6,7 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
-const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL || '';
+const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL || process.env.SLACK_CARE_WEBHOOK_URL || '';
 const TEMPLATES_PATH = path.join(__dirname, '..', 'data', 'slack_templates.json');
 
 // Default templates (overridable from settings)
