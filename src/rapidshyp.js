@@ -429,53 +429,70 @@ const bulkAssignAWB = async (orderNames, approveShipmentMap = {}) => {
 
     console.log(`[RAPIDSHYP] Bulk assign AWB: ${cleanIds.length} orders, ${Object.keys(approveShipmentMap).length} shipment IDs from approve`);
 
-    // Step 1: For each order, find the shipment_id using track_order (tries order_id + marketplace_order_id)
-    // Use approve shipment map first (instant), then track_order as fallback
+    // Step 1: Build a marketplace ID map from session API (one fetch for ALL orders)
+    // This gives us market_place_order_id for every order — needed for track_order lookups
+    const sessionHeaders = getSessionHeaders();
+    const marketplaceMap = new Map(); // cleanId → market_place_order_id
+    if (sessionHeaders) {
+        try {
+            for (let page = 1; page <= 5; page++) {
+                const res = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, {
+                    page, limit: 200
+                }, { headers: sessionHeaders, timeout: 8000 });
+                const records = res.data?.records || [];
+                for (const r of records) {
+                    if (r.seller_order_id && r.market_place_order_id) {
+                        const clean = r.seller_order_id.replace('#', '');
+                        marketplaceMap.set(clean, String(r.market_place_order_id));
+                    }
+                }
+                if (records.length < 200) break;
+            }
+            console.log(`[RAPIDSHYP] Marketplace map: ${marketplaceMap.size} entries`);
+        } catch (e) {
+            console.warn(`[RAPIDSHYP] Session fetch for marketplace IDs failed:`, e.message);
+        }
+    }
+
+    // Step 2: For each CSV order, resolve shipment_id
+    // Priority: approveShipmentMap → track_order with marketplace_order_id → track_order with #orderId
+    const BATCH_SIZE = 10;
+
     const resolveShipment = async (cleanId) => {
-        // 1. Check approve response shipment map
+        // 1. Approve response (newly approved orders)
         if (approveShipmentMap[cleanId]) {
             return { cleanId, shipmentId: approveShipmentMap[cleanId], awb: null };
         }
 
-        // 2. Try track_order with multiple ID formats
-        const idsToTry = [`#${cleanId}`, cleanId];
-        for (const tryId of idsToTry) {
+        // 2. track_order with marketplace_order_id (works for already-approved/prepaid orders)
+        const marketplaceId = marketplaceMap.get(cleanId);
+        if (marketplaceId) {
             try {
                 const res = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, {
-                    orderId: tryId
+                    orderId: marketplaceId
                 }, { headers, timeout: 10000 });
-                const record = res.data?.records?.[0];
-                const shipment = record?.shipment_details?.[0];
+                const shipment = res.data?.records?.[0]?.shipment_details?.[0];
                 if (shipment?.shipment_id) {
                     return { cleanId, shipmentId: shipment.shipment_id, awb: shipment.awb || null, courier: shipment.courier_name || '' };
                 }
-            } catch (e) { /* continue */ }
+            } catch (e) { /* continue to fallback */ }
         }
 
-        // 3. Try with marketplace_order_id from session API
-        const sessionHeaders = getSessionHeaders();
-        if (sessionHeaders) {
-            try {
-                const orderMap = await fetchAllOrders();
-                const match = orderMap.get(cleanId);
-                if (match?.market_place_order_id) {
-                    const res = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, {
-                        orderId: String(match.market_place_order_id)
-                    }, { headers, timeout: 10000 });
-                    const record = res.data?.records?.[0];
-                    const shipment = record?.shipment_details?.[0];
-                    if (shipment?.shipment_id) {
-                        return { cleanId, shipmentId: shipment.shipment_id, awb: shipment.awb || null, courier: shipment.courier_name || '' };
-                    }
-                }
-            } catch (e) { /* continue */ }
-        }
+        // 3. track_order with #orderId (seller_order_id format)
+        try {
+            const res = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, {
+                orderId: `#${cleanId}`
+            }, { headers, timeout: 10000 });
+            const shipment = res.data?.records?.[0]?.shipment_details?.[0];
+            if (shipment?.shipment_id) {
+                return { cleanId, shipmentId: shipment.shipment_id, awb: shipment.awb || null, courier: shipment.courier_name || '' };
+            }
+        } catch (e) { /* continue */ }
 
         return { cleanId, shipmentId: null, awb: null };
     };
 
-    // Resolve all shipment IDs in parallel batches
-    const BATCH_SIZE = 5;
+    // Resolve all in parallel batches
     const resolved = [];
     for (let i = 0; i < cleanIds.length; i += BATCH_SIZE) {
         const batch = cleanIds.slice(i, i + BATCH_SIZE);
@@ -485,7 +502,12 @@ const bulkAssignAWB = async (orderNames, approveShipmentMap = {}) => {
         }
     }
 
-    // Step 2: Assign AWBs for orders that need it
+    const withShipment = resolved.filter(r => r.shipmentId);
+    const withAwb = resolved.filter(r => r.awb);
+    const noShipment = resolved.filter(r => !r.shipmentId);
+    console.log(`[RAPIDSHYP] Resolved: ${withShipment.length} have shipment_id, ${withAwb.length} already have AWB, ${noShipment.length} not found`);
+
+    // Step 3: Assign AWBs
     const finalResults = [];
     const toAssign = [];
 
@@ -507,7 +529,7 @@ const bulkAssignAWB = async (orderNames, approveShipmentMap = {}) => {
                     shipment_id: o.shipmentId
                 }, { headers, timeout: 15000 });
                 const data = res.data;
-                console.log(`[RAPIDSHYP] AWB assigned for #${o.cleanId}: shipment=${o.shipmentId}, awb=${data.awb}`);
+                console.log(`[RAPIDSHYP] AWB assigned #${o.cleanId}: shipment=${o.shipmentId} awb=${data.awb}`);
                 return {
                     orderId: o.cleanId, success: true, awb: data.awb || '',
                     courier: data.courier_name || '', shipmentId: data.shipment_id || o.shipmentId,
@@ -515,7 +537,7 @@ const bulkAssignAWB = async (orderNames, approveShipmentMap = {}) => {
                 };
             } catch (e) {
                 const msg = e.response?.data?.remarks || e.response?.data?.message || e.message;
-                console.error(`[RAPIDSHYP] AWB failed for #${o.cleanId} (shipment=${o.shipmentId}):`, msg);
+                console.error(`[RAPIDSHYP] AWB failed #${o.cleanId} (shipment=${o.shipmentId}):`, msg);
                 return { orderId: o.cleanId, success: false, message: typeof msg === 'string' ? msg : JSON.stringify(msg) };
             }
         }));
@@ -525,7 +547,7 @@ const bulkAssignAWB = async (orderNames, approveShipmentMap = {}) => {
     }
 
     const successCount = finalResults.filter(r => r.success).length;
-    console.log(`[RAPIDSHYP] Bulk AWB: ${successCount}/${cleanIds.length} assigned`);
+    console.log(`[RAPIDSHYP] Bulk AWB done: ${successCount}/${cleanIds.length} assigned`);
     return { success: successCount > 0, results: finalResults };
 };
 
