@@ -433,74 +433,37 @@ app.post('/api/nbe/upload-order', async (req, res) => {
         const nbeHeaders = { 'X-Customer-Api-Key': nbeKey };
         console.log(`[NBE] Uploading ${rows.length} items to portal...`);
 
-        // Step 1: Create uploads for each item — download design image and upload as file
-        // Process in parallel batches of 5 to stay within Vercel timeout
+        // Generate the supplier CSV (same one that gets downloaded)
+        const csvContent = generateSupplierCSV(rows);
+        const filename = `${getFormattedDate()} Order.csv`;
+
+        // Upload CSV file to NBE portal
         const FormData = require('form-data');
-        const uploadResults = [];
-        const BATCH = 5;
+        const form = new FormData();
+        form.append('file', Buffer.from(csvContent, 'utf-8'), {
+            filename,
+            contentType: 'text/csv'
+        });
+        form.append('order_type', 'Dropship POD');
+        form.append('providing_shipping_label', 'yes');
 
-        const uploadOne = async (row) => {
-            const form = new FormData();
+        const uploadRes = await axios.post(`${nbeBase}/customer-uploads/`, form, {
+            headers: { ...nbeHeaders, ...form.getHeaders() },
+            timeout: 30000
+        });
 
-            // Download the design image from Shopify CDN and upload as file
-            if (row.thumbnail) {
-                try {
-                    const imgRes = await axios.get(row.thumbnail, { responseType: 'arraybuffer', timeout: 10000 });
-                    const ext = row.thumbnail.match(/\.(png|jpg|jpeg|webp)/i)?.[1] || 'jpg';
-                    form.append('file', Buffer.from(imgRes.data), {
-                        filename: `design_${row.orderId}_${row.sku || 'item'}.${ext}`,
-                        contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`
-                    });
-                } catch (imgErr) {
-                    console.warn(`[NBE] Image download failed for ${row.orderId}, uploading without design:`, imgErr.message);
-                }
-            }
+        const uploadId = uploadRes.data?.id;
+        console.log(`[NBE] CSV uploaded: upload_id=${uploadId}`, uploadRes.data);
 
-            form.append('order_type', 'Dropship POD');
-            form.append('case_type_name', row.category || 'Soft Case');
-            form.append('product_name', row.model || 'Unknown');
-            form.append('providing_shipping_label', 'yes');
-
-            const uploadRes = await axios.post(`${nbeBase}/customer-uploads/`, form, {
-                headers: { ...nbeHeaders, ...form.getHeaders() },
-                timeout: 20000
-            });
-
-            const uploadId = uploadRes.data?.id;
-            if (uploadId) {
-                console.log(`[NBE] Uploaded item: ${row.model} → upload_id=${uploadId}`);
-                return { uploadId, row, success: true };
-            }
-            return { row, success: false, error: 'No upload_id returned' };
-        };
-
-        for (let i = 0; i < rows.length; i += BATCH) {
-            const batch = rows.slice(i, i + BATCH);
-            const batchResults = await Promise.allSettled(batch.map(uploadOne));
-            for (const r of batchResults) {
-                if (r.status === 'fulfilled') {
-                    uploadResults.push(r.value);
-                } else {
-                    const msg = r.reason?.response?.data?.error || r.reason?.message || 'Unknown error';
-                    console.warn(`[NBE] Upload failed:`, msg);
-                    uploadResults.push({ row: batch[0], success: false, error: typeof msg === 'string' ? msg : JSON.stringify(msg) });
-                }
-            }
+        if (!uploadId) {
+            return res.json({ success: false, error: 'No upload_id returned', response: uploadRes.data });
         }
 
-        const successUploads = uploadResults.filter(r => r.success);
-        if (successUploads.length === 0) {
-            return res.json({ success: false, error: 'No items uploaded successfully', details: uploadResults });
-        }
-
-        // Step 2: Create the order from uploads
+        // Create the order from the upload
         const orderPayload = {
-            items: successUploads.map(r => ({
-                upload_id: r.uploadId,
-                quantity: 1
-            })),
+            items: [{ upload_id: uploadId, quantity: rows.length }],
             order_type: 'Dropship POD',
-            order_notes: `GRLHOOD Order - ${new Date().toLocaleDateString()}`,
+            order_notes: `GRLHOOD Order - ${getFormattedDate()} - ${rows.length} items`,
             providing_shipping_label: true,
             partial_fulfillment: false,
             is_urgent_order: false
@@ -512,19 +475,19 @@ app.post('/api/nbe/upload-order', async (req, res) => {
         });
 
         const orderId = orderRes.data?.id;
-        console.log(`[NBE] Order created: ${orderId} (${successUploads.length} items)`);
+        console.log(`[NBE] Order created: ${orderId} (${rows.length} items)`);
 
         res.json({
             success: true,
             orderId,
-            uploaded: successUploads.length,
-            failed: uploadResults.filter(r => !r.success).length,
-            message: `NBE order ${orderId} created with ${successUploads.length} items`
+            uploadId,
+            items: rows.length,
+            message: `NBE order ${orderId} created with ${rows.length} items`
         });
 
     } catch (e) {
         console.error('[NBE] Upload Error:', e.response?.data || e.message);
-        res.status(500).json({ success: false, error: e.response?.data?.error || e.message });
+        res.status(500).json({ success: false, error: e.response?.data?.error || e.response?.data?.message || e.message });
     }
 });
 
