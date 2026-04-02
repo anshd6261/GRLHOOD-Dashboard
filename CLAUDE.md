@@ -45,8 +45,12 @@ frontend/src/
 7. **Labels** - Generate shipping label PDFs
 8. **Done** - Summary
 
-### Order IDs
-- Shopify provides order names like `#4060`. The processor strips `#` for display (`orderId = "4060"`).
+### Order IDs in the Wizard
+- Orders initially come from Shopify (`#4060` → processor strips `#` → `orderId = "4060"`).
+- In the wizard, users edit/delete rows in the **CSV step** (step 3). This produces `workingOrders`.
+- The **Download step** (step 4) exports `workingOrders` as the approved CSV.
+- The **Ship step** (step 5) uses `uniqueIds` derived from `workingOrders` — i.e., the order IDs come from the **approved CSV**, not directly from Shopify.
+- `uniqueIds = [...new Set(workingOrders.map(o => o.orderId))]` — only orders that survived CSV review.
 - RapidShyp stores them as `seller_order_id` (e.g., `#4060`).
 - The `resolveOrder()` function in `rapidshyp.js` tries 3 methods to match: session API map, `GET /shipment_details`, `POST /track_order`.
 
