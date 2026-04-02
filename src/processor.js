@@ -93,11 +93,13 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
             if (srMatch.awb) awb = srMatch.awb;
         }
 
-        // Shopify AWB Fallback
-        if (!awb && order.fulfillments?.length > 0) {
+        // Shopify AWB + Tracking URL Fallback
+        let trackingUrl = "";
+        if (order.fulfillments?.length > 0) {
             const f = order.fulfillments[0];
             if (f.trackingInfo?.length > 0) {
-                awb = f.trackingInfo[0].number || "";
+                if (!awb) awb = f.trackingInfo[0].number || "";
+                trackingUrl = f.trackingInfo[0].url || "";
             }
         }
 
@@ -268,6 +270,7 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
                     hasCopiedNumberDifferentName,
                     orderId: displayOrderId, // Display ID (1001)
                     orderLink,
+                    trackingUrl,
                     productId,
                     thumbnail,
                     previewUrl,

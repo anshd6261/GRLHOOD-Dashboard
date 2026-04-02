@@ -540,7 +540,8 @@ function App() {
 
       <div className="relative z-10 flex flex-col min-h-screen">
 
-        {/* ═══ TOP BAR ═══ */}
+        {/* ═══ TOP BAR — hidden for care role ═══ */}
+        {!isCare && (
         <header className="sticky top-0 z-50 glass-topbar px-5 lg:px-8 py-3">
           <div className="max-w-[1400px] mx-auto flex items-center justify-between gap-4">
 
@@ -701,8 +702,9 @@ function App() {
             </div>
           </div>
         </header>
+        )}
 
-        <main className="flex-1 px-5 lg:px-8 py-6 max-w-[1400px] mx-auto w-full">
+        <main className={`flex-1 ${isCare ? 'px-0 py-0' : 'px-5 lg:px-8 py-6 max-w-[1400px] mx-auto'} w-full`}>
 
           <AnimatePresence mode="wait">
 
