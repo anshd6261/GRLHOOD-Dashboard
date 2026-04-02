@@ -57,6 +57,67 @@ const uploadFile = async (token, filePath, contents) => {
     }
 };
 
+/**
+ * List entries in a Dropbox folder. Returns array of { name, path_display, .tag } or empty.
+ */
+const listFolder = async (token, folderPath) => {
+    try {
+        const res = await axios.post('https://api.dropboxapi.com/2/files/list_folder', {
+            path: folderPath, recursive: false, limit: 100
+        }, {
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+        });
+        return res.data?.entries || [];
+    } catch (e) {
+        // 409 = path not found (folder doesn't exist yet) — not an error
+        if (e.response?.status === 409) return [];
+        console.warn(`[DROPBOX] listFolder ${folderPath}:`, e.response?.data?.error_summary || e.message);
+        return [];
+    }
+};
+
+/**
+ * Delete a file or folder in Dropbox.
+ */
+const deleteEntry = async (token, entryPath) => {
+    try {
+        await axios.post('https://api.dropboxapi.com/2/files/delete_v2', {
+            path: entryPath
+        }, {
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+        });
+        console.log(`[DROPBOX] Deleted: ${entryPath}`);
+    } catch (e) {
+        console.warn(`[DROPBOX] Delete failed for ${entryPath}:`, e.response?.data?.error_summary || e.message);
+    }
+};
+
+/**
+ * Clean up duplicate date folders in the month directory.
+ * If multiple folders exist for the same date label, delete them all
+ * so a fresh one is created by the upload.
+ */
+const cleanDuplicateFolders = async (token, monthPath, dateLabel) => {
+    const entries = await listFolder(token, monthPath);
+    const dateFolders = entries.filter(e =>
+        e['.tag'] === 'folder' && e.name.includes(dateLabel)
+    );
+    if (dateFolders.length > 1) {
+        console.log(`[DROPBOX] Found ${dateFolders.length} duplicate folders for "${dateLabel}" — cleaning up`);
+        for (const folder of dateFolders) {
+            await deleteEntry(token, folder.path_display || folder.path_lower);
+        }
+        return true; // Cleaned
+    }
+    if (dateFolders.length === 1) {
+        // Single folder exists — delete it and recreate fresh
+        console.log(`[DROPBOX] Replacing existing folder for "${dateLabel}"`);
+        await deleteEntry(token, dateFolders[0].path_display || dateFolders[0].path_lower);
+        return true;
+    }
+    return false; // No existing folders
+};
+
 const uploadOrderPayload = async (pdfUrl, standardCsvContent, financialCsvContent) => {
     // Get a fresh access token every time (they only last 4 hours)
     const token = await getAccessToken();
@@ -66,8 +127,12 @@ const uploadOrderPayload = async (pdfUrl, standardCsvContent, financialCsvConten
     const dateLabel = getFormattedDate(); // e.g. "17th March 2026"
 
     // Path: /ORDERS/March/17th March 2026 Order/
-    const folderPath = `/ORDERS/${monthName}/${dateLabel} Order`;
+    const monthPath = `/ORDERS/${monthName}`;
+    const folderPath = `${monthPath}/${dateLabel} Order`;
     console.log(`[DROPBOX] Target: ${folderPath}`);
+
+    // Clean up any duplicate/existing folders for this date
+    await cleanDuplicateFolders(token, monthPath, dateLabel);
 
     // Upload Standard Supplier CSV
     if (standardCsvContent) {
@@ -89,4 +154,4 @@ const uploadOrderPayload = async (pdfUrl, standardCsvContent, financialCsvConten
     return folderPath;
 };
 
-module.exports = { uploadOrderPayload };
+module.exports = { uploadOrderPayload, getAccessToken, uploadFile, listFolder, deleteEntry, cleanDuplicateFolders };

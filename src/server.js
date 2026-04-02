@@ -416,7 +416,99 @@ app.post('/api/dropbox/upload', async (req, res) => {
     }
 });
 
-// 6. Upload to Portal
+// 6a. Upload to NBE Portal via API
+app.post('/api/nbe/upload-order', async (req, res) => {
+    try {
+        const { rows } = req.body;
+        if (!rows || !Array.isArray(rows) || rows.length === 0) {
+            return res.status(400).json({ success: false, error: 'Missing rows' });
+        }
+
+        const nbeBase = (process.env.NBE_API_BASE || '').trim();
+        const nbeKey = (process.env.NBE_API_KEY || '').trim();
+        if (!nbeBase || !nbeKey) {
+            return res.status(400).json({ success: false, error: 'NBE_API_BASE or NBE_API_KEY not configured' });
+        }
+
+        const nbeHeaders = { 'X-Customer-Api-Key': nbeKey };
+        console.log(`[NBE] Uploading ${rows.length} items to portal...`);
+
+        // Step 1: Create uploads for each unique item (design upload)
+        const uploadResults = [];
+        for (const row of rows) {
+            try {
+                const FormData = require('form-data');
+                const form = new FormData();
+
+                // If there's a preview URL, use it as design reference
+                if (row.previewUrl) {
+                    form.append('design_name', row.previewUrl);
+                }
+
+                form.append('order_type', 'Dropship POD');
+                form.append('case_type_name', row.category || 'Soft Case');
+                form.append('product_name', row.model || 'Unknown');
+                form.append('providing_shipping_label', 'yes');
+
+                const uploadRes = await axios.post(`${nbeBase}/api/external/customer-uploads/`, form, {
+                    headers: { ...nbeHeaders, ...form.getHeaders() },
+                    timeout: 30000
+                });
+
+                const uploadId = uploadRes.data?.id;
+                if (uploadId) {
+                    uploadResults.push({ uploadId, row, success: true });
+                } else {
+                    uploadResults.push({ row, success: false, error: 'No upload_id returned' });
+                }
+            } catch (e) {
+                const msg = e.response?.data?.error || e.response?.data || e.message;
+                console.warn(`[NBE] Upload failed for ${row.model}:`, msg);
+                uploadResults.push({ row, success: false, error: typeof msg === 'string' ? msg : JSON.stringify(msg) });
+            }
+        }
+
+        const successUploads = uploadResults.filter(r => r.success);
+        if (successUploads.length === 0) {
+            return res.json({ success: false, error: 'No items uploaded successfully', details: uploadResults });
+        }
+
+        // Step 2: Create the order from uploads
+        const orderPayload = {
+            items: successUploads.map(r => ({
+                upload_id: r.uploadId,
+                quantity: 1
+            })),
+            order_type: 'Dropship POD',
+            order_notes: `GRLHOOD Order - ${new Date().toLocaleDateString()}`,
+            providing_shipping_label: true,
+            partial_fulfillment: false,
+            is_urgent_order: false
+        };
+
+        const orderRes = await axios.post(`${nbeBase}/api/external/customer-orders/create-order/`, orderPayload, {
+            headers: { ...nbeHeaders, 'Content-Type': 'application/json' },
+            timeout: 30000
+        });
+
+        const orderId = orderRes.data?.id;
+        console.log(`[NBE] Order created: ${orderId} (${successUploads.length} items)`);
+
+        res.json({
+            success: true,
+            orderId,
+            uploaded: successUploads.length,
+            failed: uploadResults.filter(r => !r.success).length,
+            message: `NBE order ${orderId} created with ${successUploads.length} items`
+        });
+
+    } catch (e) {
+        console.error('[NBE] Upload Error:', e.response?.data || e.message);
+        res.status(500).json({ success: false, error: e.response?.data?.error || e.message });
+    }
+});
+
+// 6b. Upload to Portal (Legacy Puppeteer)
 app.post('/api/upload-portal', async (req, res) => {
     try {
         const { rows } = req.body;

@@ -455,15 +455,21 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       const a1 = document.createElement('a'); a1.href = u1; a1.download = resSup.headers['x-filename'] || 'Order.csv'; a1.click();
       // Download financial CSV for admin
       if (!isSupplier) {
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 500));
         const resF = await axios.post(`${API_URL}/download`, { rows: workingOrders, skipHistory: true, type: 'financial' }, { responseType: 'blob' });
         const u2 = window.URL.createObjectURL(new Blob([resF.data], { type: 'text/csv' }));
         const a2 = document.createElement('a'); a2.href = u2; a2.download = resF.headers['x-filename'] || 'Financial.csv'; a2.click();
       }
-      // Upload BOTH CSVs to Dropbox (ORDERS/Month/DateFolder/) regardless of role
+      // Upload to Dropbox + NBE Portal in parallel
       setDlStatus('dbx');
-      try { await axios.post(`${API_URL}/dropbox/upload`, { orders: workingOrders }); } catch (dbxErr) { console.warn('Dropbox upload failed:', dbxErr.message); }
-      setDlStatus('done'); setToast({ msg: 'CSVs downloaded & backed up to Dropbox' });
+      const uploadPromises = [
+        axios.post(`${API_URL}/dropbox/upload`, { orders: workingOrders }).catch(e => { console.warn('Dropbox upload failed:', e.message); return null; }),
+        axios.post(`${API_URL}/nbe/upload-order`, { rows: workingOrders }).catch(e => { console.warn('NBE upload failed:', e.message); return null; })
+      ];
+      const [dbxRes, nbeRes] = await Promise.allSettled(uploadPromises);
+      const nbeOk = nbeRes.status === 'fulfilled' && nbeRes.value?.data?.success;
+      setDlStatus('done');
+      setToast({ msg: `CSVs downloaded & backed up${nbeOk ? ' + NBE order created' : ''}` });
     } catch (e) { setDlStatus('err'); setToast({ msg: `Download failed: ${e.message}`, err: true }); }
   };
 
