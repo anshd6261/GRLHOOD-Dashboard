@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const axios = require('axios');
 require('dotenv').config();
 
 const { getUnfulfilledOrders, searchOrders, assignSkuToProduct, getOrder } = require('./shopify');
@@ -965,6 +966,137 @@ app.post('/api/consultation/submit', (req, res) => {
         res.json({ success: true, message: 'Consultation submitted successfully' });
     } catch (e) {
         console.error('[API] Consultation Submit Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ==========================================
+// NBE SUPPLIER PORTAL ENDPOINTS
+// ==========================================
+const nbe = require('./nbe');
+
+app.get('/api/nbe/orders/:orderId/labels', async (req, res) => {
+    try {
+        const data = await nbe.getOrderLabels(req.params.orderId);
+        res.json({ success: true, data });
+    } catch (e) {
+        console.error('[NBE] Labels error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.get('/api/nbe/returns', async (req, res) => {
+    try {
+        const data = await nbe.getReturns();
+        res.json({ success: true, data });
+    } catch (e) {
+        console.error('[NBE] Returns error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.get('/api/nbe/returns/:id/photo', async (req, res) => {
+    try {
+        const data = await nbe.getReturnPhoto(req.params.id);
+        res.set('Content-Type', 'image/jpeg');
+        res.send(Buffer.from(data));
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.get('/api/nbe/returns/:id/label', async (req, res) => {
+    try {
+        const data = await nbe.getReturnLabel(req.params.id);
+        res.set('Content-Type', 'application/pdf');
+        res.set('Content-Disposition', 'attachment; filename="return_label.pdf"');
+        res.send(Buffer.from(data));
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.post('/api/nbe/replacements', async (req, res) => {
+    try {
+        const data = await nbe.createReplacement(req.body);
+        res.json({ success: true, data });
+    } catch (e) {
+        console.error('[NBE] Replacement error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.get('/api/nbe/designs', async (req, res) => {
+    try {
+        const data = await nbe.getDesigns();
+        res.json({ success: true, data });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.get('/api/nbe/designs/:id/render', async (req, res) => {
+    try {
+        const data = await nbe.renderDesign(req.params.id);
+        res.set('Content-Type', 'image/png');
+        res.send(Buffer.from(data));
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.get('/api/nbe/status', async (req, res) => {
+    const result = await nbe.checkConnection();
+    res.json(result);
+});
+
+// ==========================================
+// SLACK ESCALATION ENDPOINTS
+// ==========================================
+const slack = require('./slack');
+
+app.post('/api/slack/escalate', async (req, res) => {
+    try {
+        const result = await slack.sendEscalation(req.body);
+        res.json({ success: true, ...result });
+    } catch (e) {
+        console.error('[SLACK] Escalation error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+app.get('/api/slack/templates', (req, res) => {
+    res.json({ success: true, templates: slack.getTemplates() });
+});
+
+app.put('/api/slack/templates/:category', (req, res) => {
+    try {
+        const templates = slack.updateTemplate(req.params.category, req.body);
+        res.json({ success: true, templates });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ==========================================
+// CARE ACTION HISTORY ENDPOINTS
+// ==========================================
+const careHistory = require('./care_history');
+
+app.get('/api/care/history', (req, res) => {
+    const filters = {
+        action: req.query.action || '',
+        startDate: req.query.startDate || '',
+        endDate: req.query.endDate || '',
+    };
+    res.json({ success: true, history: careHistory.getHistory(filters) });
+});
+
+app.post('/api/care/history', (req, res) => {
+    try {
+        const record = careHistory.logAction(req.body);
+        res.json({ success: true, record });
+    } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
 });
