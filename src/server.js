@@ -433,16 +433,21 @@ app.post('/api/nbe/upload-order', async (req, res) => {
         const nbeHeaders = { 'X-Customer-Api-Key': nbeKey };
         console.log(`[NBE] Uploading ${rows.length} items to portal...`);
 
-        // Step 1: Create uploads for each unique item (design upload)
+        // Step 1: Create uploads for each item — download design image and upload as file
+        const FormData = require('form-data');
         const uploadResults = [];
         for (const row of rows) {
             try {
-                const FormData = require('form-data');
                 const form = new FormData();
 
-                // If there's a preview URL, use it as design reference
-                if (row.previewUrl) {
-                    form.append('design_name', row.previewUrl);
+                // Download the design image from Shopify CDN and upload as file
+                if (row.thumbnail) {
+                    const imgRes = await axios.get(row.thumbnail, { responseType: 'arraybuffer', timeout: 15000 });
+                    const ext = row.thumbnail.match(/\.(png|jpg|jpeg|webp)/i)?.[1] || 'jpg';
+                    form.append('file', Buffer.from(imgRes.data), {
+                        filename: `design_${row.orderId}_${row.sku || 'item'}.${ext}`,
+                        contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`
+                    });
                 }
 
                 form.append('order_type', 'Dropship POD');
@@ -450,7 +455,7 @@ app.post('/api/nbe/upload-order', async (req, res) => {
                 form.append('product_name', row.model || 'Unknown');
                 form.append('providing_shipping_label', 'yes');
 
-                const uploadRes = await axios.post(`${nbeBase}/api/external/customer-uploads/`, form, {
+                const uploadRes = await axios.post(`${nbeBase}/customer-uploads/`, form, {
                     headers: { ...nbeHeaders, ...form.getHeaders() },
                     timeout: 30000
                 });
@@ -458,6 +463,7 @@ app.post('/api/nbe/upload-order', async (req, res) => {
                 const uploadId = uploadRes.data?.id;
                 if (uploadId) {
                     uploadResults.push({ uploadId, row, success: true });
+                    console.log(`[NBE] Uploaded item: ${row.model} → upload_id=${uploadId}`);
                 } else {
                     uploadResults.push({ row, success: false, error: 'No upload_id returned' });
                 }
@@ -486,7 +492,7 @@ app.post('/api/nbe/upload-order', async (req, res) => {
             is_urgent_order: false
         };
 
-        const orderRes = await axios.post(`${nbeBase}/api/external/customer-orders/create-order/`, orderPayload, {
+        const orderRes = await axios.post(`${nbeBase}/customer-orders/create-order/`, orderPayload, {
             headers: { ...nbeHeaders, 'Content-Type': 'application/json' },
             timeout: 30000
         });
@@ -504,6 +510,44 @@ app.post('/api/nbe/upload-order', async (req, res) => {
 
     } catch (e) {
         console.error('[NBE] Upload Error:', e.response?.data || e.message);
+        res.status(500).json({ success: false, error: e.response?.data?.error || e.message });
+    }
+});
+
+// NBE: Upload shipping label to an existing NBE order
+app.post('/api/nbe/upload-label', async (req, res) => {
+    try {
+        const { orderId, labelUrl } = req.body;
+        if (!orderId || !labelUrl) {
+            return res.status(400).json({ success: false, error: 'Missing orderId or labelUrl' });
+        }
+
+        const nbeBase = (process.env.NBE_API_BASE || '').trim();
+        const nbeKey = (process.env.NBE_API_KEY || '').trim();
+        if (!nbeBase || !nbeKey) {
+            return res.status(400).json({ success: false, error: 'NBE not configured' });
+        }
+
+        // Download the label PDF
+        const pdfRes = await axios.get(labelUrl, { responseType: 'arraybuffer', timeout: 30000 });
+
+        const FormData = require('form-data');
+        const form = new FormData();
+        form.append('order_id', orderId);
+        form.append('upload_label', Buffer.from(pdfRes.data), {
+            filename: `label_${orderId}.pdf`,
+            contentType: 'application/pdf'
+        });
+
+        const uploadRes = await axios.post(`${nbeBase}/customer-orders/upload-shipping-label/`, form, {
+            headers: { 'X-Customer-Api-Key': nbeKey, ...form.getHeaders() },
+            timeout: 30000
+        });
+
+        console.log(`[NBE] Label uploaded for order ${orderId}`);
+        res.json({ success: true, data: uploadRes.data });
+    } catch (e) {
+        console.error('[NBE] Label upload error:', e.response?.data || e.message);
         res.status(500).json({ success: false, error: e.response?.data?.error || e.message });
     }
 });
