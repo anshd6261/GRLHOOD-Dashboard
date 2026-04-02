@@ -463,7 +463,7 @@ app.post('/api/nbe/upload-order', async (req, res) => {
         const orderPayload = {
             items: [{ upload_id: uploadId, quantity: rows.length }],
             order_type: 'Dropship POD',
-            order_notes: `GRLHOOD Order - ${getFormattedDate()} - ${rows.length} items`,
+            order_notes: getFormattedDate(),
             providing_shipping_label: true,
             partial_fulfillment: false,
             is_urgent_order: false
@@ -756,13 +756,13 @@ app.post('/api/rapidshyp/bulk-approve', async (req, res) => {
 // Bulk Assign AWB
 app.post('/api/rapidshyp/bulk-assign', async (req, res) => {
     try {
-        const { orderNames } = req.body;
+        const { orderNames, shipmentMap } = req.body;
         if (!orderNames || !Array.isArray(orderNames) || orderNames.length === 0) {
             return res.status(400).json({ error: 'Missing or invalid orderNames array' });
         }
 
         console.log(`[API] Bulk assigning AWB for ${orderNames.length} orders...`);
-        const result = await rapidshyp.bulkAssignAWB(orderNames);
+        const result = await rapidshyp.bulkAssignAWB(orderNames, shipmentMap || {});
 
         // Auto-schedule pickup for all successfully assigned orders
         const assigned = (result.results || []).filter(r => r.success && r.awb && r.shipmentId);

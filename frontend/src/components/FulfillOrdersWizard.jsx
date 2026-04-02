@@ -529,7 +529,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const handleShip = async () => {
     setShipLoading(true);
     try {
-      const r = await axios.post(`${API_URL}/rapidshyp/bulk-assign`, { orderNames: uniqueIds });
+      const r = await axios.post(`${API_URL}/rapidshyp/bulk-assign`, { orderNames: uniqueIds, shipmentMap: approveResult?.shipmentMap || {} });
       setShipResults(r.data);
       setToast({ msg: `${r.data?.results?.filter(x=>x.success).length}/${uniqueIds.length} shipped` });
     } catch (e) { setToast({ msg: `Ship failed: ${e.response?.data?.error||e.message}`, err: true }); }
