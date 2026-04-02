@@ -434,43 +434,57 @@ app.post('/api/nbe/upload-order', async (req, res) => {
         console.log(`[NBE] Uploading ${rows.length} items to portal...`);
 
         // Step 1: Create uploads for each item — download design image and upload as file
+        // Process in parallel batches of 5 to stay within Vercel timeout
         const FormData = require('form-data');
         const uploadResults = [];
-        for (const row of rows) {
-            try {
-                const form = new FormData();
+        const BATCH = 5;
 
-                // Download the design image from Shopify CDN and upload as file
-                if (row.thumbnail) {
-                    const imgRes = await axios.get(row.thumbnail, { responseType: 'arraybuffer', timeout: 15000 });
+        const uploadOne = async (row) => {
+            const form = new FormData();
+
+            // Download the design image from Shopify CDN and upload as file
+            if (row.thumbnail) {
+                try {
+                    const imgRes = await axios.get(row.thumbnail, { responseType: 'arraybuffer', timeout: 10000 });
                     const ext = row.thumbnail.match(/\.(png|jpg|jpeg|webp)/i)?.[1] || 'jpg';
                     form.append('file', Buffer.from(imgRes.data), {
                         filename: `design_${row.orderId}_${row.sku || 'item'}.${ext}`,
                         contentType: `image/${ext === 'jpg' ? 'jpeg' : ext}`
                     });
+                } catch (imgErr) {
+                    console.warn(`[NBE] Image download failed for ${row.orderId}, uploading without design:`, imgErr.message);
                 }
+            }
 
-                form.append('order_type', 'Dropship POD');
-                form.append('case_type_name', row.category || 'Soft Case');
-                form.append('product_name', row.model || 'Unknown');
-                form.append('providing_shipping_label', 'yes');
+            form.append('order_type', 'Dropship POD');
+            form.append('case_type_name', row.category || 'Soft Case');
+            form.append('product_name', row.model || 'Unknown');
+            form.append('providing_shipping_label', 'yes');
 
-                const uploadRes = await axios.post(`${nbeBase}/customer-uploads/`, form, {
-                    headers: { ...nbeHeaders, ...form.getHeaders() },
-                    timeout: 30000
-                });
+            const uploadRes = await axios.post(`${nbeBase}/customer-uploads/`, form, {
+                headers: { ...nbeHeaders, ...form.getHeaders() },
+                timeout: 20000
+            });
 
-                const uploadId = uploadRes.data?.id;
-                if (uploadId) {
-                    uploadResults.push({ uploadId, row, success: true });
-                    console.log(`[NBE] Uploaded item: ${row.model} → upload_id=${uploadId}`);
+            const uploadId = uploadRes.data?.id;
+            if (uploadId) {
+                console.log(`[NBE] Uploaded item: ${row.model} → upload_id=${uploadId}`);
+                return { uploadId, row, success: true };
+            }
+            return { row, success: false, error: 'No upload_id returned' };
+        };
+
+        for (let i = 0; i < rows.length; i += BATCH) {
+            const batch = rows.slice(i, i + BATCH);
+            const batchResults = await Promise.allSettled(batch.map(uploadOne));
+            for (const r of batchResults) {
+                if (r.status === 'fulfilled') {
+                    uploadResults.push(r.value);
                 } else {
-                    uploadResults.push({ row, success: false, error: 'No upload_id returned' });
+                    const msg = r.reason?.response?.data?.error || r.reason?.message || 'Unknown error';
+                    console.warn(`[NBE] Upload failed:`, msg);
+                    uploadResults.push({ row: batch[0], success: false, error: typeof msg === 'string' ? msg : JSON.stringify(msg) });
                 }
-            } catch (e) {
-                const msg = e.response?.data?.error || e.response?.data || e.message;
-                console.warn(`[NBE] Upload failed for ${row.model}:`, msg);
-                uploadResults.push({ row, success: false, error: typeof msg === 'string' ? msg : JSON.stringify(msg) });
             }
         }
 

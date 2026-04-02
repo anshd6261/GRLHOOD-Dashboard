@@ -462,14 +462,15 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       }
       // Upload to Dropbox + NBE Portal in parallel
       setDlStatus('dbx');
-      const uploadPromises = [
-        axios.post(`${API_URL}/dropbox/upload`, { orders: workingOrders }).catch(e => { console.warn('Dropbox upload failed:', e.message); return null; }),
-        axios.post(`${API_URL}/nbe/upload-order`, { rows: workingOrders }).catch(e => { console.warn('NBE upload failed:', e.message); return null; })
-      ];
-      const [dbxRes, nbeRes] = await Promise.allSettled(uploadPromises);
+      const [dbxRes, nbeRes] = await Promise.allSettled([
+        axios.post(`${API_URL}/dropbox/upload`, { orders: workingOrders }).catch(e => { console.warn('Dropbox upload failed:', e.message); return { data: { success: false, error: e.message } }; }),
+        axios.post(`${API_URL}/nbe/upload-order`, { rows: workingOrders }, { timeout: 120000 }).catch(e => { console.warn('NBE upload failed:', e.message); return { data: { success: false, error: e.message } }; })
+      ]);
       const nbeOk = nbeRes.status === 'fulfilled' && nbeRes.value?.data?.success;
+      const nbeErr = !nbeOk && (nbeRes.value?.data?.error || nbeRes.reason?.message || '');
       setDlStatus('done');
-      setToast({ msg: `CSVs downloaded & backed up${nbeOk ? ' + NBE order created' : ''}` });
+      if (nbeErr) console.error('[NBE] Upload error details:', nbeRes.value?.data);
+      setToast({ msg: nbeOk ? 'CSVs downloaded, backed up & NBE order created' : `CSVs downloaded & backed up${nbeErr ? ` (NBE: ${nbeErr})` : ''}` });
     } catch (e) { setDlStatus('err'); setToast({ msg: `Download failed: ${e.message}`, err: true }); }
   };
 
