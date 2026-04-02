@@ -328,17 +328,20 @@ function App() {
 
       // Step 2: Apply cached RTO data to orders that the server returned as Unknown
       const unknownCount = orders.filter(o => o.aiRiskLevel === 'Unknown').length;
-      const sampleOrderIds = orders.slice(0, 3).map(o => o.orderId);
-      const sampleCacheKeys = Object.keys(rtoLocalCache).slice(0, 3);
       console.log(`[RTO] Server returned ${orders.length} orders, ${unknownCount} Unknown`);
-      console.log(`[RTO] Sample order IDs: ${JSON.stringify(sampleOrderIds)}, Sample cache keys: ${JSON.stringify(sampleCacheKeys)}`);
       let ordersWithCache = orders.map(o => {
         const cached = rtoLocalCache[o.orderId];
         if (o.aiRiskLevel === 'Unknown' && cached && cached.aiRiskLevel !== 'Unknown') {
           return { ...o, ...cached };
         }
+        // Also backfill cache from server-returned data (server may have had /tmp cache)
+        if (o.aiRiskLevel && o.aiRiskLevel !== 'Unknown' && !rtoLocalCache[o.orderId]) {
+          rtoLocalCache[o.orderId] = { aiRiskLevel: o.aiRiskLevel, aiRiskScore: o.aiRiskScore, aiRiskReasons: o.aiRiskReasons || [] };
+        }
         return o;
       });
+      // Persist any server-returned data we didn't have locally
+      try { localStorage.setItem('rto_cache', JSON.stringify(rtoLocalCache)); } catch {}
       const enrichedCount = ordersWithCache.filter(o => o.aiRiskLevel !== 'Unknown').length;
       console.log(`[RTO] After localStorage enrichment: ${enrichedCount}/${ordersWithCache.length} have risk data`);
 

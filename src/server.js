@@ -452,25 +452,24 @@ app.post('/api/orders/:id/cancel', async (req, res) => {
 
         console.log(`[API] Processing Cancellation for Order ${orderName} (${numericId})...`);
 
-        // 1. Cancel in RapidShyp
-        let rsResult = { success: false, message: 'Skipped' };
-        try {
-            rsResult = await rapidshyp.cancelOrder(orderName);
-        } catch (e) {
-            console.warn(`[API] RapidShyp Cancel Warning:`, e.message);
-            rsResult.message = e.message;
-        }
-
-        // 2. Cancel in Shopify
+        // Cancel in RapidShyp + Shopify in parallel
         const { cancelOrder: shopifyCancelOrder } = require('./shopify');
-        await shopifyCancelOrder(numericId);
+        const [rsResult, shopifyResult] = await Promise.allSettled([
+            rapidshyp.cancelOrder(orderName),
+            shopifyCancelOrder(numericId)
+        ]);
+
+        const rsRes = rsResult.status === 'fulfilled' ? rsResult.value : { success: false, message: rsResult.reason?.message };
+        if (shopifyResult.status === 'rejected') {
+            throw new Error(`Shopify cancel failed: ${shopifyResult.reason?.message}`);
+        }
 
         console.log(`[API] Cancel Success: ${orderName}`);
 
         res.json({
             success: true,
             message: `Order ${orderName} cancelled successfully.`,
-            rapidshyp: rsResult,
+            rapidshyp: rsRes,
         });
 
     } catch (e) {
@@ -523,9 +522,9 @@ app.post('/api/rapidshyp/label', async (req, res) => {
         // Priority 1: AWB tracking lookup (gives correct shipment_id format like S2603415750)
         if (awbs && Array.isArray(awbs) && awbs.length > 0) {
             console.log(`[API] Looking up shipment IDs from AWBs:`, awbs);
-            for (const awb of awbs.filter(Boolean)) {
-                const shipId = await rapidshyp.findOrderIdByAWB(awb);
-                if (shipId) resolvedIds.push(shipId);
+            const lookups = await Promise.allSettled(awbs.filter(Boolean).map(awb => rapidshyp.findOrderIdByAWB(awb)));
+            for (const r of lookups) {
+                if (r.status === 'fulfilled' && r.value) resolvedIds.push(r.value);
             }
         }
 
@@ -711,9 +710,9 @@ app.post('/api/rapidshyp/bulk-labels-dropbox', async (req, res) => {
         let shipmentIds = [];
         if (awbs && Array.isArray(awbs) && awbs.length > 0) {
             console.log(`[API] Resolving ${awbs.length} AWBs to shipment IDs...`);
-            for (const awb of awbs.filter(Boolean)) {
-                const shipId = await rapidshyp.findOrderIdByAWB(awb);
-                if (shipId) shipmentIds.push(shipId);
+            const lookups = await Promise.allSettled(awbs.filter(Boolean).map(awb => rapidshyp.findOrderIdByAWB(awb)));
+            for (const r of lookups) {
+                if (r.status === 'fulfilled' && r.value) shipmentIds.push(r.value);
             }
         }
         if (shipmentIds.length === 0 && orderIds && Array.isArray(orderIds)) {

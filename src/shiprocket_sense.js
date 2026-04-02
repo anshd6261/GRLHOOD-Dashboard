@@ -405,17 +405,18 @@ function warmCache(cacheData) {
         const entry = rto.risk ? rto : {
             risk: risk,
             score: rto.aiRiskScore || 0,
-            probability: (rto.aiRiskScore || 0) / 100,
+            probability: rto.aiRiskScore > 0 ? rto.aiRiskScore / 100 : 0,
             reasons: rto.aiRiskReasons || [],
             reasonCodes: [],
             riskTags: [],
+            _warmed: true, // Mark as warmed from frontend (don't re-check)
         };
         rtoCache.set(orderId, entry);
         added++;
     }
     if (added > 0) {
         saveCache();
-        console.log(`[SENSE] Warmed cache with ${added} entries from frontend.`);
+        console.log(`[SENSE] Warmed cache with ${added} entries from frontend. Total: ${rtoCache.size}`);
     }
     return { added, total: rtoCache.size };
 }

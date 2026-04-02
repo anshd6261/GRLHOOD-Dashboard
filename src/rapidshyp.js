@@ -132,7 +132,7 @@ const fetchOrdersWithRTO = async (status = 'ALL', maxPages = 10) => {
                 hasMore = false;
             } else {
                 page++;
-                await new Promise(r => setTimeout(r, 200));
+                await new Promise(r => setTimeout(r, 50));
             }
         }
 
@@ -197,7 +197,7 @@ const fetchAllOrders = async () => {
             totalFetched += records.length;
             if (records.length < PAGE_SIZE || totalFetched >= totalRecords) break;
             page++;
-            await new Promise(r => setTimeout(r, 200));
+            await new Promise(r => setTimeout(r, 50));
         }
 
         console.log(`[RAPIDSHYP] Order map built: ${orderMap.size} entries from ${totalFetched} orders (${page} pages)`);
@@ -373,81 +373,71 @@ const generateLabel = async (shipmentIds) => {
  */
 const bulkAssignAWB = async (orderNames) => {
     const headers = getPublicHeaders();
-    const results = [];
 
     // Build order map once for all lookups (cached for 2 min)
     const orderMap = await fetchAllOrders();
     console.log(`[RAPIDSHYP] Using order map with ${orderMap.size} entries for ${orderNames.length} orders`);
 
+    // Separate into already-assigned (instant) and need-API-call
+    const instantResults = [];
+    const toAssign = [];
+
     for (const name of orderNames) {
         const cleanId = name.toString().replace('#', '');
-        try {
-            const match = orderMap.get(cleanId) || null;
+        const match = orderMap.get(cleanId) || null;
 
-            if (!match) {
-                // Order not found in RapidShyp — try assigning directly with order name
-                console.warn(`[RAPIDSHYP] Order ${cleanId} not found in order map, trying direct assign...`);
-                try {
-                    const assignRes = await rsApi.post(`${PUBLIC_API_BASE}/assign_awb`, {
-                        shipment_id: cleanId
-                    }, { headers });
-                    const data = assignRes.data;
-                    results.push({
-                        orderId: cleanId,
-                        success: true,
-                        awb: data.awb || '',
-                        courier: data.courier_name || '',
-                        shipmentId: data.shipment_id || cleanId,
-                        rsOrderId: cleanId
-                    });
-                    console.log(`[RAPIDSHYP] Assigned AWB for ${cleanId}: ${data.awb}`);
-                } catch (directErr) {
-                    const msg = directErr.response?.data?.message || directErr.response?.data?.remarks || directErr.message;
-                    results.push({ orderId: cleanId, success: false, message: typeof msg === 'string' ? msg : JSON.stringify(msg) });
-                }
-                await new Promise(r => setTimeout(r, 300));
-                continue;
-            }
-
-            if (match.awb_number) {
-                results.push({
-                    orderId: cleanId,
-                    success: true,
-                    awb: match.awb_number,
-                    courier: match.courier_name || '',
-                    shipmentId: match.shipment_id || match.order_id,
-                    rsOrderId: match.order_id,
-                    message: 'Already assigned'
-                });
-                continue;
-            }
-
-            const shipmentId = match.shipment_id || match.order_id;
-            const assignRes = await rsApi.post(`${PUBLIC_API_BASE}/assign_awb`, {
-                shipment_id: shipmentId
-            }, { headers });
-
-            const data = assignRes.data;
-            results.push({
+        if (match && match.awb_number) {
+            instantResults.push({
                 orderId: cleanId,
                 success: true,
-                awb: data.awb || '',
-                courier: data.courier_name || '',
-                shipmentId: data.shipment_id || shipmentId,
-                rsOrderId: match.order_id
+                awb: match.awb_number,
+                courier: match.courier_name || '',
+                shipmentId: match.shipment_id || match.order_id,
+                rsOrderId: match.order_id,
+                message: 'Already assigned'
             });
-
-            console.log(`[RAPIDSHYP] Assigned AWB for ${cleanId}: ${data.awb}`);
-            await new Promise(r => setTimeout(r, 300));
-        } catch (e) {
-            const errMsg = e.response?.data?.message || e.response?.data?.remarks || e.message;
-            console.error(`[RAPIDSHYP] Assign AWB failed for ${cleanId}:`, errMsg);
-            results.push({ orderId: cleanId, success: false, message: typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg) });
+        } else {
+            toAssign.push({ cleanId, match });
         }
     }
 
+    // Assign AWBs concurrently in batches of 5
+    const BATCH_SIZE = 5;
+    const apiResults = [];
+    for (let i = 0; i < toAssign.length; i += BATCH_SIZE) {
+        const batch = toAssign.slice(i, i + BATCH_SIZE);
+        const batchResults = await Promise.allSettled(batch.map(async ({ cleanId, match }) => {
+            try {
+                const shipmentId = match ? (match.shipment_id || match.order_id) : cleanId;
+                if (!match) console.warn(`[RAPIDSHYP] Order ${cleanId} not found in order map, trying direct assign...`);
+
+                const assignRes = await rsApi.post(`${PUBLIC_API_BASE}/assign_awb`, {
+                    shipment_id: shipmentId
+                }, { headers });
+                const data = assignRes.data;
+                console.log(`[RAPIDSHYP] Assigned AWB for ${cleanId}: ${data.awb}`);
+                return {
+                    orderId: cleanId,
+                    success: true,
+                    awb: data.awb || '',
+                    courier: data.courier_name || '',
+                    shipmentId: data.shipment_id || shipmentId,
+                    rsOrderId: match ? match.order_id : cleanId
+                };
+            } catch (e) {
+                const errMsg = e.response?.data?.message || e.response?.data?.remarks || e.message;
+                console.error(`[RAPIDSHYP] Assign AWB failed for ${cleanId}:`, errMsg);
+                return { orderId: cleanId, success: false, message: typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg) };
+            }
+        }));
+        for (const r of batchResults) {
+            apiResults.push(r.status === 'fulfilled' ? r.value : { orderId: '?', success: false, message: r.reason?.message || 'Unknown error' });
+        }
+    }
+
+    const results = [...instantResults, ...apiResults];
     const successCount = results.filter(r => r.success).length;
-    console.log(`[RAPIDSHYP] Bulk AWB: ${successCount}/${orderNames.length} assigned.`);
+    console.log(`[RAPIDSHYP] Bulk AWB: ${successCount}/${orderNames.length} assigned (${instantResults.length} instant, ${apiResults.length} via API).`);
     return { success: successCount > 0, results };
 };
 
@@ -501,7 +491,8 @@ const bulkApproveOrders = async (shopifyOrderIds) => {
         byStore[store].push(item);
     }
 
-    for (const [storeName, items] of Object.entries(byStore)) {
+    // Approve all stores concurrently
+    const storeResults = await Promise.allSettled(Object.entries(byStore).map(async ([storeName, items]) => {
         const orderIds = items.map(o => o.orderId).filter(Boolean);
         try {
             const res = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
@@ -510,23 +501,31 @@ const bulkApproveOrders = async (shopifyOrderIds) => {
             }, { headers, timeout: 15000 });
 
             if (res.data?.status === 'success' || res.data?.status === 'SUCCESS' || res.data?.success) {
-                approvedCount += orderIds.length;
                 console.log(`[RAPIDSHYP] Approved ${orderIds.length} orders (store: ${storeName})`);
+                return { approved: orderIds.length };
             } else {
                 console.warn(`[RAPIDSHYP] Approve response for store ${storeName}:`, res.data);
                 const remark = res.data?.remark || res.data?.remarks || res.data?.message || 'Unknown response';
-                errors.push({ store: storeName, error: remark });
+                return { error: { store: storeName, error: remark } };
             }
         } catch (e) {
             const msg = e.response?.data?.remarks || e.response?.data?.message || e.response?.data?.remark || e.message;
             console.error(`[RAPIDSHYP] Approve failed for store ${storeName}:`, msg);
-            errors.push({ store: storeName, error: typeof msg === 'string' ? msg : JSON.stringify(msg) });
+            return { error: { store: storeName, error: typeof msg === 'string' ? msg : JSON.stringify(msg) } };
+        }
+    }));
+    for (const r of storeResults) {
+        if (r.status === 'fulfilled') {
+            if (r.value.approved) approvedCount += r.value.approved;
+            if (r.value.error) errors.push(r.value.error);
+        } else {
+            errors.push({ store: 'unknown', error: r.reason?.message || 'Unknown error' });
         }
     }
 
-    // Invalidate order map cache so next fetch sees updated statuses
-    _orderMapCache = null;
-    _orderMapTimestamp = 0;
+    // Mark cache as stale (but keep it for immediate AWB assignment lookups).
+    // The 2-min TTL will force a full refresh if needed later.
+    _orderMapTimestamp = Date.now() - ORDER_MAP_TTL + 30000; // Expires in 30s instead of immediately
 
     return {
         success: approvedCount > 0 || alreadyApproved > 0,

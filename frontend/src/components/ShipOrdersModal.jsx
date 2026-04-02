@@ -63,12 +63,12 @@ export default function ShipOrdersModal({ orders, onClose, onSuccess }) {
 
   const runPipeline = async () => {
     try {
-      // Step 0: Review Orders (visual only)
+      // Step 0: Review Orders (quick visual tick)
       setCurrentStep(0);
-      await sleep(1200);
+      await sleep(300);
       markComplete(0);
 
-      // Step 1: AI Risk Scan
+      // Step 1: AI Risk Scan (data is already available from prior fetch)
       setCurrentStep(1);
       const risks = orders.map(o => ({
         orderId: o.orderId,
@@ -80,7 +80,7 @@ export default function ShipOrdersModal({ orders, onClose, onSuccess }) {
       setRiskResults(risks);
       const highCount = risks.filter(r => r.level === 'High').length;
       setHighRiskCount(highCount);
-      await sleep(1800);
+      await sleep(400);
 
       if (highCount > 0) {
         setIsPaused(true);
@@ -102,7 +102,7 @@ export default function ShipOrdersModal({ orders, onClose, onSuccess }) {
 
       // Step 2: Verify Info
       setCurrentStep(2);
-      await sleep(1000);
+      await sleep(250);
       markComplete(2);
 
       // Step 3: Assign Courier
@@ -120,9 +120,9 @@ export default function ShipOrdersModal({ orders, onClose, onSuccess }) {
       if (!labelRes.data.success) throw new Error(labelRes.data.error || 'Label generation failed');
       markComplete(4);
 
-      // Step 5: Upload/Backup
+      // Step 5: Upload/Backup (Dropbox upload already happened server-side)
       setCurrentStep(5);
-      await sleep(800);
+      await sleep(200);
       markComplete(5);
 
       // Step 6: Complete
@@ -132,7 +132,7 @@ export default function ShipOrdersModal({ orders, onClose, onSuccess }) {
       setTimeout(() => {
         if (onSuccess) onSuccess(labelRes.data?.dropboxPaths);
         onClose();
-      }, 3500);
+      }, 1500);
     } catch (e) {
       setError(e.response?.data?.error || e.message);
       setCurrentStep(-1);
