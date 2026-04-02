@@ -24,6 +24,9 @@
         }
     ],
     "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "NBE_API_KEY": "@nbe-api-key",
+        "NBE_API_BASE": "https://5060265239-api.nextbige.com/api/external",
+        "SLACK_WEBHOOK_URL": "@slack-webhook-url"
     }
 }
