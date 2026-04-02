@@ -7,7 +7,7 @@ import {
   UploadCloud, ChevronDown, ChevronUp, Box, MessageSquare,
   Trash2, ExternalLink, Calendar, CheckSquare,
   AlertTriangle, Edit3, X, Settings, LayoutDashboard, ClipboardCheck,
-  TrendingUp, Phone, XOctagon, Truck, FileText, LogOut
+  TrendingUp, Phone, XOctagon, Truck, FileText, LogOut, Headphones
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import DottedBackground from './components/DottedBackground';
@@ -17,6 +17,7 @@ import EditOrderModal from './components/EditOrderModal';
 import AestheticDetailModal from './components/AestheticDetailModal';
 import ShipOrdersModal from './components/ShipOrdersModal';
 import FulfillOrdersWizard from './components/FulfillOrdersWizard';
+import CustomerCareDashboard from './pages/CustomerCareDashboard';
 import Login from './Login';
 import { useAuth } from './AuthContext';
 
@@ -508,6 +509,7 @@ function App() {
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'fulfill', label: 'Fulfill', icon: ClipboardCheck },
+    { id: 'care', label: 'Care', icon: Headphones },
     { id: 'finance', label: 'Finance', icon: TrendingUp },
   ];
 
@@ -1010,6 +1012,11 @@ function App() {
                   </>
                 )}
               </motion.div>
+            )}
+
+            {/* ═══ CUSTOMER CARE TAB ═══ */}
+            {activeTab === 'care' && (
+              <CustomerCareDashboard />
             )}
 
             {/* ═══ FINANCE TAB ═══ */}
