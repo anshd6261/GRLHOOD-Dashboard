@@ -220,47 +220,21 @@ const cancelOrder = async (channelOrderId) => {
         const headers = getPublicHeaders();
         const cleanId = channelOrderId.toString().replace('#', '');
 
-        // Try to find the order via session API (if JWT available)
-        const sessionHeaders = getSessionHeaders();
-        let match = null;
-
-        if (sessionHeaders) {
-            try {
-                const searchRes = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, {
-                    search: cleanId, page: 1, limit: 10
-                }, { headers: sessionHeaders });
-                const records = searchRes.data?.records || [];
-                match = records.find(r =>
-                    r.seller_order_id === `#${cleanId}` || r.seller_order_id === cleanId
-                );
-            } catch (searchErr) {
-                console.warn(`[RAPIDSHYP] Session search failed: ${searchErr.response?.status || searchErr.message}`);
-            }
-        }
+        // Resolve order via session map + public API fallback
+        const orderMap = await fetchAllOrders();
+        const match = await resolveOrder(cleanId, orderMap);
 
         if (!match) {
-            // Without JWT, we can't search for the RS order ID.
-            // Try cancelling with the channel order ID directly.
-            console.log(`[RAPIDSHYP] No JWT / order not found. Attempting cancel with channel ID ${cleanId}...`);
+            // Last resort: try cancelling with channel order ID directly
+            console.log(`[RAPIDSHYP] Order not resolved. Attempting direct cancel for ${cleanId}...`);
             try {
                 const cancelRes = await rsApi.post(`${PUBLIC_API_BASE}/cancel_order`, {
-                    orderId: cleanId,
-                    storeName: 'DEFAULT'
+                    orderId: `#${cleanId}`, storeName: 'DEFAULT'
                 }, { headers });
                 return { success: true, data: cancelRes.data };
             } catch (directErr) {
-                // Try with # prefix
-                try {
-                    const cancelRes = await rsApi.post(`${PUBLIC_API_BASE}/cancel_order`, {
-                        orderId: `#${cleanId}`,
-                        storeName: 'DEFAULT'
-                    }, { headers });
-                    return { success: true, data: cancelRes.data };
-                } catch (prefixErr) {
-                    const msg = directErr.response?.data?.message || directErr.message;
-                    console.warn(`[RAPIDSHYP] Direct cancel failed for ${cleanId}: ${msg}`);
-                    return { success: false, message: `Could not cancel: ${msg}. JWT needed for order lookup.` };
-                }
+                const msg = directErr.response?.data?.message || directErr.message;
+                return { success: false, message: `Could not cancel: ${msg}` };
             }
         }
 
@@ -368,8 +342,86 @@ const generateLabel = async (shipmentIds) => {
 };
 
 /**
+ * Resolve order details from RapidShyp by Shopify order ID.
+ * Tries: 1) session order map (instant), 2) GET /shipment_details, 3) POST /track_order.
+ * Returns { order_id, shipment_id, order_status, awb_number, store_name } or null.
+ */
+const resolveOrder = async (cleanId, orderMap) => {
+    // 1. Try session API map (instant if cached)
+    const match = orderMap.get(cleanId);
+    if (match) return match;
+
+    const headers = getPublicHeaders();
+
+    // 2. Try GET /shipment_details with seller order ID variants
+    // The shipment_details endpoint accepts a shipment_id param — try the order name
+    for (const idVariant of [`#${cleanId}`, cleanId]) {
+        try {
+            const res = await rsApi.get(`${PUBLIC_API_BASE}/shipment_details`, {
+                headers, params: { shipment_id: idVariant }, timeout: 10000
+            });
+            const details = res.data?.shipment_details;
+            if (details && details.shipment_id) {
+                const resolved = {
+                    order_id: details.order_id || details.shipment_id,
+                    shipment_id: details.shipment_id,
+                    seller_order_id: `#${cleanId}`,
+                    order_status: details.shipment_status || '',
+                    awb_number: details.awb || '',
+                    courier_name: details.courier_name || '',
+                    store_name: 'DEFAULT',
+                    _resolved_via: 'shipment_details',
+                };
+                orderMap.set(cleanId, resolved);
+                orderMap.set(`#${cleanId}`, resolved);
+                if (resolved.awb_number) orderMap.set(resolved.awb_number, resolved);
+                console.log(`[RAPIDSHYP] Resolved ${cleanId} via shipment_details: shipment=${resolved.shipment_id}, awb=${resolved.awb_number}`);
+                return resolved;
+            }
+        } catch (e) {
+            // Expected for orders without shipments yet — continue to next fallback
+        }
+    }
+
+    // 3. Fallback: POST /track_order (works for orders with tracking data)
+    for (const idVariant of [`#${cleanId}`, cleanId]) {
+        try {
+            const res = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, {
+                orderId: idVariant
+            }, { headers, timeout: 10000 });
+            const record = res.data?.records?.[0];
+            if (record) {
+                const shipmentDetails = record.shipment_details || [];
+                const shipment = shipmentDetails[0] || {};
+                const resolved = {
+                    order_id: record.order_id || shipment.shipment_id,
+                    shipment_id: shipment.shipment_id || record.order_id,
+                    seller_order_id: `#${cleanId}`,
+                    order_status: record.order_status || shipment.shipment_status || '',
+                    awb_number: shipment.awb || '',
+                    courier_name: shipment.courier_name || '',
+                    store_name: record.store_name || 'DEFAULT',
+                    _resolved_via: 'track_order',
+                };
+                orderMap.set(cleanId, resolved);
+                orderMap.set(`#${cleanId}`, resolved);
+                if (resolved.awb_number) orderMap.set(resolved.awb_number, resolved);
+                console.log(`[RAPIDSHYP] Resolved ${cleanId} via track_order: shipment=${resolved.shipment_id}, status=${resolved.order_status}`);
+                return resolved;
+            }
+        } catch (e) {
+            // Continue to next variant
+        }
+    }
+
+    console.warn(`[RAPIDSHYP] Could not resolve order ${cleanId} via session map, shipment_details, or track_order`);
+    return null;
+};
+
+/**
  * Bulk assign AWB to multiple orders.
- * Uses session API for lookup (if JWT available), then public API for AWB assignment.
+ * Uses session API for lookup (if JWT available), falls back to public track_order API,
+ * then assigns AWB via public API.
  */
 const bulkAssignAWB = async (orderNames) => {
     const headers = getPublicHeaders();
@@ -382,9 +434,17 @@ const bulkAssignAWB = async (orderNames) => {
     const instantResults = [];
     const toAssign = [];
 
-    for (const name of orderNames) {
-        const cleanId = name.toString().replace('#', '');
-        const match = orderMap.get(cleanId) || null;
+    // First pass: resolve all orders (session map + public API fallback in parallel)
+    const resolveResults = await Promise.allSettled(
+        orderNames.map(name => {
+            const cleanId = name.toString().replace('#', '');
+            return resolveOrder(cleanId, orderMap).then(match => ({ cleanId, match }));
+        })
+    );
+
+    for (const r of resolveResults) {
+        if (r.status !== 'fulfilled') continue;
+        const { cleanId, match } = r.value;
 
         if (match && match.awb_number) {
             instantResults.push({
@@ -408,22 +468,51 @@ const bulkAssignAWB = async (orderNames) => {
         const batch = toAssign.slice(i, i + BATCH_SIZE);
         const batchResults = await Promise.allSettled(batch.map(async ({ cleanId, match }) => {
             try {
-                const shipmentId = match ? (match.shipment_id || match.order_id) : cleanId;
-                if (!match) console.warn(`[RAPIDSHYP] Order ${cleanId} not found in order map, trying direct assign...`);
+                if (!match) {
+                    return { orderId: cleanId, success: false, message: `Order #${cleanId} not found in RapidShyp` };
+                }
 
-                const assignRes = await rsApi.post(`${PUBLIC_API_BASE}/assign_awb`, {
-                    shipment_id: shipmentId
-                }, { headers });
-                const data = assignRes.data;
-                console.log(`[RAPIDSHYP] Assigned AWB for ${cleanId}: ${data.awb}`);
-                return {
-                    orderId: cleanId,
-                    success: true,
-                    awb: data.awb || '',
-                    courier: data.courier_name || '',
-                    shipmentId: data.shipment_id || shipmentId,
-                    rsOrderId: match ? match.order_id : cleanId
-                };
+                // Try multiple ID formats: shipment_id, order_id, seller_order_id variants
+                const idsToTry = [
+                    match.shipment_id,
+                    match.order_id,
+                    `#${cleanId}`,
+                    cleanId,
+                ].filter(Boolean);
+
+                // Remove duplicates while preserving order
+                const uniqueIds = [...new Set(idsToTry)];
+
+                let lastError = null;
+                for (const tryId of uniqueIds) {
+                    try {
+                        const assignRes = await rsApi.post(`${PUBLIC_API_BASE}/assign_awb`, {
+                            shipment_id: tryId
+                        }, { headers });
+                        const data = assignRes.data;
+                        console.log(`[RAPIDSHYP] Assigned AWB for ${cleanId} (used id: ${tryId}): awb=${data.awb}`);
+                        return {
+                            orderId: cleanId,
+                            success: true,
+                            awb: data.awb || '',
+                            courier: data.courier_name || '',
+                            shipmentId: data.shipment_id || tryId,
+                            rsOrderId: data.order_id || match.order_id
+                        };
+                    } catch (tryErr) {
+                        lastError = tryErr;
+                        // Only retry with next ID if it's a "not found" type error
+                        const msg = tryErr.response?.data?.message || tryErr.response?.data?.remarks || '';
+                        if (typeof msg === 'string' && (msg.toLowerCase().includes('not found') || msg.toLowerCase().includes('invalid'))) {
+                            continue;
+                        }
+                        // For other errors (rate limit, server error), don't retry with different ID
+                        throw tryErr;
+                    }
+                }
+                // All ID variants failed
+                const errMsg = lastError?.response?.data?.message || lastError?.response?.data?.remarks || lastError?.message || 'Unknown error';
+                return { orderId: cleanId, success: false, message: typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg) };
             } catch (e) {
                 const errMsg = e.response?.data?.message || e.response?.data?.remarks || e.message;
                 console.error(`[RAPIDSHYP] Assign AWB failed for ${cleanId}:`, errMsg);
@@ -456,9 +545,17 @@ const bulkApproveOrders = async (shopifyOrderIds) => {
     let alreadyApproved = 0;
     let notFound = 0;
 
-    for (const id of shopifyOrderIds) {
-        const cleanId = id.toString().replace('#', '');
-        const match = orderMap.get(cleanId);
+    // Resolve all orders (session map + public API fallback for missing ones)
+    const resolveResults = await Promise.allSettled(
+        shopifyOrderIds.map(id => {
+            const cleanId = id.toString().replace('#', '');
+            return resolveOrder(cleanId, orderMap).then(match => ({ cleanId, match }));
+        })
+    );
+
+    for (const r of resolveResults) {
+        if (r.status !== 'fulfilled') { notFound++; continue; }
+        const { cleanId, match } = r.value;
         if (!match) {
             notFound++;
             continue;
@@ -643,6 +740,61 @@ const findOrderIdByAWB = async (awb) => {
     return null;
 };
 
+/**
+ * Schedule pickup for a shipment (public API).
+ * Docs: POST /schedule_pickup with { shipment_id, awb (optional) }
+ * Should be called after AWB assignment.
+ */
+const schedulePickup = async (shipmentId, awb) => {
+    try {
+        const headers = getPublicHeaders();
+        const payload = { shipment_id: shipmentId };
+        if (awb) payload.awb = awb;
+
+        const res = await rsApi.post(`${PUBLIC_API_BASE}/schedule_pickup`, payload, { headers, timeout: 15000 });
+        console.log(`[RAPIDSHYP] Scheduled pickup for shipment ${shipmentId}: ${res.data?.status || 'OK'}`);
+        return { success: true, data: res.data };
+    } catch (e) {
+        const errMsg = e.response?.data?.message || e.response?.data?.remarks || e.message;
+        console.warn(`[RAPIDSHYP] Schedule pickup failed for ${shipmentId}:`, errMsg);
+        return { success: false, message: typeof errMsg === 'string' ? errMsg : JSON.stringify(errMsg) };
+    }
+};
+
+/**
+ * Bulk schedule pickup for multiple shipments (after AWB assignment).
+ * Runs in parallel batches of 5.
+ */
+const bulkSchedulePickup = async (assignments) => {
+    // assignments = [{ shipmentId, awb }]
+    const validAssignments = assignments.filter(a => a.shipmentId && a.awb);
+    if (validAssignments.length === 0) {
+        return { success: true, scheduled: 0, message: 'No valid assignments to schedule' };
+    }
+
+    console.log(`[RAPIDSHYP] Scheduling pickup for ${validAssignments.length} shipments...`);
+    const BATCH_SIZE = 5;
+    let scheduled = 0;
+    const errors = [];
+
+    for (let i = 0; i < validAssignments.length; i += BATCH_SIZE) {
+        const batch = validAssignments.slice(i, i + BATCH_SIZE);
+        const results = await Promise.allSettled(
+            batch.map(a => schedulePickup(a.shipmentId, a.awb))
+        );
+        for (const r of results) {
+            if (r.status === 'fulfilled' && r.value.success) {
+                scheduled++;
+            } else {
+                errors.push(r.status === 'fulfilled' ? r.value.message : r.reason?.message);
+            }
+        }
+    }
+
+    console.log(`[RAPIDSHYP] Pickup scheduled: ${scheduled}/${validAssignments.length}`);
+    return { success: scheduled > 0, scheduled, total: validAssignments.length, errors: errors.length > 0 ? errors : undefined };
+};
+
 module.exports = {
     getPublicHeaders,
     getSessionHeaders,
@@ -657,6 +809,8 @@ module.exports = {
     getWalletBalance,
     bulkGenerateLabels,
     findOrderIdByAWB,
+    schedulePickup,
+    bulkSchedulePickup,
     mapRTORisk,
     buildRTOReason
 };

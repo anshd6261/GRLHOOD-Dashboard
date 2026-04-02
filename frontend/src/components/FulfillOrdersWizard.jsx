@@ -495,7 +495,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
     catch { setWalletBalance(null); }
     finally { setWalletLoading(false); }
   };
-  useEffect(() => { if (step === 5 && walletBalance === null) fetchWallet(); }, [step]);
+  useEffect(() => { if ((step === 4 || step === 5) && walletBalance === null) fetchWallet(); }, [step]);
 
   // ═══ Auto-approve unapproved orders in RapidShyp before shipping ═══
   const handleApprove = async () => {
@@ -515,8 +515,9 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
     }
   };
 
-  // Auto-approve when entering SHIP step (step 5)
-  useEffect(() => { if (step === 5 && !approveResult && !approveLoading) handleApprove(); }, [step]);
+  // Pre-approve when entering DOWNLOAD step (step 4) so it's ready by SHIP step
+  // Also trigger on SHIP step (step 5) as fallback
+  useEffect(() => { if ((step === 4 || step === 5) && !approveResult && !approveLoading) handleApprove(); }, [step]);
 
   const handleShip = async () => {
     setShipLoading(true);
@@ -579,7 +580,9 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       </div>
       {shipResults ? (
         <div className="glass-card-sm p-3 space-y-2">
-          <div className="flex items-center gap-2"><CheckCircle size={13} className="text-emerald-400" /><span className="text-xs font-bold text-emerald-400">{shipResults.results?.filter(r=>r.success).length}/{shipResults.results?.length} assigned</span></div>
+          <div className="flex items-center gap-2"><CheckCircle size={13} className="text-emerald-400" /><span className="text-xs font-bold text-emerald-400">{shipResults.results?.filter(r=>r.success).length}/{shipResults.results?.length} assigned</span>
+            {shipResults.pickup && <span className="text-[10px] text-[rgba(245,245,245,0.4)]">· {shipResults.pickup.scheduled || 0} pickups scheduled</span>}
+          </div>
           <div className="max-h-40 overflow-y-auto space-y-1">
             {shipResults.results?.map((r,i) => (
               <div key={i} className={`flex items-center justify-between text-[10px] px-2 py-1 rounded-lg ${r.success?'bg-[rgba(52,211,153,0.05)]':'bg-[rgba(255,20,147,0.05)]'}`}>

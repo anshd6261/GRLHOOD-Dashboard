@@ -650,6 +650,17 @@ app.post('/api/rapidshyp/bulk-assign', async (req, res) => {
 
         console.log(`[API] Bulk assigning AWB for ${orderNames.length} orders...`);
         const result = await rapidshyp.bulkAssignAWB(orderNames);
+
+        // Auto-schedule pickup for all successfully assigned orders
+        const assigned = (result.results || []).filter(r => r.success && r.awb && r.shipmentId);
+        if (assigned.length > 0) {
+            console.log(`[API] Auto-scheduling pickup for ${assigned.length} assigned orders...`);
+            const pickupResult = await rapidshyp.bulkSchedulePickup(
+                assigned.map(r => ({ shipmentId: r.shipmentId, awb: r.awb }))
+            );
+            result.pickup = pickupResult;
+        }
+
         res.json(result);
     } catch (e) {
         console.error('[API] Bulk Assign Error:', e);
@@ -687,6 +698,21 @@ app.get('/api/rapidshyp/debug-order/:id', async (req, res) => {
         });
     } catch (e) {
         res.status(500).json({ error: e.message });
+    }
+});
+
+// Schedule Pickup (after AWB assignment)
+app.post('/api/rapidshyp/schedule-pickup', async (req, res) => {
+    try {
+        const { assignments } = req.body; // [{ shipmentId, awb }]
+        if (!assignments || !Array.isArray(assignments) || assignments.length === 0) {
+            return res.status(400).json({ error: 'Missing or invalid assignments array' });
+        }
+        const result = await rapidshyp.bulkSchedulePickup(assignments);
+        res.json(result);
+    } catch (e) {
+        console.error('[API] Schedule Pickup Error:', e);
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
