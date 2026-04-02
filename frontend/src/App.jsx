@@ -149,6 +149,12 @@ function App() {
   const [detailModalOrder, setDetailModalOrder] = useState(null);
   const [cancellingOrder, setCancellingOrder] = useState(null); // State for cancellation modal/loading
 
+  // Set default tab based on role
+  useEffect(() => {
+    if (user?.role === 'care') setActiveTab('care');
+    else if (user?.role === 'supplier') setActiveTab('fulfill');
+  }, [user]);
+
   // Auto-sync on Fulfill mount
   const hasInitialized = useRef(false);
   useEffect(() => {
@@ -518,10 +524,12 @@ function App() {
   if (!user) return <Login />;
 
   const isSupplier = user?.role === 'supplier';
-  
-  // Filter tabs for supplier
+  const isCare = user?.role === 'care';
+
+  // Filter tabs by role
   const visibleTabs = tabs.filter(t => {
     if (isSupplier) return t.id === 'fulfill';
+    if (isCare) return t.id === 'care';
     return true;
   });
 
