@@ -542,56 +542,18 @@ const bulkApproveOrders = async (shopifyOrderIds) => {
     const headers = getPublicHeaders();
     const cleanIds = shopifyOrderIds.map(id => id.toString().replace('#', ''));
 
-    console.log(`[RAPIDSHYP] Bulk approve: ${cleanIds.length} orders. Trying direct approve first...`);
+    console.log(`[RAPIDSHYP] Bulk approve: ${cleanIds.length} orders`);
 
-    // Strategy 1: Try approving ALL order IDs directly (no session lookup needed).
-    // RapidShyp approve_orders accepts seller_order_id format.
-    // Try multiple ID formats in parallel to find what works.
-    let approvedCount = 0;
-    let alreadyApproved = 0;
-    const errors = [];
-
-    // Try with #ID format (seller_order_id as stored in RapidShyp)
-    const hashIds = cleanIds.map(id => `#${id}`);
-    try {
-        const res = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
-            order_id: hashIds,
-            store_name: 'DEFAULT'
-        }, { headers, timeout: 15000 });
-
-        const data = res.data || {};
-        console.log(`[RAPIDSHYP] Direct approve response:`, JSON.stringify(data).slice(0, 500));
-
-        if (data.status === 'success' || data.status === 'SUCCESS' || data.success) {
-            approvedCount = cleanIds.length;
-            console.log(`[RAPIDSHYP] Direct approve succeeded for ${approvedCount} orders`);
-            _orderMapTimestamp = 0; // Invalidate cache
-            return { success: true, approved: approvedCount, alreadyApproved: 0, notFound: 0, message: `${approvedCount} orders approved` };
-        }
-
-        // Check if "already approved" type response
-        const remark = (data.remark || data.remarks || data.message || '').toString().toLowerCase();
-        if (remark.includes('already') || remark.includes('approved')) {
-            console.log(`[RAPIDSHYP] Orders already approved`);
-            return { success: true, approved: 0, alreadyApproved: cleanIds.length, notFound: 0, message: 'All orders already approved' };
-        }
-    } catch (directErr) {
-        const msg = directErr.response?.data?.remarks || directErr.response?.data?.message || directErr.message;
-        console.warn(`[RAPIDSHYP] Direct approve with #IDs failed:`, msg);
-    }
-
-    // Strategy 2: If direct approve didn't work, try with internal order IDs via session map.
-    // Use a fast, limited fetch (only first 3 pages to stay within Vercel timeout).
-    console.log(`[RAPIDSHYP] Direct approve failed. Trying session lookup (limited pages)...`);
-
+    // The approve_orders API requires market_place_order_id (Shopify internal ID e.g. 6403572695228),
+    // NOT seller_order_id (#4062) or MongoDB order_id. We need the session API to map display IDs.
     const sessionHeaders = getSessionHeaders();
     if (!sessionHeaders) {
         return { success: false, approved: 0, alreadyApproved: 0, notFound: cleanIds.length,
-            errors: [{ error: 'No JWT configured and direct approve failed' }],
-            message: 'Cannot approve: no JWT and direct approve failed' };
+            errors: [{ error: 'No JWT configured — cannot look up order IDs for approval' }],
+            message: 'Cannot approve: JWT required for order lookup' };
     }
 
-    // Quick session fetch — limited to 3 pages (600 orders) to stay within timeout
+    // Fetch orders from session API (limited pages to stay within Vercel timeout)
     const orderMap = new Map();
     try {
         for (let page = 1; page <= 5; page++) {
@@ -604,7 +566,6 @@ const bulkApproveOrders = async (shopifyOrderIds) => {
                     const clean = r.seller_order_id.replace('#', '');
                     orderMap.set(clean, r);
                 }
-                if (r.order_id) orderMap.set(r.order_id, r);
             }
             if (records.length < 200) break;
         }
@@ -612,28 +573,39 @@ const bulkApproveOrders = async (shopifyOrderIds) => {
         console.warn(`[RAPIDSHYP] Session fetch partially failed:`, e.message);
     }
 
-    console.log(`[RAPIDSHYP] Quick session map: ${orderMap.size} entries`);
+    console.log(`[RAPIDSHYP] Session map: ${orderMap.size} entries`);
 
-    const toApprove = [];
+    let alreadyApproved = 0;
     let notFound = 0;
+    const toApprove = [];
 
     for (const cleanId of cleanIds) {
         const match = orderMap.get(cleanId);
         if (!match) { notFound++; continue; }
         const status = (match.order_status || '').toLowerCase();
-        if (status === 'approved' || status === 'shipped' || status === 'in_transit' ||
-            status === 'delivered' || match.awb_number) {
+        if (status === 'approved' || status === 'processing' || status === 'shipped' ||
+            status === 'in_transit' || status === 'delivered' || match.awb_number) {
             alreadyApproved++;
             continue;
         }
-        toApprove.push({ orderId: match.order_id, storeName: match.store_name || 'DEFAULT', cleanId });
+        // Use market_place_order_id — this is what the approve API actually accepts
+        toApprove.push({
+            marketplaceId: match.market_place_order_id,
+            storeName: match.store_name || 'GRLHOOD',
+            cleanId
+        });
     }
+
+    console.log(`[RAPIDSHYP] Bulk approve: ${toApprove.length} to approve, ${alreadyApproved} already approved, ${notFound} not found`);
 
     if (toApprove.length === 0) {
         return { success: true, approved: 0, alreadyApproved, notFound, message: 'All orders already approved or not found' };
     }
 
-    // Group by store and approve
+    let approvedCount = 0;
+    const errors = [];
+
+    // Group by store_name and approve using market_place_order_id
     const byStore = {};
     for (const item of toApprove) {
         const store = item.storeName;
@@ -642,17 +614,23 @@ const bulkApproveOrders = async (shopifyOrderIds) => {
     }
 
     const storeResults = await Promise.allSettled(Object.entries(byStore).map(async ([storeName, items]) => {
-        const orderIds = items.map(o => o.orderId).filter(Boolean);
+        const marketplaceIds = items.map(o => o.marketplaceId).filter(Boolean);
+        if (marketplaceIds.length === 0) return { error: { store: storeName, error: 'No marketplace IDs found' } };
+
         try {
+            console.log(`[RAPIDSHYP] Approving ${marketplaceIds.length} orders for store ${storeName}: ${marketplaceIds.slice(0, 5).join(', ')}...`);
             const res = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
-                order_id: orderIds,
+                order_id: marketplaceIds.map(String),
                 store_name: storeName
-            }, { headers, timeout: 15000 });
-            if (res.data?.status === 'success' || res.data?.status === 'SUCCESS' || res.data?.success) {
-                return { approved: orderIds.length };
+            }, { headers, timeout: 30000 });
+
+            const data = res.data || {};
+            console.log(`[RAPIDSHYP] Approve response:`, JSON.stringify(data).slice(0, 500));
+
+            if (data.status === 'success' || data.status === 'SUCCESS' || data.success) {
+                return { approved: data.success_count || marketplaceIds.length };
             }
-            const remark = res.data?.remark || res.data?.remarks || res.data?.message || 'Unknown';
-            return { error: { store: storeName, error: remark } };
+            return { error: { store: storeName, error: data.remark || data.remarks || 'Unknown response' } };
         } catch (e) {
             const msg = e.response?.data?.remarks || e.response?.data?.message || e.message;
             return { error: { store: storeName, error: typeof msg === 'string' ? msg : JSON.stringify(msg) } };
