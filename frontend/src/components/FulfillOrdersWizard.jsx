@@ -509,7 +509,10 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
     if (approveResult || approveLoading) return;
     setApproveLoading(true);
     try {
-      const r = await axios.post(`${API_URL}/rapidshyp/bulk-approve`, { orderIds: uniqueIds });
+      // Build orderId → shopifyId map so backend can use marketplace IDs directly (no JWT needed)
+      const orderIdMap = {};
+      workingOrders.forEach(o => { if (o.orderId && o.id) orderIdMap[o.orderId] = o.id; });
+      const r = await axios.post(`${API_URL}/rapidshyp/bulk-approve`, { orderIds: uniqueIds, orderIdMap });
       setApproveResult(r.data);
       if (r.data.approved > 0) {
         setToast({ msg: `${r.data.approved} orders approved in RapidShyp` });

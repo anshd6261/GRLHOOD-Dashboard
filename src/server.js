@@ -739,13 +739,13 @@ app.get('/api/proxy-pdf', async (req, res) => {
 // Bulk Approve Orders (before AWB assignment)
 app.post('/api/rapidshyp/bulk-approve', async (req, res) => {
     try {
-        const { orderIds } = req.body;
+        const { orderIds, orderIdMap } = req.body;
         if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
             return res.status(400).json({ error: 'Missing or invalid orderIds array' });
         }
 
-        console.log(`[API] Bulk approving ${orderIds.length} orders...`);
-        const result = await rapidshyp.bulkApproveOrders(orderIds);
+        console.log(`[API] Bulk approving ${orderIds.length} orders (${Object.keys(orderIdMap || {}).length} marketplace IDs)...`);
+        const result = await rapidshyp.bulkApproveOrders(orderIds, orderIdMap || {});
         res.json(result);
     } catch (e) {
         console.error('[API] Bulk Approve Error:', e);
