@@ -845,17 +845,16 @@ app.post('/api/rapidshyp/bulk-labels-dropbox', async (req, res) => {
     try {
         const { orderIds, awbs, orders } = req.body;
 
-        // Resolve shipment IDs: prefer AWBs (reliable public API), fall back to orderIds
-        let shipmentIds = [];
-        if (awbs && Array.isArray(awbs) && awbs.length > 0) {
-            console.log(`[API] Resolving ${awbs.length} AWBs to shipment IDs...`);
+        // Use shipment IDs directly (orderIds from frontend are already shipment IDs like S260444036)
+        let shipmentIds = (orderIds || []).filter(Boolean);
+
+        // Fallback: if no shipment IDs, resolve from AWBs via track_order
+        if (shipmentIds.length === 0 && awbs && Array.isArray(awbs) && awbs.length > 0) {
+            console.log(`[API] No shipment IDs provided, resolving ${awbs.length} AWBs...`);
             const lookups = await Promise.allSettled(awbs.filter(Boolean).map(awb => rapidshyp.findOrderIdByAWB(awb)));
             for (const r of lookups) {
                 if (r.status === 'fulfilled' && r.value) shipmentIds.push(r.value);
             }
-        }
-        if (shipmentIds.length === 0 && orderIds && Array.isArray(orderIds)) {
-            shipmentIds = orderIds.filter(Boolean);
         }
         if (shipmentIds.length === 0) {
             return res.status(400).json({ error: 'No valid shipment IDs or AWBs provided' });
@@ -905,16 +904,15 @@ app.post('/api/rapidshyp/bulk-labels-by-orders', async (req, res) => {
 
         console.log(`[API] Bulk labels by Shopify order IDs: ${orderIds.length} orders`);
 
-        // Fetch all RapidShyp orders and find matching AWBs
-        const allOrders = await rapidshyp.fetchAllOrders();
+        // Resolve shipment IDs via public track_order API (no JWT needed)
         const shipmentIds = [];
-        for (const orderId of orderIds) {
-            const searchKey = `#${orderId}`;
-            for (const [, rsOrder] of allOrders) {
-                if (rsOrder.seller_order_id === searchKey || rsOrder.seller_order_id === orderId.toString()) {
-                    const shipId = rsOrder.shipment_id || rsOrder.order_id;
-                    if (shipId) shipmentIds.push(shipId);
-                    break;
+        const BATCH = 10;
+        for (let i = 0; i < orderIds.length; i += BATCH) {
+            const batch = orderIds.slice(i, i + BATCH);
+            const results = await Promise.allSettled(batch.map(id => rapidshyp.getOrderInfo(id)));
+            for (const r of results) {
+                if (r.status === 'fulfilled' && r.value?.success && r.value.data?.shipment_id) {
+                    shipmentIds.push(r.value.data.shipment_id);
                 }
             }
         }
