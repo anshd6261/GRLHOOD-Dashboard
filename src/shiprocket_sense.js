@@ -29,6 +29,11 @@ const REPO_CACHE_FILE = path.join(__dirname, '..', 'data', 'rto_cache.json');
 
 // --- In-memory cache ---
 const rtoCache = new Map();
+// Permanent set of order IDs that have EVER been sent to Sense API.
+// Once an order is in this set, it will NEVER be re-checked — even if the
+// result was 'unknown' or an error.  This prevents double-billing.
+const checkedOrderIds = new Set();
+const CHECKED_IDS_FILE = '/tmp/rto_checked_ids.json';
 let cacheLoaded = false;
 
 function getAuthHeader() {
@@ -51,6 +56,8 @@ function loadCache() {
                     rtoCache.set(k, v);
                     loaded++;
                 }
+                // Every cached entry = already checked, never re-call
+                checkedOrderIds.add(k);
             }
             console.log(`[SENSE] Loaded ${loaded} cached RTO results from /tmp.`);
         }
@@ -70,6 +77,7 @@ function loadCache() {
                         rtoCache.set(k, v);
                         repoLoaded++;
                     }
+                    checkedOrderIds.add(k);
                 }
                 if (repoLoaded > 0) {
                     console.log(`[SENSE] Loaded ${repoLoaded} cached RTO results from repo backup.`);
@@ -81,6 +89,17 @@ function loadCache() {
         }
     }
 
+    // Load checked-order-IDs set (prevents double-billing)
+    try {
+        if (fs.existsSync(CHECKED_IDS_FILE)) {
+            const ids = JSON.parse(fs.readFileSync(CHECKED_IDS_FILE, 'utf8'));
+            for (const id of ids) checkedOrderIds.add(id);
+            console.log(`[SENSE] Loaded ${checkedOrderIds.size} checked order IDs from /tmp.`);
+        }
+    } catch (e) {
+        console.warn('[SENSE] Checked IDs load failed (non-fatal):', e.message);
+    }
+
     cacheLoaded = true;
 }
 
@@ -90,6 +109,12 @@ function saveCache() {
         fs.writeFileSync(CACHE_FILE, JSON.stringify(obj));
     } catch (e) {
         console.warn('[SENSE] /tmp cache save failed (non-fatal):', e.message);
+    }
+    // Save checked IDs to /tmp (survives within warm instance)
+    try {
+        fs.writeFileSync(CHECKED_IDS_FILE, JSON.stringify([...checkedOrderIds]));
+    } catch (e) {
+        console.warn('[SENSE] Checked IDs save failed (non-fatal):', e.message);
     }
     // Also save to repo-level backup (survives deploys + cold starts)
     try {
@@ -285,7 +310,7 @@ async function batchPredictRisk(shopifyOrders) {
     for (const order of shopifyOrders) {
         const orderId = order.name || order.id;
 
-        // 1. Check cache — only use successful predictions, re-check errors
+        // 1. Check cache first
         if (rtoCache.has(orderId)) {
             const cached = rtoCache.get(orderId);
             if (cached.risk && cached.risk !== 'unknown') {
@@ -293,6 +318,15 @@ async function batchPredictRisk(shopifyOrders) {
                 cachedCount++;
                 continue;
             }
+        }
+
+        // 1b. NEVER re-check an order that was already sent to Sense API
+        // This is the ultimate guard against double-billing — even if cache
+        // was lost, if we know we already checked it, skip it.
+        if (checkedOrderIds.has(orderId)) {
+            results[orderId] = rtoCache.get(orderId) || defaultResult('Previously checked — skipping to prevent double-billing');
+            cachedCount++;
+            continue;
         }
 
         // 2. Skip fulfilled/delivered orders — only unfulfilled need RTO check
@@ -338,11 +372,11 @@ async function batchPredictRisk(shopifyOrders) {
 
     if (pendingOrders.length > 0) {
         const tasks = pendingOrders.map(({ order, orderId }) => async () => {
+            // Mark as checked BEFORE the call — even if it fails, never retry
+            checkedOrderIds.add(orderId);
             const result = await predictSingleOrder(order, authHeader);
             results[orderId] = result;
-            if (result.risk && result.risk !== 'unknown') {
-                rtoCache.set(orderId, result);
-            }
+            rtoCache.set(orderId, result); // Cache ALL results, even unknown
         });
 
         try {
@@ -377,7 +411,6 @@ function getCachedResults(shopifyOrders) {
         const orderId = order.name || order.id;
         if (rtoCache.has(orderId)) {
             const cached = rtoCache.get(orderId);
-            // Skip cached errors — let them be re-checked
             const risk = cached.risk || (cached.aiRiskLevel ? cached.aiRiskLevel.toLowerCase() : null);
             if (risk && risk !== 'unknown') {
                 results[orderId] = cached;
@@ -412,11 +445,12 @@ function warmCache(cacheData) {
             _warmed: true, // Mark as warmed from frontend (don't re-check)
         };
         rtoCache.set(orderId, entry);
+        checkedOrderIds.add(orderId); // Mark as already checked — never re-call API
         added++;
     }
     if (added > 0) {
         saveCache();
-        console.log(`[SENSE] Warmed cache with ${added} entries from frontend. Total: ${rtoCache.size}`);
+        console.log(`[SENSE] Warmed cache with ${added} entries from frontend. Total: ${rtoCache.size}, Checked IDs: ${checkedOrderIds.size}`);
     }
     return { added, total: rtoCache.size };
 }
@@ -436,6 +470,27 @@ function exportCache() {
     return obj;
 }
 
+/**
+ * Mark order IDs as already checked — prevents double-billing.
+ * Called from frontend warm endpoint with IDs from localStorage.
+ */
+function markChecked(ids) {
+    loadCache();
+    let added = 0;
+    for (const id of ids) {
+        const normalized = id.startsWith('#') ? id : `#${id}`;
+        if (!checkedOrderIds.has(normalized)) {
+            checkedOrderIds.add(normalized);
+            checkedOrderIds.add(id); // Keep both forms
+            added++;
+        }
+    }
+    if (added > 0) {
+        try { fs.writeFileSync(CHECKED_IDS_FILE, JSON.stringify([...checkedOrderIds])); } catch (e) {}
+        console.log(`[SENSE] Marked ${added} additional order IDs as checked. Total: ${checkedOrderIds.size}`);
+    }
+}
+
 module.exports = {
     predictRisk: async () => defaultResult('Use batchPredictRisk instead'),
     batchPredictRisk,
@@ -443,4 +498,5 @@ module.exports = {
     warmCache,
     exportCache,
     detectPayment,
+    markChecked,
 };
