@@ -515,6 +515,11 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       console.log('[APPROVE] orderIdMap sample:', Object.entries(orderIdMap).slice(0, 3), 'total:', Object.keys(orderIdMap).length);
       console.log('[APPROVE] sample order fields:', workingOrders[0] ? { orderId: workingOrders[0].orderId, id: workingOrders[0].id, keys: Object.keys(workingOrders[0]).slice(0, 15) } : 'no orders');
       const r = await axios.post(`${API_URL}/rapidshyp/bulk-approve`, { orderIds: uniqueIds, orderIdMap });
+      // Merge new shipment_ids with any previously saved ones (persist across sessions)
+      const savedMap = JSON.parse(localStorage.getItem('shipmentMap') || '{}');
+      const mergedMap = { ...savedMap, ...(r.data.shipmentMap || {}) };
+      r.data.shipmentMap = mergedMap;
+      localStorage.setItem('shipmentMap', JSON.stringify(mergedMap));
       setApproveResult(r.data);
       if (r.data.approved > 0) {
         setToast({ msg: `${r.data.approved} orders approved in RapidShyp` });
@@ -534,8 +539,9 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const handleShip = async () => {
     setShipLoading(true);
     try {
-      const sm = approveResult?.shipmentMap || {};
-      console.log('[SHIP] approveResult:', approveResult);
+      // Merge approve result with persisted shipment map from localStorage
+      const savedMap = JSON.parse(localStorage.getItem('shipmentMap') || '{}');
+      const sm = { ...savedMap, ...(approveResult?.shipmentMap || {}) };
       console.log('[SHIP] shipmentMap keys:', Object.keys(sm).length, 'sample:', Object.entries(sm).slice(0, 3));
       const r = await axios.post(`${API_URL}/rapidshyp/bulk-assign`, { orderNames: uniqueIds, shipmentMap: sm });
       setShipResults(r.data);
