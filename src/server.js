@@ -917,20 +917,19 @@ app.get('/api/rapidshyp/lookup/:orderId', async (req, res) => {
         if (sessionHeaders) {
             try {
                 // Session API uses POST, not GET
-                // Paginate to find the order
-                for (let page = 1; page <= 5; page++) {
-                    const sr = await axios.post('https://api.rapidshyp.com/session/orders/get_orders', {
-                        page, limit: 200
-                    }, { headers: sessionHeaders, timeout: 15000 });
-                    const pageOrders = sr.data?.data || [];
-                    allSessionOrders.push(...pageOrders);
-                    const found = pageOrders.find(o => {
-                        const sellerClean = (o.seller_order_id || '').replace('#', '');
-                        return sellerClean === cleanId;
-                    });
-                    if (found) { sessionOrder = found; break; }
-                    if (pageOrders.length < 200) break; // No more pages
-                }
+                const sr = await axios.post('https://api.rapidshyp.com/session/orders/get_orders', {
+                    page: 1, limit: 5
+                }, { headers: sessionHeaders, timeout: 15000 });
+                // Dump raw response to understand structure
+                const rawKeys = Object.keys(sr.data || {});
+                const rawData = sr.data;
+                allSessionOrders = rawData?.data || rawData?.orders || [];
+                sessionOrder = allSessionOrders.find(o => {
+                    const sellerClean = (o.seller_order_id || '').replace('#', '');
+                    return sellerClean === cleanId;
+                });
+                // Store raw for debugging
+                sessionOrder = sessionOrder || { _debug: { rawKeys, firstOrderKeys: allSessionOrders[0] ? Object.keys(allSessionOrders[0]) : [], sampleOrder: allSessionOrders[0] || null, totalOrders: allSessionOrders.length, rawSnippet: JSON.stringify(rawData).slice(0, 500) } };
             } catch (e) {
                 sessionOrder = { error: e.response?.status, errorData: e.response?.data || e.message };
             }
