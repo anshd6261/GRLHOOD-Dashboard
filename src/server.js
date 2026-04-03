@@ -106,6 +106,10 @@ async function handleOrders(req, res) {
             const warmResult = shiprocketSense.warmCache(normalized);
             console.log(`[API] Inline cache warm: ${warmResult.added} added, ${warmResult.total} total`);
         }
+        // Mark checked IDs from frontend (prevents double-billing on cold starts)
+        if (Array.isArray(body.rtoCheckedIds) && body.rtoCheckedIds.length > 0) {
+            shiprocketSense.markChecked(body.rtoCheckedIds);
+        }
 
         console.log(`[API] Fetching orders... Options:`, { daysLookback, startDate, endDate, statusMode });
 
@@ -247,7 +251,7 @@ app.post('/api/rto-check', async (req, res) => {
 // Warm server RTO cache from frontend localStorage (survives cold starts)
 app.post('/api/rto-cache/warm', (req, res) => {
     try {
-        const { cache } = req.body;
+        const { cache, checkedIds } = req.body;
         if (!cache || typeof cache !== 'object') {
             return res.json({ success: true, added: 0, total: 0 });
         }
@@ -258,6 +262,10 @@ app.post('/api/rto-cache/warm', (req, res) => {
             normalized[k] = v; // Keep original key too for getCachedResults lookup
         }
         const result = shiprocketSense.warmCache(normalized);
+        // Also mark any extra checked IDs from frontend (prevents double-billing)
+        if (Array.isArray(checkedIds)) {
+            shiprocketSense.markChecked(checkedIds);
+        }
         res.json({ success: true, ...result });
     } catch (e) {
         console.warn('[API] Cache warm failed:', e.message);
@@ -417,7 +425,7 @@ app.post('/api/dropbox/upload', async (req, res) => {
     }
 });
 
-// 6a. Upload to NBE Portal via API
+// 6a. Upload to NBE Portal via Raw Order API (3-step: presign → upload → finalize)
 app.post('/api/nbe/upload-order', async (req, res) => {
     try {
         const { rows } = req.body;
@@ -431,63 +439,54 @@ app.post('/api/nbe/upload-order', async (req, res) => {
             return res.status(400).json({ success: false, error: 'NBE_API_BASE or NBE_API_KEY not configured' });
         }
 
-        const nbeHeaders = { 'X-Customer-Api-Key': nbeKey };
-        console.log(`[NBE] Uploading ${rows.length} items to portal...`);
+        const nbeHeaders = { 'X-Customer-Api-Key': nbeKey, 'Content-Type': 'application/json' };
+        console.log(`[NBE] Uploading ${rows.length} items via Raw Order API...`);
 
-        // Generate the supplier CSV (column names match NBE requirements)
+        // Generate the supplier CSV
         const csvContent = generateSupplierCSV(rows);
         const filename = `${getFormattedDate()} Order.csv`;
 
-        // Upload CSV file to NBE portal
-        const FormData = require('form-data');
-        const form = new FormData();
-        form.append('file', Buffer.from(csvContent, 'utf-8'), {
+        // Step 1: Presign — get upload URL + storage key
+        const presignRes = await axios.post(`${nbeBase}/raw-order-files/presign/`, {
             filename,
-            contentType: 'text/csv'
-        });
-        form.append('order_type', 'Dropship POD');
-        form.append('providing_shipping_label', 'yes');
+            content_type: 'text/csv',
+        }, { headers: nbeHeaders, timeout: 30000 });
 
-        const uploadRes = await axios.post(`${nbeBase}/customer-uploads/`, form, {
-            headers: { ...nbeHeaders, ...form.getHeaders() },
-            timeout: 30000
-        });
-
-        const uploadId = uploadRes.data?.id;
-        console.log(`[NBE] CSV uploaded: upload_id=${uploadId}`, uploadRes.data);
-
-        if (!uploadId) {
-            return res.json({ success: false, error: 'No upload_id returned', response: uploadRes.data });
+        const { upload_url, key } = presignRes.data;
+        if (!upload_url || !key) {
+            console.error('[NBE] Presign response missing upload_url or key:', presignRes.data);
+            return res.status(500).json({ success: false, error: 'Presign failed — no upload_url or key', response: presignRes.data });
         }
+        console.log(`[NBE] Step 1 done: got presigned URL, key=${key}`);
 
-        // Create the order from the upload
-        const orderPayload = {
-            items: [{ upload_id: uploadId, quantity: rows.length }],
-            order_type: 'Dropship POD',
-            order_notes: getFormattedDate(),
-            providing_shipping_label: true,
-            partial_fulfillment: false,
-            is_urgent_order: false
-        };
-
-        const orderRes = await axios.post(`${nbeBase}/customer-orders/create-order/`, orderPayload, {
-            headers: { ...nbeHeaders, 'Content-Type': 'application/json' },
-            timeout: 30000
+        // Step 2: Upload CSV bytes to presigned URL (S3/R2)
+        await axios.put(upload_url, Buffer.from(csvContent, 'utf-8'), {
+            headers: { 'Content-Type': 'text/csv' },
+            timeout: 30000,
         });
+        console.log(`[NBE] Step 2 done: CSV uploaded to storage`);
 
-        const orderId = orderRes.data?.order_id || orderRes.data?.id;
-        console.log(`[NBE] Order created: ${orderId} (${rows.length} items)`, orderRes.data);
+        // Step 3: Finalize — register the uploaded file as a raw order
+        const finalizeRes = await axios.post(`${nbeBase}/raw-order-files/finalize/`, {
+            key,
+            description: `${getFormattedDate()} Order`,
+            order_type: 'Bulkship POD',
+            partial_fulfillment: 'yes',
+            is_urgent_order: false,
+        }, { headers: nbeHeaders, timeout: 30000 });
+
+        console.log(`[NBE] Step 3 done: finalized`, finalizeRes.data);
 
         res.json({
             success: true,
-            orderId,
-            uploadId,
+            key,
             items: rows.length,
-            message: `NBE order ${orderId} created with ${rows.length} items`
+            finalize: finalizeRes.data,
+            message: `NBE raw order uploaded: ${rows.length} items (${filename})`
         });
 
     } catch (e) {
-        console.error('[NBE] Upload Error:', e.response?.data || e.message);
+        console.error('[NBE] Raw Order Upload Error:', e.response?.data || e.message);
         res.status(500).json({ success: false, error: e.response?.data?.error || e.response?.data?.message || e.message });
     }
 });

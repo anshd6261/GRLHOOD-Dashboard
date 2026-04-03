@@ -306,15 +306,17 @@ function App() {
       if (endDate instanceof Date && !isNaN(endDate)) {
         const e = new Date(endDate); e.setHours(23, 59, 59, 999); endStr = e.toISOString();
       }
-      // Step 0: Load localStorage RTO cache
+      // Step 0: Load localStorage RTO cache + checked IDs
       let rtoLocalCache = {};
       try { rtoLocalCache = JSON.parse(localStorage.getItem('rto_cache') || '{}'); } catch {}
+      let rtoCheckedIds = [];
+      try { rtoCheckedIds = JSON.parse(localStorage.getItem('rto_checked_ids') || '[]'); } catch {}
       const cacheSize = Object.keys(rtoLocalCache).length;
-      console.log(`[RTO] localStorage cache: ${cacheSize} entries`, Object.keys(rtoLocalCache).slice(0, 5));
+      console.log(`[RTO] localStorage cache: ${cacheSize} entries, ${rtoCheckedIds.length} checked IDs`);
 
       // Step 1: Fetch orders WITH inline cache (same Vercel instance handles both)
-      const res = cacheSize > 0
-        ? await axios.post(`${API_URL}/orders?status=unfulfilled&startDate=${startStr}&endDate=${endStr}`, { rtoCache: rtoLocalCache })
+      const res = (cacheSize > 0 || rtoCheckedIds.length > 0)
+        ? await axios.post(`${API_URL}/orders?status=unfulfilled&startDate=${startStr}&endDate=${endStr}`, { rtoCache: rtoLocalCache, rtoCheckedIds })
         : await axios.get(`${API_URL}/orders?status=unfulfilled&startDate=${startStr}&endDate=${endStr}`);
       if (res.headers['content-type']?.includes('text/html')) throw new Error('Server returned HTML. Check logs.');
       if (!res.data || !Array.isArray(res.data.orders)) {
@@ -345,10 +347,12 @@ function App() {
       const enrichedCount = ordersWithCache.filter(o => o.aiRiskLevel !== 'Unknown').length;
       console.log(`[RTO] After localStorage enrichment: ${enrichedCount}/${ordersWithCache.length} have risk data`);
 
-      // Step 3: Find truly unchecked orders (not in server cache AND not in localStorage)
+      // Step 3: Find truly unchecked orders (not in server cache AND not in localStorage AND not previously checked)
+      const checkedSet = new Set(rtoCheckedIds);
       const uncheckedOrders = ordersWithCache.filter(o =>
         o.aiRiskLevel === 'Unknown' && o.payment === 'Cash on Delivery' &&
-        (!o.fulfillmentStatus || o.fulfillmentStatus === 'UNFULFILLED')
+        (!o.fulfillmentStatus || o.fulfillmentStatus === 'UNFULFILLED') &&
+        !checkedSet.has(o.orderId) // NEVER re-check a previously checked order
       );
       const uniqueUnchecked = [];
       const seenIds = new Set();
@@ -361,18 +365,24 @@ function App() {
 
       // Step 4: Only call Sense API for genuinely new orders (saves credits)
       if (uniqueUnchecked.length > 0) {
+        console.log(`[RTO] Checking ${uniqueUnchecked.length} genuinely new orders via Sense API`);
         try {
           const rtoRes = await axios.post(`${API_URL}/rto-check`, { orders: uniqueUnchecked });
           if (rtoRes.data?.success && rtoRes.data?.results) {
             const rtoResults = rtoRes.data.results;
             // Save new results to localStorage permanently
             const updatedCache = { ...rtoLocalCache };
+            const updatedCheckedIds = [...checkedSet];
             for (const [orderId, rto] of Object.entries(rtoResults)) {
-              if (rto.aiRiskLevel && rto.aiRiskLevel !== 'Unknown') {
-                updatedCache[orderId] = { aiRiskLevel: rto.aiRiskLevel, aiRiskScore: rto.aiRiskScore, aiRiskReasons: rto.aiRiskReasons };
+              updatedCache[orderId] = { aiRiskLevel: rto.aiRiskLevel, aiRiskScore: rto.aiRiskScore, aiRiskReasons: rto.aiRiskReasons };
+              // Mark as checked permanently — never re-check
+              if (!checkedSet.has(orderId)) {
+                updatedCheckedIds.push(orderId);
+                checkedSet.add(orderId);
               }
             }
             try { localStorage.setItem('rto_cache', JSON.stringify(updatedCache)); } catch {}
+            try { localStorage.setItem('rto_checked_ids', JSON.stringify(updatedCheckedIds)); } catch {}
 
             ordersWithCache = ordersWithCache.map(o => {
               const rto = rtoResults[o.orderId];
@@ -382,7 +392,15 @@ function App() {
           }
         } catch (rtoErr) {
           console.warn('RTO enrichment failed (non-blocking):', rtoErr.message);
+          // Even on failure, mark these as checked to prevent re-billing
+          const updatedCheckedIds = [...checkedSet];
+          for (const o of uniqueUnchecked) {
+            if (!checkedSet.has(o.orderId)) updatedCheckedIds.push(o.orderId);
+          }
+          try { localStorage.setItem('rto_checked_ids', JSON.stringify(updatedCheckedIds)); } catch {}
         }
+      } else {
+        console.log('[RTO] No new orders to check — all already checked or cached');
       }
 
       // Step 5: Update state with all enriched orders
