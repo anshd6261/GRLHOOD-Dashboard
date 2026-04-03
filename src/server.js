@@ -884,7 +884,7 @@ app.get('/api/rapidshyp/lookup/:orderId', async (req, res) => {
                 const orders = sr.data?.data || [];
                 sessionOrder = orders.find(o => o.seller_order_id === `#${cleanId}`);
             } catch (e) {
-                sessionOrder = { error: e.response?.data || e.message };
+                sessionOrder = { error: e.response?.status, errorData: e.response?.data || e.message };
             }
         }
 
@@ -907,6 +907,9 @@ app.get('/api/rapidshyp/lookup/:orderId', async (req, res) => {
         if (rsOrderId) {
             combos.push({ order_id: rsOrderId, channel_order_id: `#${cleanId}` });
         }
+        // Fallback: try without session API data
+        combos.push({ order_id: `#${cleanId}`, channel_order_id: `#${cleanId}` });
+        combos.push({ order_id: cleanId, channel_order_id: cleanId });
 
         for (const params of combos) {
             const key = JSON.stringify(params);
