@@ -489,8 +489,38 @@ app.post('/api/nbe/upload-order', async (req, res) => {
         });
 
     } catch (e) {
-        console.error('[NBE] Raw Order Upload Error:', e.response?.data || e.message);
-        res.status(500).json({ success: false, error: e.response?.data?.error || e.response?.data?.message || e.message });
+        console.error('[NBE] Raw Order Upload Error:', JSON.stringify({
+            status: e.response?.status,
+            statusText: e.response?.statusText,
+            data: e.response?.data,
+            url: e.config?.url,
+            method: e.config?.method,
+            message: e.message,
+        }));
+        const errData = e.response?.data;
+        res.status(e.response?.status || 500).json({
+            success: false,
+            step: e.config?.url?.includes('presign') ? 1 : e.config?.url?.includes('finalize') ? 3 : e.config?.method === 'put' ? 2 : 'unknown',
+            error: errData?.detail || errData?.error || errData?.message || (typeof errData === 'string' ? errData : null) || e.message,
+            fullError: errData,
+            url: e.config?.url,
+        });
+    }
+});
+
+// Debug: test NBE presign endpoint
+app.get('/api/nbe/test-presign', async (req, res) => {
+    try {
+        const nbeBase = (process.env.NBE_API_BASE || '').trim();
+        const nbeKey = (process.env.NBE_API_KEY || '').trim();
+        const nbeHeaders = { 'X-Customer-Api-Key': nbeKey, 'Content-Type': 'application/json' };
+        const presignRes = await axios.post(`${nbeBase}/raw-order-files/presign/`, {
+            filename: 'test.csv',
+            content_type: 'text/csv',
+        }, { headers: nbeHeaders, timeout: 15000 });
+        res.json({ success: true, nbeBase, data: presignRes.data });
+    } catch (e) {
+        res.json({ success: false, nbeBase: (process.env.NBE_API_BASE || '').trim(), status: e.response?.status, data: e.response?.data, url: e.config?.url, message: e.message });
     }
 });
 
