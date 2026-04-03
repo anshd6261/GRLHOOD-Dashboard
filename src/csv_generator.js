@@ -20,7 +20,7 @@ const generateSupplierCSV = (inputRows) => {
     const csvRows = [];
 
     // Header (No Payment, No COGS)
-    csvRows.push(['Category', 'Model', 'SKU', 'Customer Name', 'Order ID', 'Preview Product URL']);
+    csvRows.push(['Product Category', 'Model', 'Design Number(SKU)', 'Customer Name', 'Order ID', 'Preview Product URL']);
 
     rows.forEach(row => {
         if (!row) return;
