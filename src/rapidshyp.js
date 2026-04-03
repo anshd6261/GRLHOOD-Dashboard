@@ -419,11 +419,12 @@ const resolveOrder = async (cleanId, orderMap) => {
 };
 
 /**
- * Bulk assign AWB to multiple orders via PUBLIC API only.
- * Uses shipment IDs from the approve response — no JWT/session API needed.
- *
- * Flow: approve returns shipmentMap (orderId → shipment_id) → assign_awb for each.
- * If an order already has AWB (from track_order), skip it.
+ * Bulk assign AWB to multiple orders.
+ * Priority for resolving shipment_id:
+ *   1. approveShipmentMap (from approve response — best case, no extra calls)
+ *   2. Session API bulk lookup (reads all orders once, maps seller_order_id → shipment_id)
+ *   3. track_order fallback (works for orders that already have AWB)
+ * All write operations (assign_awb) use PUBLIC API only.
  */
 const bulkAssignAWB = async (orderNames, approveShipmentMap = {}) => {
     const headers = getPublicHeaders();
@@ -432,14 +433,61 @@ const bulkAssignAWB = async (orderNames, approveShipmentMap = {}) => {
 
     console.log(`[RAPIDSHYP] Bulk assign AWB: ${cleanIds.length} orders, ${Object.keys(approveShipmentMap).length} shipment IDs from approve`);
 
-    // For each order, get shipment_id from approve map or try track_order as fallback
+    // Build session shipment map for orders not in approveShipmentMap
+    // (handles already-approved orders where approve response was empty)
+    const needLookup = cleanIds.filter(id => !approveShipmentMap[id]);
+    const sessionShipmentMap = new Map(); // cleanId → { shipment_id, awb }
+
+    if (needLookup.length > 0) {
+        const sessionHeaders = getSessionHeaders();
+        if (sessionHeaders) {
+            try {
+                const needed = new Set(needLookup);
+                for (let page = 1; page <= 10; page++) {
+                    const res = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, {
+                        page, limit: 200
+                    }, { headers: sessionHeaders, timeout: 10000 });
+                    const records = res.data?.records || [];
+                    for (const r of records) {
+                        if (r.seller_order_id) {
+                            const clean = r.seller_order_id.replace('#', '');
+                            if (needed.has(clean)) {
+                                // Get shipment_id from the order's shipment array
+                                const shipment = r.shipments?.[0] || {};
+                                const shipmentId = shipment.shipment_id || r.shipment_id;
+                                if (shipmentId) {
+                                    sessionShipmentMap.set(clean, {
+                                        shipmentId,
+                                        awb: shipment.awb || r.awb_number || null,
+                                        courier: shipment.courier_name || ''
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    if (records.length < 200) break;
+                }
+                console.log(`[RAPIDSHYP] Session lookup: found ${sessionShipmentMap.size}/${needLookup.length} shipment IDs`);
+            } catch (e) {
+                console.warn(`[RAPIDSHYP] Session lookup failed:`, e.message);
+            }
+        }
+    }
+
+    // For each order, resolve shipment_id
     const resolveShipment = async (cleanId) => {
-        // 1. From approve response (primary path — works when auto-approval is disabled)
+        // 1. From approve response (newly approved orders)
         if (approveShipmentMap[cleanId]) {
             return { cleanId, shipmentId: approveShipmentMap[cleanId], awb: null };
         }
 
-        // 2. Fallback: track_order with #orderId (works for orders that already have AWB)
+        // 2. From session API lookup (already-approved orders)
+        const sessionData = sessionShipmentMap.get(cleanId);
+        if (sessionData?.shipmentId) {
+            return { cleanId, shipmentId: sessionData.shipmentId, awb: sessionData.awb, courier: sessionData.courier };
+        }
+
+        // 3. Fallback: track_order with #orderId (works for orders that already have AWB)
         try {
             const res = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, {
                 orderId: `#${cleanId}`

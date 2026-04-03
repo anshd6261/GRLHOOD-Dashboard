@@ -759,6 +759,45 @@ app.post('/api/rapidshyp/bulk-approve', async (req, res) => {
     }
 });
 
+// Debug: dump raw session API record fields for an order
+app.get('/api/rapidshyp/debug-order/:orderId', async (req, res) => {
+    try {
+        const cleanId = req.params.orderId.replace('#', '');
+        const sessionHeaders = rapidshyp.getSessionHeaders();
+        if (!sessionHeaders) return res.status(400).json({ error: 'No JWT configured' });
+
+        const axios = require('axios');
+        const apiRes = await axios.post('https://api.rapidshyp.com/session/orders/get_orders', {
+            page: 1, limit: 200
+        }, { headers: sessionHeaders, timeout: 15000 });
+
+        const records = apiRes.data?.records || [];
+        const match = records.find(r => r.seller_order_id === `#${cleanId}` || r.seller_order_id === cleanId);
+
+        if (!match) return res.json({ found: false, totalRecords: records.length, searchedFor: cleanId });
+
+        res.json({
+            found: true,
+            allKeys: Object.keys(match).sort(),
+            relevantFields: {
+                order_id: match.order_id,
+                seller_order_id: match.seller_order_id,
+                market_place_order_id: match.market_place_order_id,
+                order_status: match.order_status,
+                awb_number: match.awb_number,
+                shipment_id: match.shipment_id,
+                shipments: match.shipments,
+                shipment: match.shipment,
+            },
+            // Dump any field containing 'ship' in the key name
+            shipFields: Object.fromEntries(Object.entries(match).filter(([k]) => k.toLowerCase().includes('ship'))),
+            rawRecord: match
+        });
+    } catch (e) {
+        res.status(500).json({ error: e.message, status: e.response?.status });
+    }
+});
+
 // Bulk Assign AWB
 app.post('/api/rapidshyp/bulk-assign', async (req, res) => {
     try {
