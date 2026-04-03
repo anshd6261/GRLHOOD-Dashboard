@@ -123,7 +123,9 @@ const uploadOrderPayload = async (pdfUrl, standardCsvContent, financialCsvConten
     const token = await getAccessToken();
 
     const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-    const monthName = monthNames[new Date().getMonth()];
+    // Use IST so month folder matches Indian business day
+    const istNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const monthName = monthNames[istNow.getMonth()];
     const dateLabel = getFormattedDate(); // e.g. "17th March 2026"
 
     // Path: /ORDERS/March/17th March 2026 Order/

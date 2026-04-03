@@ -5,7 +5,8 @@ const path = require('path');
 console.log('[CSV Module] Loaded Version 2.0 (Dual Export)');
 
 const getFormattedDate = () => {
-    const d = new Date();
+    // Use IST (UTC+5:30) so folder names match Indian business day
+    const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
     const day = d.getDate();
     const month = d.toLocaleString('en-US', { month: 'long' });
     const year = d.getFullYear();
