@@ -863,6 +863,47 @@ app.get('/api/rapidshyp/debug-order/:id', async (req, res) => {
     }
 });
 
+// Debug: test JWT and try login
+app.get('/api/rapidshyp/test-jwt', async (req, res) => {
+    try {
+        const results = {};
+
+        // Test current JWT
+        const sessionHeaders = rapidshyp.getSessionHeaders();
+        if (sessionHeaders) {
+            try {
+                const r = await axios.post('https://api.rapidshyp.com/session/orders/get_orders', {
+                    page: 1, limit: 1
+                }, { headers: sessionHeaders, timeout: 10000 });
+                results.currentJwt = { status: 'OK', orderCount: r.data?.data?.length };
+            } catch (e) {
+                results.currentJwt = { status: 'FAILED', code: e.response?.status, data: e.response?.data || e.message };
+            }
+        } else {
+            results.currentJwt = 'NO JWT SET';
+        }
+
+        // Try login to get fresh JWT
+        const loginAttempts = [
+            { url: 'https://api.rapidshyp.com/session/login', method: 'post' },
+            { url: 'https://api.rapidshyp.com/session/auth/login', method: 'post' },
+            { url: 'https://api.rapidshyp.com/rapidshyp/apis/v1/login', method: 'post' },
+        ];
+        for (const attempt of loginAttempts) {
+            try {
+                const r = await axios({ method: attempt.method, url: attempt.url, data: {}, timeout: 5000 });
+                results[attempt.url] = { status: r.status, data: r.data };
+            } catch (e) {
+                results[attempt.url] = { status: e.response?.status, data: e.response?.data || e.message };
+            }
+        }
+
+        res.json(results);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Debug: lookup order via session API + get_orders_info to find shipment_id
 app.get('/api/rapidshyp/lookup/:orderId', async (req, res) => {
     try {
