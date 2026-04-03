@@ -863,26 +863,35 @@ app.get('/api/rapidshyp/debug-order/:id', async (req, res) => {
     }
 });
 
-// Debug: lookup order via public API shipment_details using Channel_order_id
+// Debug: lookup order via public API get_orders_info
 app.get('/api/rapidshyp/lookup/:orderId', async (req, res) => {
     try {
         const orderId = req.params.orderId;
-        const variants = [orderId, `#${orderId}`, orderId.replace('#', '')];
+        const cleanId = orderId.replace('#', '');
+        const headers = {
+            'Content-Type': 'application/json',
+            'rapidshyp-token': process.env.RAPIDSHYP_API_KEY.trim()
+        };
         const results = {};
 
-        for (const variant of variants) {
+        // Try get_orders_info with different param combos
+        const combos = [
+            { orderId: cleanId, channel_order_id: cleanId },
+            { orderId: `#${cleanId}`, channel_order_id: `#${cleanId}` },
+            { channel_order_id: cleanId },
+            { channel_order_id: `#${cleanId}` },
+            { orderId: cleanId },
+        ];
+
+        for (const params of combos) {
+            const key = JSON.stringify(params);
             try {
-                const r = await axios.get('https://api.rapidshyp.com/rapidshyp/apis/v1/shipment_details', {
-                    params: { Channel_order_id: variant },
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'rapidshyp-token': process.env.RAPIDSHYP_API_KEY.trim()
-                    },
-                    timeout: 15000
+                const r = await axios.get('https://api.rapidshyp.com/rapidshyp/apis/v1/get_orders_info', {
+                    params, headers, timeout: 15000
                 });
-                results[`Channel_order_id=${variant}`] = r.data;
+                results[key] = r.data;
             } catch (e) {
-                results[`Channel_order_id=${variant}`] = e.response?.data || e.message;
+                results[key] = e.response?.data || e.message;
             }
         }
 
