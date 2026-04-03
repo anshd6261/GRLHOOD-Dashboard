@@ -512,6 +512,8 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       // Build orderId → shopifyId map so backend can use marketplace IDs directly (no JWT needed)
       const orderIdMap = {};
       workingOrders.forEach(o => { if (o.orderId && o.id) orderIdMap[o.orderId] = o.id; });
+      console.log('[APPROVE] orderIdMap sample:', Object.entries(orderIdMap).slice(0, 3), 'total:', Object.keys(orderIdMap).length);
+      console.log('[APPROVE] sample order fields:', workingOrders[0] ? { orderId: workingOrders[0].orderId, id: workingOrders[0].id, keys: Object.keys(workingOrders[0]).slice(0, 15) } : 'no orders');
       const r = await axios.post(`${API_URL}/rapidshyp/bulk-approve`, { orderIds: uniqueIds, orderIdMap });
       setApproveResult(r.data);
       if (r.data.approved > 0) {

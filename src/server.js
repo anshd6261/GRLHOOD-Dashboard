@@ -745,6 +745,12 @@ app.post('/api/rapidshyp/bulk-approve', async (req, res) => {
         }
 
         console.log(`[API] Bulk approving ${orderIds.length} orders (${Object.keys(orderIdMap || {}).length} marketplace IDs)...`);
+        if (orderIdMap) {
+            const sample = Object.entries(orderIdMap).slice(0, 3);
+            console.log(`[API] orderIdMap sample:`, JSON.stringify(sample));
+        } else {
+            console.log(`[API] WARNING: orderIdMap is empty/missing!`);
+        }
         const result = await rapidshyp.bulkApproveOrders(orderIds, orderIdMap || {});
         res.json(result);
     } catch (e) {
