@@ -917,14 +917,20 @@ app.get('/api/rapidshyp/lookup/:orderId', async (req, res) => {
         if (sessionHeaders) {
             try {
                 // Session API uses POST, not GET
-                const sr = await axios.post('https://api.rapidshyp.com/session/orders/get_orders', {
-                    page: 1, limit: 50
-                }, { headers: sessionHeaders, timeout: 15000 });
-                allSessionOrders = sr.data?.data || [];
-                sessionOrder = allSessionOrders.find(o => {
-                    const sellerClean = (o.seller_order_id || '').replace('#', '');
-                    return sellerClean === cleanId;
-                });
+                // Paginate to find the order
+                for (let page = 1; page <= 5; page++) {
+                    const sr = await axios.post('https://api.rapidshyp.com/session/orders/get_orders', {
+                        page, limit: 200
+                    }, { headers: sessionHeaders, timeout: 15000 });
+                    const pageOrders = sr.data?.data || [];
+                    allSessionOrders.push(...pageOrders);
+                    const found = pageOrders.find(o => {
+                        const sellerClean = (o.seller_order_id || '').replace('#', '');
+                        return sellerClean === cleanId;
+                    });
+                    if (found) { sessionOrder = found; break; }
+                    if (pageOrders.length < 200) break; // No more pages
+                }
             } catch (e) {
                 sessionOrder = { error: e.response?.status, errorData: e.response?.data || e.message };
             }
