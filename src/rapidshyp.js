@@ -152,6 +152,9 @@ let _orderMapCache = null;
 let _orderMapTimestamp = 0;
 const ORDER_MAP_TTL = 2 * 60 * 1000; // 2 minutes
 
+// Cache of shipment_ids from approve responses — survives across approve → assign calls
+const _shipmentCache = new Map(); // cleanId → shipment_id
+
 /**
  * Fetch ALL orders from session API via pagination and build a lookup map.
  * The session search param is broken (returns all orders regardless of search term),
@@ -481,7 +484,12 @@ const bulkAssignAWB = async (orderNames, approveShipmentMap = {}) => {
             return { cleanId, shipmentId: approveShipmentMap[cleanId], awb: null };
         }
 
-        // 2. From session API lookup (already-approved orders)
+        // 2. From server-side cache (shipment_ids from recent approve calls)
+        if (_shipmentCache.has(cleanId)) {
+            return { cleanId, shipmentId: _shipmentCache.get(cleanId), awb: null };
+        }
+
+        // 3. From session API lookup (already-approved orders)
         const sessionData = sessionShipmentMap.get(cleanId);
         if (sessionData?.shipmentId) {
             return { cleanId, shipmentId: sessionData.shipmentId, awb: sessionData.awb, courier: sessionData.courier };
@@ -675,7 +683,11 @@ const bulkApproveOrders = async (shopifyOrderIds, orderIdMap = {}) => {
         }
     }
 
-    console.log(`[RAPIDSHYP] Approve done: ${approvedCount} approved, ${Object.keys(orderShipmentMap).length} shipment IDs captured`);
+    // Cache shipment_ids so assign AWB can use them even without fresh approve
+    for (const [id, shipId] of Object.entries(orderShipmentMap)) {
+        _shipmentCache.set(id, shipId);
+    }
+    console.log(`[RAPIDSHYP] Approve done: ${approvedCount} approved, ${Object.keys(orderShipmentMap).length} shipment IDs captured, cache: ${_shipmentCache.size}`);
 
     return {
         success: approvedCount > 0 || alreadyApproved > 0,
