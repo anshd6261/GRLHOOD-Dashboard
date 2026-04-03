@@ -20,7 +20,7 @@ const generateSupplierCSV = (inputRows) => {
     const csvRows = [];
 
     // Header (No Payment, No COGS)
-    csvRows.push(['Product Category', 'Model', 'Design Number(SKU)', 'Customer Name', 'Order ID', 'Preview Product URL', 'AWB(Optional)']);
+    csvRows.push(['Product Category', 'Model', 'Design Number(SKU)', 'Customer Name', 'Order ID', 'Preview Product URL']);
 
     rows.forEach(row => {
         if (!row) return;
@@ -31,8 +31,7 @@ const generateSupplierCSV = (inputRows) => {
             row.sku || '',
             row.customerName || '',
             row.orderId || '',
-            row.previewUrl || '',
-            ''
+            row.previewUrl || ''
         ]);
     });
 

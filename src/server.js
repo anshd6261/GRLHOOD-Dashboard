@@ -434,8 +434,11 @@ app.post('/api/nbe/upload-order', async (req, res) => {
         const nbeHeaders = { 'X-Customer-Api-Key': nbeKey };
         console.log(`[NBE] Uploading ${rows.length} items to portal...`);
 
-        // Generate the supplier CSV (column names match NBE requirements)
-        const csvContent = generateSupplierCSV(rows);
+        // Generate NBE-specific CSV (needs AWB(Optional) column header even though values are empty)
+        const stringify = require('csv-stringify/sync').stringify;
+        const nbeRows = [['Product Category', 'Model', 'Design Number(SKU)', 'Customer Name', 'Order ID', 'Preview Product URL', 'AWB(Optional)']];
+        rows.forEach(r => { if (r) nbeRows.push([r.category||'', r.model||'', r.sku||'', r.customerName||'', r.orderId||'', r.previewUrl||'', '']); });
+        const csvContent = '\uFEFF' + stringify(nbeRows);
         const filename = `${getFormattedDate()} Order.csv`;
 
         // Upload CSV file to NBE portal
