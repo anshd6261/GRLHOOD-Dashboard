@@ -475,8 +475,8 @@ app.post('/api/nbe/upload-order', async (req, res) => {
             timeout: 30000
         });
 
-        const orderId = orderRes.data?.id;
-        console.log(`[NBE] Order created: ${orderId} (${rows.length} items)`);
+        const orderId = orderRes.data?.order_id || orderRes.data?.id;
+        console.log(`[NBE] Order created: ${orderId} (${rows.length} items)`, orderRes.data);
 
         res.json({
             success: true,

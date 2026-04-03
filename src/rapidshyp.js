@@ -661,17 +661,20 @@ const bulkApproveOrders = async (shopifyOrderIds, orderIdMap = {}) => {
             }, { headers, timeout: 30000 });
 
             const data = res.data || {};
-            console.log(`[RAPIDSHYP] Batch response: success=${data.success_count}, fail=${data.failure_count}`);
+            console.log(`[RAPIDSHYP] Batch response: success=${data.success_count}, fail=${data.failure_count}, order_list=${(data.order_list||[]).length} items`);
             approvedCount += data.success_count || 0;
 
             // Extract shipment_id mapping from response
             for (const ol of (data.order_list || [])) {
-                for (const s of (ol.shipment || [])) {
+                const shipments = ol.shipment || [];
+                console.log(`[RAPIDSHYP] order_list entry: order_id=${ol.order_id}, shipments=${shipments.length}, shipment_ids=${shipments.map(s=>s.shipment_id).join(',')}`);
+                for (const s of shipments) {
                     if (s.shipment_id) {
-                        // Find the display orderId for this marketplace ID
                         const match = batch.find(b => b.marketplaceId === String(ol.order_id));
                         if (match) {
                             orderShipmentMap[match.cleanId] = s.shipment_id;
+                        } else {
+                            console.warn(`[RAPIDSHYP] No match for order_id=${ol.order_id} in batch marketplaceIds`);
                         }
                     }
                 }
