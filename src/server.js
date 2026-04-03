@@ -915,15 +915,19 @@ app.get('/api/rapidshyp/lookup/:orderId', async (req, res) => {
 
         // Step 1: Find order in session API to get RapidShyp order_id + marketplace_id
         let sessionOrder = null;
+        let allSessionOrders = [];
         const sessionHeaders = rapidshyp.getSessionHeaders();
         if (sessionHeaders) {
             try {
-                const sr = await axios.get('https://api.rapidshyp.com/session/get_orders', {
-                    params: { seller_order_id: `#${cleanId}`, page: 1, limit: 5 },
-                    headers: sessionHeaders, timeout: 15000
+                // Session API uses POST, not GET
+                const sr = await axios.post('https://api.rapidshyp.com/session/orders/get_orders', {
+                    page: 1, limit: 50
+                }, { headers: sessionHeaders, timeout: 15000 });
+                allSessionOrders = sr.data?.data || [];
+                sessionOrder = allSessionOrders.find(o => {
+                    const sellerClean = (o.seller_order_id || '').replace('#', '');
+                    return sellerClean === cleanId;
                 });
-                const orders = sr.data?.data || [];
-                sessionOrder = orders.find(o => o.seller_order_id === `#${cleanId}`);
             } catch (e) {
                 sessionOrder = { error: e.response?.status, errorData: e.response?.data || e.message };
             }
@@ -966,13 +970,8 @@ app.get('/api/rapidshyp/lookup/:orderId', async (req, res) => {
 
         res.json({
             orderId: cleanId,
-            sessionOrder: sessionOrder ? {
-                order_id: sessionOrder.order_id,
-                seller_order_id: sessionOrder.seller_order_id,
-                market_place_order_id: sessionOrder.market_place_order_id,
-                order_status: sessionOrder.order_status,
-                allFields: Object.keys(sessionOrder)
-            } : null,
+            sessionOrder: sessionOrder || null,
+            sessionOrderCount: allSessionOrders.length,
             results
         });
     } catch (e) {
