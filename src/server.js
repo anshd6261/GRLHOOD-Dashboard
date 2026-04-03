@@ -505,20 +505,44 @@ app.post('/api/nbe/upload-order', async (req, res) => {
     }
 });
 
-// Debug: test NBE presign endpoint
+// Debug: test NBE presign endpoint with multiple auth methods
 app.get('/api/nbe/test-presign', async (req, res) => {
+    const nbeBase = (process.env.NBE_API_BASE || '').trim();
+    const nbeKey = (process.env.NBE_API_KEY || '').trim();
+    const body = { filename: 'test.csv', content_type: 'text/csv' };
+    const results = {};
+
+    // Method 1: X-Customer-Api-Key (original)
     try {
-        const nbeBase = (process.env.NBE_API_BASE || '').trim();
-        const nbeKey = (process.env.NBE_API_KEY || '').trim();
-        const nbeHeaders = { 'X-Customer-Api-Key': nbeKey, 'Content-Type': 'application/json' };
-        const presignRes = await axios.post(`${nbeBase}/raw-order-files/presign/`, {
-            filename: 'test.csv',
-            content_type: 'text/csv',
-        }, { headers: nbeHeaders, timeout: 15000 });
-        res.json({ success: true, nbeBase, data: presignRes.data });
+        const r = await axios.post(`${nbeBase}/raw-order-files/presign/`, body, {
+            headers: { 'X-Customer-Api-Key': nbeKey, 'Content-Type': 'application/json' }, timeout: 10000
+        });
+        results.method1_xcustomer = { status: r.status, data: r.data };
     } catch (e) {
-        res.json({ success: false, nbeBase: (process.env.NBE_API_BASE || '').trim(), status: e.response?.status, data: e.response?.data, url: e.config?.url, message: e.message });
+        results.method1_xcustomer = { status: e.response?.status, data: e.response?.data };
     }
+
+    // Method 2: Authorization: Api-Key <key>
+    try {
+        const r = await axios.post(`${nbeBase}/raw-order-files/presign/`, body, {
+            headers: { 'Authorization': `Api-Key ${nbeKey}`, 'Content-Type': 'application/json' }, timeout: 10000
+        });
+        results.method2_apikey = { status: r.status, data: r.data };
+    } catch (e) {
+        results.method2_apikey = { status: e.response?.status, data: e.response?.data };
+    }
+
+    // Method 3: Both headers together
+    try {
+        const r = await axios.post(`${nbeBase}/raw-order-files/presign/`, body, {
+            headers: { 'X-Customer-Api-Key': nbeKey, 'Authorization': `Api-Key ${nbeKey}`, 'Content-Type': 'application/json' }, timeout: 10000
+        });
+        results.method3_both = { status: r.status, data: r.data };
+    } catch (e) {
+        results.method3_both = { status: e.response?.status, data: e.response?.data };
+    }
+
+    res.json({ nbeBase, keyLength: nbeKey.length, results });
 });
 
 // NBE: Upload shipping label to an existing NBE order
