@@ -863,31 +863,56 @@ app.get('/api/rapidshyp/debug-order/:id', async (req, res) => {
     }
 });
 
-// Debug: lookup order via public API get_orders_info
+// Debug: lookup order via session API + get_orders_info to find shipment_id
 app.get('/api/rapidshyp/lookup/:orderId', async (req, res) => {
     try {
-        const orderId = req.params.orderId;
-        const cleanId = orderId.replace('#', '');
-        const headers = {
+        const cleanId = req.params.orderId.replace('#', '');
+        const publicHeaders = {
             'Content-Type': 'application/json',
             'rapidshyp-token': process.env.RAPIDSHYP_API_KEY.trim()
         };
-        const results = {};
 
-        // Try get_orders_info with different param combos
-        const combos = [
-            { orderId: cleanId, channel_order_id: cleanId },
-            { orderId: `#${cleanId}`, channel_order_id: `#${cleanId}` },
-            { channel_order_id: cleanId },
-            { channel_order_id: `#${cleanId}` },
-            { orderId: cleanId },
-        ];
+        // Step 1: Find order in session API to get RapidShyp order_id + marketplace_id
+        let sessionOrder = null;
+        const sessionHeaders = rapidshyp.getSessionHeaders();
+        if (sessionHeaders) {
+            try {
+                const sr = await axios.get('https://api.rapidshyp.com/session/get_orders', {
+                    params: { seller_order_id: `#${cleanId}`, page: 1, limit: 5 },
+                    headers: sessionHeaders, timeout: 15000
+                });
+                const orders = sr.data?.data || [];
+                sessionOrder = orders.find(o => o.seller_order_id === `#${cleanId}`);
+            } catch (e) {
+                sessionOrder = { error: e.response?.data || e.message };
+            }
+        }
+
+        // Step 2: Try get_orders_info with different ID formats
+        const results = {};
+        const rsOrderId = sessionOrder?.order_id;
+        const marketplaceId = sessionOrder?.market_place_order_id;
+
+        // Try all param name combos (orderId vs order_id, Channel_order_id vs channel_order_id)
+        const combos = [];
+        if (rsOrderId && marketplaceId) {
+            combos.push({ order_id: rsOrderId, channel_order_id: marketplaceId });
+            combos.push({ orderId: rsOrderId, channel_order_id: marketplaceId });
+            combos.push({ order_id: rsOrderId, Channel_order_id: marketplaceId });
+        }
+        if (rsOrderId) {
+            combos.push({ order_id: rsOrderId, channel_order_id: rsOrderId });
+        }
+        // Also try with seller_order_id as channel
+        if (rsOrderId) {
+            combos.push({ order_id: rsOrderId, channel_order_id: `#${cleanId}` });
+        }
 
         for (const params of combos) {
             const key = JSON.stringify(params);
             try {
                 const r = await axios.get('https://api.rapidshyp.com/rapidshyp/apis/v1/get_orders_info', {
-                    params, headers, timeout: 15000
+                    params, headers: publicHeaders, timeout: 15000
                 });
                 results[key] = r.data;
             } catch (e) {
@@ -895,7 +920,17 @@ app.get('/api/rapidshyp/lookup/:orderId', async (req, res) => {
             }
         }
 
-        res.json({ orderId, results });
+        res.json({
+            orderId: cleanId,
+            sessionOrder: sessionOrder ? {
+                order_id: sessionOrder.order_id,
+                seller_order_id: sessionOrder.seller_order_id,
+                market_place_order_id: sessionOrder.market_place_order_id,
+                order_status: sessionOrder.order_status,
+                allFields: Object.keys(sessionOrder)
+            } : null,
+            results
+        });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
