@@ -860,6 +860,35 @@ app.get('/api/rapidshyp/debug-order/:id', async (req, res) => {
     }
 });
 
+// Debug: lookup order via public API shipment_details using Channel_order_id
+app.get('/api/rapidshyp/lookup/:orderId', async (req, res) => {
+    try {
+        const orderId = req.params.orderId;
+        const variants = [orderId, `#${orderId}`, orderId.replace('#', '')];
+        const results = {};
+
+        for (const variant of variants) {
+            try {
+                const r = await axios.get('https://api.rapidshyp.com/rapidshyp/apis/v1/shipment_details', {
+                    params: { Channel_order_id: variant },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'rapidshyp-token': process.env.RAPIDSHYP_API_KEY.trim()
+                    },
+                    timeout: 15000
+                });
+                results[`Channel_order_id=${variant}`] = r.data;
+            } catch (e) {
+                results[`Channel_order_id=${variant}`] = e.response?.data || e.message;
+            }
+        }
+
+        res.json({ orderId, results });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Schedule Pickup (after AWB assignment)
 app.post('/api/rapidshyp/schedule-pickup', async (req, res) => {
     try {
