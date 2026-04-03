@@ -635,56 +635,57 @@ const bulkApproveOrders = async (shopifyOrderIds, orderIdMap = {}) => {
             message: `0 to approve, ${alreadyApproved} already approved` };
     }
 
-    // Step 3: Approve ONLY pending orders
-    const marketplaceIds = pendingApproval.map(o => o.marketplaceId);
+    // Step 3: Approve pending orders in batches of 50 (API limit)
+    const APPROVE_BATCH = 50;
     let approvedCount = 0;
+    const orderShipmentMap = {};
+    const errors = [];
 
-    try {
-        console.log(`[RAPIDSHYP] Approving ${marketplaceIds.length} pending orders...`);
-        const res = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
-            order_id: marketplaceIds,
-            store_name: 'GRLHOOD'
-        }, { headers, timeout: 30000 });
+    for (let i = 0; i < pendingApproval.length; i += APPROVE_BATCH) {
+        const batch = pendingApproval.slice(i, i + APPROVE_BATCH);
+        const batchIds = batch.map(o => o.marketplaceId);
 
-        const data = res.data || {};
-        console.log(`[RAPIDSHYP] Approve response:`, JSON.stringify(data).slice(0, 1000));
-        approvedCount = data.success_count || 0;
+        try {
+            console.log(`[RAPIDSHYP] Approving batch ${Math.floor(i / APPROVE_BATCH) + 1}: ${batch.length} orders...`);
+            const res = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
+                order_id: batchIds,
+                store_name: 'GRLHOOD'
+            }, { headers, timeout: 30000 });
 
-        // Extract shipment_id mapping from response
-        const marketplaceToShipment = {};
-        for (const ol of (data.order_list || [])) {
-            for (const s of (ol.shipment || [])) {
-                if (s.shipment_id) {
-                    marketplaceToShipment[String(ol.order_id)] = s.shipment_id;
+            const data = res.data || {};
+            console.log(`[RAPIDSHYP] Batch response: success=${data.success_count}, fail=${data.failure_count}`);
+            approvedCount += data.success_count || 0;
+
+            // Extract shipment_id mapping from response
+            for (const ol of (data.order_list || [])) {
+                for (const s of (ol.shipment || [])) {
+                    if (s.shipment_id) {
+                        // Find the display orderId for this marketplace ID
+                        const match = batch.find(b => b.marketplaceId === String(ol.order_id));
+                        if (match) {
+                            orderShipmentMap[match.cleanId] = s.shipment_id;
+                        }
+                    }
                 }
             }
+        } catch (e) {
+            const msg = e.response?.data?.remarks || e.response?.data?.message || e.message;
+            console.error(`[RAPIDSHYP] Batch approve failed:`, msg);
+            errors.push({ error: typeof msg === 'string' ? msg : JSON.stringify(msg) });
         }
-
-        // Build display order ID → shipment_id map
-        const orderShipmentMap = {};
-        for (const item of pendingApproval) {
-            if (marketplaceToShipment[item.marketplaceId]) {
-                orderShipmentMap[item.cleanId] = marketplaceToShipment[item.marketplaceId];
-            }
-        }
-
-        console.log(`[RAPIDSHYP] Approve done: ${approvedCount} approved, ${Object.keys(orderShipmentMap).length} shipment IDs captured`);
-
-        return {
-            success: approvedCount > 0 || alreadyApproved > 0,
-            approved: approvedCount,
-            alreadyApproved,
-            notFound,
-            shipmentMap: orderShipmentMap,
-            message: `${approvedCount} approved, ${alreadyApproved} already approved`
-        };
-    } catch (e) {
-        const msg = e.response?.data?.remarks || e.response?.data?.message || e.message;
-        console.error(`[RAPIDSHYP] Approve failed:`, msg);
-        return { success: false, approved: 0, alreadyApproved, notFound,
-            errors: [{ error: typeof msg === 'string' ? msg : JSON.stringify(msg) }],
-            message: `Approve failed: ${msg}` };
     }
+
+    console.log(`[RAPIDSHYP] Approve done: ${approvedCount} approved, ${Object.keys(orderShipmentMap).length} shipment IDs captured`);
+
+    return {
+        success: approvedCount > 0 || alreadyApproved > 0,
+        approved: approvedCount,
+        alreadyApproved,
+        notFound,
+        shipmentMap: orderShipmentMap,
+        errors: errors.length > 0 ? errors : undefined,
+        message: `${approvedCount} approved, ${alreadyApproved} already approved`
+    };
 };
 
 /**
