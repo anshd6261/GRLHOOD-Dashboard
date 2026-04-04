@@ -1,127 +1,42 @@
 {% comment %}
-  GRL® SEO Meta Tags
-  ───────────────────
-  Replace the existing <title> and meta tags in theme.liquid with this snippet.
-  Add this inside <head>, replacing the default Shopify title/meta:
-  {% render 'seo-meta' %}
+  GRL® SEO Enhancements
+  ─────────────────────
+  Supplements Shopify's default meta-tags snippet with:
+  - og:locale for India targeting
+  - Product price OG tags
+  - Article timestamps
+  - Twitter image tags (not in default snippet)
+  - GA4 tracking
+
+  Placed AFTER meta-tags in theme.liquid <head>.
+  Title, canonical, meta description, and base OG tags are handled by
+  Shopify's meta-tags snippet using SEO fields set via Admin API.
 {% endcomment %}
 
-{% comment %} ═══ TITLE TAG ═══ {% endcomment %}
-{% if template == 'index' %}
-  <title>GRL® | Aesthetic Phone Cases That Aren't Boring</title>
-{% elsif template contains 'product' %}
-  <title>{{ product.title }} — Phone Case | GRL®</title>
-{% elsif template contains 'collection' %}
-  <title>{{ collection.title }} | Phone Cases | GRL®</title>
-{% elsif template contains 'article' %}
-  <title>{{ article.title }} | GRL® Blog</title>
-{% elsif template == 'blog' %}
-  <title>Blog — Phone Case Style Guides & Trends | GRL®</title>
-{% elsif template == 'search' %}
-  <title>Search Results | GRL®</title>
-{% elsif template == 'cart' %}
-  <title>Your Cart | GRL®</title>
-{% elsif template == '404' %}
-  <title>Page Not Found | GRL®</title>
-{% elsif template contains 'page' %}
-  <title>{{ page.title }} | GRL®</title>
-{% else %}
-  <title>{{ page_title }} | GRL®</title>
-{% endif %}
-
-{% comment %} ═══ META DESCRIPTION ═══ {% endcomment %}
-{% if template == 'index' %}
-  <meta name="description" content="Phone cases for women who treat their phone as fashion. 100+ designer covers. Premium protection. Free shipping across India. NOT FOR EVERYONE.">
-{% elsif template contains 'product' %}
-  {% if product.metafields.global.description_tag != blank %}
-    <meta name="description" content="{{ product.metafields.global.description_tag | escape }}">
-  {% elsif product.description != blank %}
-    <meta name="description" content="{{ product.title }} by GRL®. Pretty. Protective. Unapologetically bold. {{ product.description | strip_html | truncate: 120 | escape }}">
-  {% else %}
-    <meta name="description" content="{{ product.title }} by GRL®. Pretty. Protective. Unapologetically bold. Shop now — free shipping across India.">
-  {% endif %}
-{% elsif template contains 'collection' %}
-  {% if collection.metafields.global.description_tag != blank %}
-    <meta name="description" content="{{ collection.metafields.global.description_tag | escape }}">
-  {% elsif collection.description != blank %}
-    <meta name="description" content="{{ collection.title }} — {{ collection.description | strip_html | truncate: 120 | escape }} Shop GRL® phone cases now.">
-  {% else %}
-    <meta name="description" content="{{ collection.title }} — aesthetic, protective, and anything but basic. Shop GRL® phone cases. Free shipping India.">
-  {% endif %}
-{% elsif template contains 'article' %}
-  <meta name="description" content="{{ article.excerpt_or_content | strip_html | truncate: 155 | escape }}">
-{% elsif template == 'blog' %}
-  <meta name="description" content="GRL® Blog — phone case style guides, trend reports, and buying guides. Aesthetic phone cases for women who treat their phone as fashion.">
-{% else %}
-  {% if page_description %}
-    <meta name="description" content="{{ page_description | escape }}">
-  {% endif %}
-{% endif %}
-
-{% comment %} ═══ CANONICAL URL ═══ {% endcomment %}
-<link rel="canonical" href="{{ canonical_url }}">
-
-{% comment %} ═══ OPEN GRAPH TAGS ═══ {% endcomment %}
-<meta property="og:site_name" content="GRL®">
-<meta property="og:url" content="{{ canonical_url }}">
+{% comment %} ═══ SUPPLEMENTAL OG TAGS ═══ {% endcomment %}
 <meta property="og:locale" content="en_IN">
 
-{% if template == 'index' %}
-  <meta property="og:type" content="website">
-  <meta property="og:title" content="GRL® | Aesthetic Phone Cases That Aren't Boring">
-  <meta property="og:description" content="Phone cases for women who treat their phone as fashion. 100+ designer covers. Premium protection. Free shipping across India.">
-  <meta property="og:image" content="https://www.grlhood.in/cdn/shop/files/GIRLHOOD_WHITE_PNG_ad6f6e58-68b1-4497-89b5-5414df0507b3.png">
-{% elsif template contains 'product' %}
-  <meta property="og:type" content="product">
-  <meta property="og:title" content="{{ product.title }} — Phone Case | GRL®">
-  <meta property="og:description" content="{{ product.title }} by GRL®. Pretty. Protective. Unapologetically bold.">
+{% if template contains 'product' %}
   {% if product.featured_image %}
-    <meta property="og:image" content="{{ product.featured_image | image_url: width: 1200 }}">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="1200">
   {% endif %}
   <meta property="product:price:amount" content="{{ product.price | money_without_currency }}">
   <meta property="product:price:currency" content="INR">
-{% elsif template contains 'collection' %}
-  <meta property="og:type" content="website">
-  <meta property="og:title" content="{{ collection.title }} | Phone Cases | GRL®">
-  <meta property="og:description" content="{{ collection.title }} — aesthetic, protective, and anything but basic. Shop GRL®.">
-  {% if collection.image %}
-    <meta property="og:image" content="{{ collection.image | image_url: width: 1200 }}">
-  {% endif %}
-{% elsif template contains 'article' %}
-  <meta property="og:type" content="article">
-  <meta property="og:title" content="{{ article.title }} | GRL® Blog">
-  <meta property="og:description" content="{{ article.excerpt_or_content | strip_html | truncate: 155 | escape }}">
-  {% if article.image %}
-    <meta property="og:image" content="{{ article.image | image_url: width: 1200 }}">
-  {% endif %}
+{% endif %}
+
+{% if template contains 'article' %}
   <meta property="article:published_time" content="{{ article.published_at | date: '%Y-%m-%dT%H:%M:%S+05:30' }}">
   <meta property="article:author" content="{{ article.author }}">
 {% endif %}
 
-{% comment %} ═══ TWITTER CARD TAGS ═══ {% endcomment %}
-<meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:site" content="@grlhood.in">
+{% comment %} ═══ TWITTER IMAGE (not in default snippet) ═══ {% endcomment %}
 {% if template == 'index' %}
-  <meta name="twitter:title" content="GRL® | Aesthetic Phone Cases That Aren't Boring">
-  <meta name="twitter:description" content="Phone cases for women who treat their phone as fashion. NOT FOR EVERYONE.">
   <meta name="twitter:image" content="https://www.grlhood.in/cdn/shop/files/GIRLHOOD_WHITE_PNG_ad6f6e58-68b1-4497-89b5-5414df0507b3.png">
-{% elsif template contains 'product' %}
-  <meta name="twitter:title" content="{{ product.title }} — Phone Case | GRL®">
-  <meta name="twitter:description" content="{{ product.title }} by GRL®. Pretty. Protective. Unapologetically bold.">
-  {% if product.featured_image %}
-    <meta name="twitter:image" content="{{ product.featured_image | image_url: width: 1200 }}">
-  {% endif %}
-{% elsif template contains 'collection' %}
-  <meta name="twitter:title" content="{{ collection.title }} | Phone Cases | GRL®">
-  <meta name="twitter:description" content="{{ collection.title }} — aesthetic phone cases by GRL®. Free shipping India.">
-{% elsif template contains 'article' %}
-  <meta name="twitter:title" content="{{ article.title }} | GRL® Blog">
-  <meta name="twitter:description" content="{{ article.excerpt_or_content | strip_html | truncate: 155 | escape }}">
-  {% if article.image %}
-    <meta name="twitter:image" content="{{ article.image | image_url: width: 1200 }}">
-  {% endif %}
+{% elsif template contains 'product' and product.featured_image %}
+  <meta name="twitter:image" content="{{ product.featured_image | image_url: width: 1200 }}">
+{% elsif template contains 'article' and article.image %}
+  <meta name="twitter:image" content="{{ article.image | image_url: width: 1200 }}">
 {% endif %}
 
 {% comment %} ═══ GA4 TRACKING ═══ {% endcomment %}
@@ -133,6 +48,3 @@
   gtag('js', new Date());
   gtag('config', 'G-9427C33TGQ');
 </script>
-
-{% comment %} ═══ LANGUAGE ═══ {% endcomment %}
-{% comment %} Add lang="en-IN" to the <html> tag in theme.liquid {% endcomment %}
