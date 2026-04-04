@@ -33,8 +33,6 @@
         }
     ],
     "env": {
-        "NODE_ENV": "production",
-        "BING_WEBMASTER_API_KEY": "@bing_webmaster_api_key",
-        "GA4_MEASUREMENT_ID": "@ga4_measurement_id"
+        "NODE_ENV": "production"
     }
 }
