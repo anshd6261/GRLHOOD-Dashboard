@@ -251,6 +251,128 @@ const getSEODashboard = async () => {
   };
 };
 
+// ─── GRL® Voice SEO Generators ──────────────────────────────────
+
+const generateProductSEOTitle = (product) => {
+  const name = product.title || 'Phone Case';
+  if (name.length > 45) return `${name} | GRL®`;
+  return `${name} — Phone Case | GRL®`;
+};
+
+const generateProductMetaDesc = (product) => {
+  const name = product.title || 'Phone Case';
+  const price = product.variants?.edges?.[0]?.node?.price || '';
+  const priceStr = price ? ` Starting ₹${Math.round(parseFloat(price))}.` : '';
+  const templates = [
+    `${name}. Pretty. Protective. Unapologetically bold.${priceStr} Shop GRL® — free shipping across India.`,
+    `The ${name} — designed mood-first, protection guaranteed.${priceStr} Shop GRL® phone cases now.`,
+    `${name} by GRL®. Not basic. Never basic. Premium protection meets aesthetic design.${priceStr} Free shipping India.`,
+  ];
+  const idx = name.split('').reduce((a, c) => a + c.charCodeAt(0), 0) % templates.length;
+  let desc = templates[idx];
+  if (desc.length > 155) desc = desc.substring(0, 152) + '...';
+  return desc;
+};
+
+const generateCollectionSEO = (collection) => {
+  const name = collection.title || 'Collection';
+  return {
+    title: `${name} — Phone Cases | GRL®`,
+    description: `${name.toUpperCase()}. Aesthetic, protective, and anything but basic. Shop GRL® phone cases — premium quality, free shipping across India.`,
+  };
+};
+
+// ─── Bulk Fix All SEO (One-Click) ───────────────────────────────
+
+const bulkFixAllSEO = async () => {
+  const log = [];
+  const push = (msg) => { log.push(msg); console.log(`[SEO-BULK] ${msg}`); };
+
+  push('Starting GRL® SEO Bulk Fix...');
+
+  // 1. Fetch everything
+  const [products, collections] = await Promise.all([
+    getProducts(250),
+    getCollections()
+  ]);
+  push(`Found ${products.length} products, ${collections.length} collections`);
+
+  let productFixed = 0, productSkipped = 0, collectionFixed = 0;
+  const brokenUrls = [];
+  const errors = [];
+
+  // 2. Fix products
+  for (const product of products) {
+    const needsTitle = !product.seo?.title;
+    const needsDesc = !product.seo?.description;
+    if (product.handle?.includes('-copy')) {
+      brokenUrls.push({ type: 'product', handle: product.handle, title: product.title });
+    }
+    if (!needsTitle && !needsDesc) { productSkipped++; continue; }
+
+    const newTitle = needsTitle ? generateProductSEOTitle(product) : product.seo.title;
+    const newDesc = needsDesc ? generateProductMetaDesc(product) : product.seo.description;
+
+    try {
+      await updateProductSEO(product.id, newTitle, newDesc);
+      push(`✅ Product: ${product.title}`);
+      productFixed++;
+      await new Promise(r => setTimeout(r, 500)); // Shopify rate limit
+    } catch (e) {
+      push(`❌ Product: ${product.title} — ${e.message}`);
+      errors.push({ type: 'product', title: product.title, error: e.message });
+    }
+  }
+
+  // 3. Fix collections
+  for (const collection of collections) {
+    const needsTitle = !collection.seo?.title;
+    const needsDesc = !collection.seo?.description;
+    if (collection.handle?.includes('-copy')) {
+      brokenUrls.push({ type: 'collection', handle: collection.handle, title: collection.title });
+    }
+    if (!needsTitle && !needsDesc) continue;
+
+    const seo = generateCollectionSEO(collection);
+    try {
+      await updateCollectionSEO(collection.id, seo.title, seo.description);
+      push(`✅ Collection: ${collection.title}`);
+      collectionFixed++;
+      await new Promise(r => setTimeout(r, 500));
+    } catch (e) {
+      push(`❌ Collection: ${collection.title} — ${e.message}`);
+      errors.push({ type: 'collection', title: collection.title, error: e.message });
+    }
+  }
+
+  // 4. Submit to Bing
+  let bingResult = 'skipped';
+  if (BING_API_KEY) {
+    try {
+      await bingSubmitSitemap();
+      bingResult = 'submitted';
+      push('✅ Sitemap submitted to Bing');
+    } catch (e) {
+      bingResult = `failed: ${e.message}`;
+      push(`⚠️ Bing submission failed: ${e.message}`);
+    }
+  }
+
+  const summary = {
+    productsFixed: productFixed,
+    productsSkipped: productSkipped,
+    collectionsFixed: collectionFixed,
+    brokenUrls,
+    errors,
+    bingResult,
+    log,
+    timestamp: new Date().toISOString(),
+  };
+
+  push(`Done. Products: ${productFixed} fixed, ${productSkipped} skipped. Collections: ${collectionFixed} fixed. Broken URLs: ${brokenUrls.length}.`);
+  return summary;
+};
+
 module.exports = {
   getProducts,
   getCollections,
@@ -262,4 +384,5 @@ module.exports = {
   bingSubmitUrl,
   bingGetUrlSubmissionQuota,
   getSEODashboard,
+  bulkFixAllSEO,
 };

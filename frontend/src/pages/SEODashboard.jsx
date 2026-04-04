@@ -57,6 +57,8 @@ export default function SEODashboard() {
   const [error, setError] = useState(null);
   const [bingStatus, setBingStatus] = useState(null);
   const [submittingBing, setSubmittingBing] = useState(false);
+  const [fixingAll, setFixingAll] = useState(false);
+  const [fixResult, setFixResult] = useState(null);
   const [activeSection, setActiveSection] = useState('overview');
 
   useEffect(() => { fetchDashboard(); }, []);
@@ -71,6 +73,21 @@ export default function SEODashboard() {
       setError(e.response?.data?.error || e.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fixAllSEO = async () => {
+    if (!window.confirm('This will auto-fix all missing SEO titles, descriptions, and submit sitemap to Bing. Continue?')) return;
+    setFixingAll(true);
+    setFixResult(null);
+    try {
+      const res = await axios.post(`${API_URL}/seo/fix-all`);
+      setFixResult(res.data.data);
+      fetchDashboard(); // Refresh scores after fix
+    } catch (e) {
+      setFixResult({ error: e.response?.data?.error || e.message });
+    } finally {
+      setFixingAll(false);
     }
   };
 
@@ -315,6 +332,47 @@ export default function SEODashboard() {
       {/* ═══ ACTIONS ═══ */}
       {activeSection === 'actions' && (
         <div className="space-y-4">
+          {/* ONE-CLICK FIX ALL */}
+          <div className="glass-card p-5 border border-[rgba(227,207,216,0.15)]">
+            <h3 className="text-sm font-medium text-[#e3cfd8] mb-2 flex items-center gap-2">
+              <TrendingUp size={14} /> ONE-CLICK: Fix All SEO
+            </h3>
+            <p className="text-xs text-[rgba(245,245,245,0.4)] mb-4">
+              Automatically fixes ALL missing SEO titles + meta descriptions on every product and collection using GRL® voice templates. Also submits sitemap to Bing.
+            </p>
+            <div className="flex items-center gap-3 flex-wrap">
+              <button onClick={fixAllSEO} disabled={fixingAll}
+                className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium bg-[rgba(227,207,216,0.15)] text-[#e3cfd8] border border-[rgba(227,207,216,0.25)] hover:bg-[rgba(227,207,216,0.25)] transition-all disabled:opacity-50">
+                {fixingAll ? <RefreshCw size={14} className="animate-spin" /> : <TrendingUp size={14} />}
+                {fixingAll ? 'Fixing All SEO... (this takes a few minutes)' : 'FIX ALL SEO NOW'}
+              </button>
+            </div>
+            {fixResult && !fixResult.error && (
+              <div className="mt-4 p-3 rounded-lg bg-[rgba(16,185,129,0.06)] border border-[rgba(16,185,129,0.15)]">
+                <div className="text-xs font-medium text-green-400 mb-2">FIX COMPLETE</div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div><span className="text-[rgba(245,245,245,0.4)]">Products Fixed:</span> <span className="text-green-400 font-medium">{fixResult.productsFixed}</span></div>
+                  <div><span className="text-[rgba(245,245,245,0.4)]">Skipped:</span> <span className="text-[rgba(245,245,245,0.5)]">{fixResult.productsSkipped}</span></div>
+                  <div><span className="text-[rgba(245,245,245,0.4)]">Collections Fixed:</span> <span className="text-green-400 font-medium">{fixResult.collectionsFixed}</span></div>
+                  <div><span className="text-[rgba(245,245,245,0.4)]">Bing:</span> <span className="text-green-400 font-medium">{fixResult.bingResult}</span></div>
+                </div>
+                {fixResult.brokenUrls?.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-[rgba(255,255,255,0.05)]">
+                    <div className="text-[10px] text-orange-400 font-medium mb-1">BROKEN URLs (fix manually in Shopify Admin):</div>
+                    {fixResult.brokenUrls.map((u, i) => (
+                      <div key={i} className="text-[10px] text-[rgba(245,245,245,0.3)]">/{u.type === 'product' ? 'products' : 'collections'}/{u.handle}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {fixResult?.error && (
+              <div className="mt-4 p-3 rounded-lg bg-[rgba(239,68,68,0.06)] border border-[rgba(239,68,68,0.15)]">
+                <div className="text-xs text-red-400">{fixResult.error}</div>
+              </div>
+            )}
+          </div>
+
           {/* Bing Submit */}
           <div className="glass-card p-5">
             <h3 className="text-sm font-medium text-[rgba(245,245,245,0.6)] mb-3 flex items-center gap-2">

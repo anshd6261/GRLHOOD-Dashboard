@@ -1069,6 +1069,19 @@ app.get('/api/seo/bing/quota', async (req, res) => {
     }
 });
 
+// SEO: One-click bulk fix all products + collections + Bing submission
+// Supports POST (dashboard button) and GET (Vercel cron)
+app.all('/api/seo/fix-all', async (req, res) => {
+    try {
+        console.log('[SEO] Starting bulk fix-all...');
+        const result = await seo.bulkFixAllSEO();
+        res.json({ success: true, data: result });
+    } catch (e) {
+        console.error('[SEO] Bulk Fix Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // 10. Catch-All for Frontend
 app.get(/.*/, (req, res) => {
     res.sendFile(path.join(__dirname, '../frontend/dist', 'index.html'));

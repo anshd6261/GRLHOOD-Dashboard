@@ -23,7 +23,15 @@
             "dest": "/frontend/$1"
         }
     ],
+    "crons": [
+        {
+            "path": "/api/seo/fix-all",
+            "schedule": "0 3 * * 1"
+        }
+    ],
     "env": {
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "BING_WEBMASTER_API_KEY": "@bing_webmaster_api_key",
+        "GA4_MEASUREMENT_ID": "@ga4_measurement_id"
     }
 }
