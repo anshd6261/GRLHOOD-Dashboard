@@ -18,6 +18,7 @@ import AestheticDetailModal from './components/AestheticDetailModal';
 import ShipOrdersModal from './components/ShipOrdersModal';
 import FulfillOrdersWizard from './components/FulfillOrdersWizard';
 import Login from './Login';
+import SEODashboard from './pages/SEODashboard';
 import { useAuth } from './AuthContext';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -512,6 +513,7 @@ function App() {
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'fulfill', label: 'Fulfill', icon: ClipboardCheck },
     { id: 'finance', label: 'Finance', icon: TrendingUp },
+    { id: 'seo', label: 'SEO', icon: Search },
   ];
 
   /* ─── RENDER ─── */
@@ -1022,6 +1024,13 @@ function App() {
                   <img src="/logo.png" alt="GRLHOOD" className="w-56 h-56 object-contain opacity-80 drop-shadow-[0_0_60px_rgba(227,207,216,0.08)]" />
                   <p className="text-sm text-[rgba(245,245,245,0.2)] mt-8 tracking-widest uppercase">Coming Soon</p>
                 </div>
+              </motion.div>
+            )}
+
+            {/* ═══ SEO TAB ═══ */}
+            {activeTab === 'seo' && (
+              <motion.div key="seo" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                <SEODashboard />
               </motion.div>
             )}
 
