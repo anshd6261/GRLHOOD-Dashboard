@@ -1264,6 +1264,64 @@ app.all('/api/seo/fix-all', async (req, res) => {
     }
 });
 
+// SEO Execute: Install theme snippets
+app.post('/api/seo/install-theme', async (req, res) => {
+    try {
+        const { schemaLiquid, metaLiquid, llmsTxt } = req.body;
+        if (!schemaLiquid || !metaLiquid) return res.status(400).json({ success: false, error: 'schemaLiquid and metaLiquid required' });
+        const result = await seo.installThemeSnippets(schemaLiquid, metaLiquid, llmsTxt || '');
+        res.json({ success: true, data: result });
+    } catch (e) {
+        console.error('[SEO] Theme Install Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// SEO Execute: Fix -copy URLs
+app.post('/api/seo/fix-urls', async (req, res) => {
+    try {
+        const result = await seo.fixCopyUrls();
+        res.json({ success: true, data: result });
+    } catch (e) {
+        console.error('[SEO] URL Fix Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// SEO Execute: Fix image alt text
+app.post('/api/seo/fix-alt-text', async (req, res) => {
+    try {
+        const result = await seo.fixImageAltText();
+        res.json({ success: true, data: result });
+    } catch (e) {
+        console.error('[SEO] Alt Text Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// SEO Execute: Submit all URLs to Bing
+app.post('/api/seo/bing/submit-all', async (req, res) => {
+    try {
+        const result = await seo.bingSubmitAllUrls();
+        res.json({ success: true, data: result });
+    } catch (e) {
+        console.error('[SEO] Bing Submit All Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// SEO Execute: Full execution (all steps)
+app.post('/api/seo/execute-all', async (req, res) => {
+    try {
+        const { schemaLiquid, metaLiquid, llmsTxt } = req.body;
+        const result = await seo.executeFullSEO(schemaLiquid || '', metaLiquid || '', llmsTxt || '');
+        res.json({ success: true, data: result });
+    } catch (e) {
+        console.error('[SEO] Execute All Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // 10. Catch-All for Frontend
 app.get(/.*/, (req, res) => {
     res.sendFile(path.join(__dirname, '../frontend/dist', 'index.html'));

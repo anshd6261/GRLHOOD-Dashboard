@@ -373,6 +373,364 @@ const bulkFixAllSEO = async () => {
   return summary;
 };
 
+// ─── Theme Asset Management (Install SEO Snippets) ────────────
+
+const getActiveTheme = async () => {
+  const query = `{
+    themes(first: 10, roles: [MAIN]) {
+      nodes { id name role }
+    }
+  }`;
+  const data = await graphqlRequest(query);
+  const mainTheme = data.themes.nodes.find(t => t.role === 'MAIN');
+  if (!mainTheme) throw new Error('No active/main theme found');
+  return mainTheme;
+};
+
+const uploadThemeAsset = async (themeId, filename, content) => {
+  // Use themeFilesUpsert for Online Store 2.0 themes
+  const mutation = `
+    mutation themeFilesUpsert($files: [OnlineStoreThemeFilesUpsertFileInput!]!, $themeId: ID!) {
+      themeFilesUpsert(files: $files, themeId: $themeId) {
+        upsertedThemeFiles { filename }
+        userErrors { field message filename }
+      }
+    }
+  `;
+  const data = await graphqlRequest(mutation, {
+    themeId,
+    files: [{ filename, body: { type: "TEXT", value: content } }]
+  });
+  if (data.themeFilesUpsert?.userErrors?.length > 0) {
+    throw new Error(data.themeFilesUpsert.userErrors.map(e => `${e.filename}: ${e.message}`).join(', '));
+  }
+  return data.themeFilesUpsert.upsertedThemeFiles;
+};
+
+const getThemeFile = async (themeId, filename) => {
+  const query = `
+    query getThemeFile($themeId: ID!, $filenames: [String!]!) {
+      theme(id: $themeId) {
+        files(filenames: $filenames) {
+          nodes {
+            filename
+            body { ... on OnlineStoreThemeFileBodyText { content } }
+          }
+        }
+      }
+    }
+  `;
+  const data = await graphqlRequest(query, { themeId, filenames: [filename] });
+  return data.theme?.files?.nodes?.[0];
+};
+
+const installThemeSnippets = async (schemaLiquid, metaLiquid, llmsTxt) => {
+  const log = [];
+  const push = (msg) => { log.push(msg); console.log(`[THEME] ${msg}`); };
+
+  // 1. Get active theme
+  const theme = await getActiveTheme();
+  push(`Active theme: ${theme.name} (${theme.id})`);
+
+  // 2. Upload seo-schema.liquid snippet
+  try {
+    await uploadThemeAsset(theme.id, 'snippets/seo-schema.liquid', schemaLiquid);
+    push('✅ Uploaded snippets/seo-schema.liquid');
+  } catch (e) {
+    push(`❌ seo-schema.liquid: ${e.message}`);
+  }
+
+  // 3. Upload seo-meta.liquid snippet
+  try {
+    await uploadThemeAsset(theme.id, 'snippets/seo-meta.liquid', metaLiquid);
+    push('✅ Uploaded snippets/seo-meta.liquid');
+  } catch (e) {
+    push(`❌ seo-meta.liquid: ${e.message}`);
+  }
+
+  // 4. Upload llms.txt as asset
+  try {
+    await uploadThemeAsset(theme.id, 'assets/llms.txt', llmsTxt);
+    push('✅ Uploaded assets/llms.txt');
+  } catch (e) {
+    push(`❌ llms.txt: ${e.message}`);
+  }
+
+  // 5. Inject renders into theme.liquid
+  try {
+    const themeFile = await getThemeFile(theme.id, 'layout/theme.liquid');
+    if (!themeFile?.body?.content) {
+      push('⚠️ Could not read layout/theme.liquid — snippets uploaded but not auto-injected. Add manually.');
+    } else {
+      let content = themeFile.body.content;
+      let modified = false;
+
+      // Add seo-meta render in <head> if not already present
+      if (!content.includes("render 'seo-meta'")) {
+        content = content.replace('</head>', "  {% render 'seo-meta' %}\n</head>");
+        modified = true;
+        push('✅ Injected seo-meta into <head>');
+      } else {
+        push('ℹ️ seo-meta already in theme.liquid');
+      }
+
+      // Add seo-schema render before </body> if not already present
+      if (!content.includes("render 'seo-schema'")) {
+        content = content.replace('</body>', "  {% render 'seo-schema' %}\n</body>");
+        modified = true;
+        push('✅ Injected seo-schema before </body>');
+      } else {
+        push('ℹ️ seo-schema already in theme.liquid');
+      }
+
+      if (modified) {
+        await uploadThemeAsset(theme.id, 'layout/theme.liquid', content);
+        push('✅ theme.liquid updated with SEO includes');
+      }
+    }
+  } catch (e) {
+    push(`⚠️ theme.liquid injection failed: ${e.message}. Snippets are uploaded — add {% render %} tags manually.`);
+  }
+
+  return { theme: theme.name, log };
+};
+
+// ─── Fix Broken -copy URLs ─────────────────────────────────────
+
+const fixCopyUrls = async () => {
+  const log = [];
+  const push = (msg) => { log.push(msg); console.log(`[URL-FIX] ${msg}`); };
+
+  const products = await getProducts(250);
+  const broken = products.filter(p => p.handle?.includes('-copy'));
+  push(`Found ${broken.length} products with -copy URLs`);
+
+  let fixed = 0;
+  for (const product of broken) {
+    const newHandle = product.handle.replace(/-copy(-copy)*/g, '');
+    const mutation = `
+      mutation productUpdate($input: ProductInput!) {
+        productUpdate(input: $input) {
+          product { id handle }
+          userErrors { field message }
+        }
+      }
+    `;
+    try {
+      const data = await graphqlRequest(mutation, {
+        input: { id: product.id, handle: newHandle }
+      });
+      if (data.productUpdate?.userErrors?.length > 0) {
+        push(`⚠️ ${product.handle} → ${newHandle}: ${data.productUpdate.userErrors[0].message}`);
+      } else {
+        push(`✅ ${product.handle} → ${newHandle}`);
+        fixed++;
+      }
+      await new Promise(r => setTimeout(r, 500));
+    } catch (e) {
+      push(`❌ ${product.handle}: ${e.message}`);
+    }
+  }
+
+  return { total: broken.length, fixed, log };
+};
+
+// ─── Add Alt Text to Product Images ────────────────────────────
+
+const fixImageAltText = async () => {
+  const log = [];
+  const push = (msg) => { log.push(msg); console.log(`[ALT-TEXT] ${msg}`); };
+
+  // Fetch products with their media
+  const query = `
+    query GetProductMedia($cursor: String) {
+      products(first: 50, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        edges {
+          node {
+            id
+            title
+            productType
+            media(first: 20) {
+              edges {
+                node {
+                  ... on MediaImage {
+                    id
+                    alt
+                    image { url }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  let allProducts = [];
+  let hasNext = true;
+  let cursor = null;
+  let pages = 0;
+
+  while (hasNext && pages < 10) {
+    const data = await graphqlRequest(query, { cursor });
+    allProducts.push(...data.products.edges.map(e => e.node));
+    hasNext = data.products.pageInfo.hasNextPage;
+    cursor = data.products.pageInfo.endCursor;
+    pages++;
+  }
+
+  push(`Scanned ${allProducts.length} products for missing alt text`);
+
+  let fixed = 0;
+  for (const product of allProducts) {
+    const mediaToFix = product.media.edges
+      .filter(m => m.node.id && (!m.node.alt || m.node.alt.trim() === ''))
+      .map(m => m.node);
+
+    if (mediaToFix.length === 0) continue;
+
+    // Generate descriptive alt text
+    const altText = `${product.title} — ${product.productType || 'Phone Case'} by GRL®`;
+
+    for (const media of mediaToFix) {
+      const mutation = `
+        mutation fileUpdate($input: [FileUpdateInput!]!) {
+          fileUpdate(files: $input) {
+            files { alt }
+            userErrors { field message }
+          }
+        }
+      `;
+      try {
+        const data = await graphqlRequest(mutation, {
+          input: [{ id: media.id, alt: altText }]
+        });
+        if (data.fileUpdate?.userErrors?.length > 0) {
+          push(`⚠️ ${product.title}: ${data.fileUpdate.userErrors[0].message}`);
+        } else {
+          fixed++;
+        }
+      } catch (e) {
+        push(`❌ ${product.title}: ${e.message}`);
+      }
+      await new Promise(r => setTimeout(r, 300));
+    }
+    push(`✅ ${product.title}: ${mediaToFix.length} images updated`);
+  }
+
+  push(`Done. ${fixed} images got alt text.`);
+  return { productsScanned: allProducts.length, imagesFixed: fixed, log };
+};
+
+// ─── Bing: Submit All Product/Collection URLs ──────────────────
+
+const bingSubmitAllUrls = async () => {
+  const log = [];
+  const push = (msg) => { log.push(msg); console.log(`[BING-URLS] ${msg}`); };
+
+  if (!BING_API_KEY) { push('❌ BING_WEBMASTER_API_KEY not set'); return { submitted: 0, log }; }
+
+  // Get quota first
+  let quota;
+  try {
+    quota = await bingGetUrlSubmissionQuota();
+    push(`Bing quota: ${JSON.stringify(quota)}`);
+  } catch (e) {
+    push(`⚠️ Couldn't check quota: ${e.message}`);
+    quota = { d: { DailyQuota: 10, MonthlyQuota: 100 } };
+  }
+
+  const [products, collections] = await Promise.all([getProducts(250), getCollections()]);
+
+  const urls = [
+    `${SITE_URL}`,
+    ...products.map(p => `${SITE_URL}/products/${p.handle}`),
+    ...collections.map(c => `${SITE_URL}/collections/${c.handle}`)
+  ];
+
+  push(`Submitting ${urls.length} URLs to Bing...`);
+
+  let submitted = 0;
+  for (const url of urls.slice(0, 50)) { // Limit to 50 per run to stay within quota
+    try {
+      await bingSubmitUrl(url);
+      submitted++;
+      await new Promise(r => setTimeout(r, 200));
+    } catch (e) {
+      push(`⚠️ ${url}: ${e.message}`);
+    }
+  }
+
+  push(`Done. ${submitted}/${urls.length} URLs submitted to Bing.`);
+  return { totalUrls: urls.length, submitted, log };
+};
+
+// ─── Full SEO Execute (All Steps) ──────────────────────────────
+
+const executeFullSEO = async (schemaLiquid, metaLiquid, llmsTxt) => {
+  const results = {};
+  const log = [];
+  const push = (msg) => { log.push(msg); console.log(`[SEO-EXEC] ${msg}`); };
+
+  push('═══ STARTING FULL SEO EXECUTION ═══');
+
+  // Step 1: Install theme snippets
+  push('Step 1/5: Installing theme snippets...');
+  try {
+    results.themeInstall = await installThemeSnippets(schemaLiquid, metaLiquid, llmsTxt);
+    push('✅ Theme snippets installed');
+  } catch (e) {
+    results.themeInstall = { error: e.message };
+    push(`❌ Theme install failed: ${e.message}`);
+  }
+
+  // Step 2: Bulk fix SEO titles/descriptions (reuse existing)
+  push('Step 2/5: Fixing SEO titles & descriptions...');
+  try {
+    results.seoFix = await bulkFixAllSEO();
+    push(`✅ SEO fix done: ${results.seoFix.productsFixed} products, ${results.seoFix.collectionsFixed} collections`);
+  } catch (e) {
+    results.seoFix = { error: e.message };
+    push(`❌ SEO fix failed: ${e.message}`);
+  }
+
+  // Step 3: Fix -copy URLs
+  push('Step 3/5: Fixing broken -copy URLs...');
+  try {
+    results.urlFix = await fixCopyUrls();
+    push(`✅ URL fix: ${results.urlFix.fixed} fixed`);
+  } catch (e) {
+    results.urlFix = { error: e.message };
+    push(`❌ URL fix failed: ${e.message}`);
+  }
+
+  // Step 4: Fix image alt text
+  push('Step 4/5: Adding image alt text...');
+  try {
+    results.altText = await fixImageAltText();
+    push(`✅ Alt text: ${results.altText.imagesFixed} images updated`);
+  } catch (e) {
+    results.altText = { error: e.message };
+    push(`❌ Alt text failed: ${e.message}`);
+  }
+
+  // Step 5: Submit all URLs to Bing
+  push('Step 5/5: Submitting URLs to Bing...');
+  try {
+    results.bingUrls = await bingSubmitAllUrls();
+    push(`✅ Bing: ${results.bingUrls.submitted} URLs submitted`);
+  } catch (e) {
+    results.bingUrls = { error: e.message };
+    push(`❌ Bing submission failed: ${e.message}`);
+  }
+
+  push('═══ FULL SEO EXECUTION COMPLETE ═══');
+
+  return { results, log, timestamp: new Date().toISOString() };
+};
+
 module.exports = {
   getProducts,
   getCollections,
@@ -385,4 +743,9 @@ module.exports = {
   bingGetUrlSubmissionQuota,
   getSEODashboard,
   bulkFixAllSEO,
+  installThemeSnippets,
+  fixCopyUrls,
+  fixImageAltText,
+  bingSubmitAllUrls,
+  executeFullSEO,
 };
