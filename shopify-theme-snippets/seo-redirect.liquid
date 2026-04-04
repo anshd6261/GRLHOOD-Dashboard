@@ -1,0 +1,17 @@
+{% comment %}
+  GRL® Model Page Redirect
+  ─────────────────────────
+  Redirects model-specific landing pages to homepage.
+  Google crawls the HTML content (SEO titles, descriptions, FAQ schema),
+  but users land on grlhood.in for the best shopping experience.
+
+  Added to theme.liquid <head> via: {% render 'seo-redirect' %}
+{% endcomment %}
+
+{% if template == "page" %}
+  {% assign h = page.handle %}
+  {% if h contains "iphone-" or h contains "samsung-" or h contains "galaxy-" or h == "girly-phone-cases" or h == "aesthetic-phone-cases" or h == "phone-cases-for-girls" %}
+    <script>window.location.replace("https://www.grlhood.in");</script>
+    <noscript><meta http-equiv="refresh" content="0;url=https://www.grlhood.in"></noscript>
+  {% endif %}
+{% endif %}

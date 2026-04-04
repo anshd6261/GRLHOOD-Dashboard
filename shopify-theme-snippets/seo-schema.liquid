@@ -14,7 +14,7 @@
   "alternateName": "GRLHOOD",
   "url": "https://www.grlhood.in",
   "logo": "https://www.grlhood.in/cdn/shop/files/GIRLHOOD_WHITE_PNG_ad6f6e58-68b1-4497-89b5-5414df0507b3.png",
-  "description": "Phone cases for women who treat their phone as fashion. Aesthetic, protective, and anything but basic.",
+  "description": "Stand out from the crowd with unique daily essentials from GRL®. Phone cases turned fashion accessories. Aesthetic, protective, and anything but basic.",
   "foundingDate": "2024",
   "sameAs": [
     "https://www.instagram.com/grlhood.in"
@@ -180,6 +180,58 @@
 </script>
 {% endif %}
 
+{% comment %} ═══ PRODUCT FAQ SCHEMA (Product Pages Only) ═══ {% endcomment %}
+{% if template contains 'product' %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What phone models does the {{ product.title | escape }} case fit?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The {{ product.title | escape }} by GRL® is available in Armoured, Glass, and Slim Snap variants for iPhone and Samsung models including iPhone 12 through iPhone 17 Pro Max, and Samsung Galaxy S21 through S26 Ultra. Select your exact model at checkout."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How much does the {{ product.title | escape }} phone case cost?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The {{ product.title | escape }} starts at ₹{{ product.price_min | money_without_currency | remove: ',' }}{% if product.price_min != product.price_max %} and goes up to ₹{{ product.price_max | money_without_currency | remove: ',' }}{% endif %}. Free shipping across India on all orders."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is the {{ product.title | escape }} case protective?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes. Every GRL® case is designed with raised edges for camera and screen protection, precise cutouts for all ports, and premium materials that resist scratches and drops. The Armoured variant offers maximum protection, Glass gives a premium feel, and Slim Snap is ultra-light."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does GRL® offer free shipping in India?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Yes, GRL® offers free shipping across India on all orders. Delivery typically takes 3-7 business days depending on your location."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What is the return policy for GRL® phone cases?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "GRL® offers easy returns and exchanges. If your case arrives damaged or doesn't meet expectations, contact our customer service team for a hassle-free resolution."
+      }
+    }
+  ]
+}
+</script>
+{% endif %}
+
 {% comment %} ═══ COLLECTION SCHEMA (Collection Pages Only) ═══ {% endcomment %}
 {% if template contains 'collection' %}
 <script type="application/ld+json">
@@ -236,6 +288,34 @@
     "@type": "WebPage",
     "@id": "{{ shop.url }}{{ article.url }}"
   }
+}
+</script>
+{% endif %}
+
+{% comment %} ═══ FAQ SCHEMA (Pages with FAQ content) ═══ {% endcomment %}
+{% if template contains 'page' and page.content contains 'FAQ' %}
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {% assign faq_parts = page.content | split: '<h3>' %}
+    {% for part in faq_parts offset: 1 %}
+      {% assign question = part | split: '</h3>' | first | strip_html %}
+      {% assign answer = part | split: '</h3>' | last | split: '<h3>' | first | split: '<h2>' | first | strip_html | strip %}
+      {% if question != blank and answer != blank %}
+      {% unless forloop.first == true and forloop.index > 1 %},{% endunless %}
+      {
+        "@type": "Question",
+        "name": "{{ question | escape }}",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "{{ answer | escape }}"
+        }
+      }
+      {% endif %}
+    {% endfor %}
+  ]
 }
 </script>
 {% endif %}
