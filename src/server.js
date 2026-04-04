@@ -23,6 +23,7 @@ const { getAllAlerts } = require('./alerts');
 const { syncPayUApi } = require('./sync_payu');
 const { uploadOrderPayload } = require('./dropbox');
 const analytics = require('./analytics');
+const seo = require('./seo');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -44,6 +45,8 @@ app.get('/api/status', (req, res) => {
         rapidshypJwt: !!(process.env.RAPIDSHYP_JWT),
         senseKey: !!(process.env.SHIPROCKET_SENSE_API_KEY),
         senseSecret: !!(process.env.SHIPROCKET_SENSE_API_SECRET),
+        bingWebmaster: !!(process.env.BING_WEBMASTER_API_KEY),
+        ga4MeasurementId: process.env.GA4_MEASUREMENT_ID || null,
     });
 });
 
@@ -965,6 +968,103 @@ app.post('/api/consultation/submit', (req, res) => {
         res.json({ success: true, message: 'Consultation submitted successfully' });
     } catch (e) {
         console.error('[API] Consultation Submit Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ─── 11. SEO Endpoints ────────────────────────────────────────
+
+// SEO Dashboard — full audit overview
+app.get('/api/seo/dashboard', async (req, res) => {
+    try {
+        const data = await seo.getSEODashboard();
+        res.json({ success: true, data });
+    } catch (e) {
+        console.error('[SEO] Dashboard Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Get all products with SEO data
+app.get('/api/seo/products', async (req, res) => {
+    try {
+        const products = await seo.getProducts(250);
+        const audits = products.map(p => ({ ...p, audit: seo.auditProductSEO(p) }));
+        res.json({ success: true, data: audits });
+    } catch (e) {
+        console.error('[SEO] Products Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Get all collections with SEO data
+app.get('/api/seo/collections', async (req, res) => {
+    try {
+        const collections = await seo.getCollections();
+        const audits = collections.map(c => ({ ...c, audit: seo.auditCollectionSEO(c) }));
+        res.json({ success: true, data: audits });
+    } catch (e) {
+        console.error('[SEO] Collections Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Update product SEO
+app.post('/api/seo/products/:id', async (req, res) => {
+    try {
+        const { seoTitle, seoDescription } = req.body;
+        if (!seoTitle && !seoDescription) return res.status(400).json({ error: 'Provide seoTitle or seoDescription' });
+        const result = await seo.updateProductSEO(req.params.id, seoTitle, seoDescription);
+        res.json({ success: true, data: result });
+    } catch (e) {
+        console.error('[SEO] Product Update Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Update collection SEO
+app.post('/api/seo/collections/:id', async (req, res) => {
+    try {
+        const { seoTitle, seoDescription, descriptionHtml } = req.body;
+        const result = await seo.updateCollectionSEO(req.params.id, seoTitle, seoDescription, descriptionHtml);
+        res.json({ success: true, data: result });
+    } catch (e) {
+        console.error('[SEO] Collection Update Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Bing Webmaster: Submit sitemap
+app.post('/api/seo/bing/sitemap', async (req, res) => {
+    try {
+        const result = await seo.bingSubmitSitemap();
+        res.json({ success: true, data: result });
+    } catch (e) {
+        console.error('[SEO] Bing Sitemap Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Bing Webmaster: Submit URL for indexing
+app.post('/api/seo/bing/submit-url', async (req, res) => {
+    try {
+        const { url } = req.body;
+        if (!url) return res.status(400).json({ error: 'Missing url' });
+        const result = await seo.bingSubmitUrl(url);
+        res.json({ success: true, data: result });
+    } catch (e) {
+        console.error('[SEO] Bing URL Submit Error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Bing Webmaster: Get submission quota
+app.get('/api/seo/bing/quota', async (req, res) => {
+    try {
+        const result = await seo.bingGetUrlSubmissionQuota();
+        res.json({ success: true, data: result });
+    } catch (e) {
+        console.error('[SEO] Bing Quota Error:', e.message);
         res.status(500).json({ success: false, error: e.message });
     }
 });
