@@ -1,0 +1,33 @@
+{% comment %}
+  GRL® Collection SEO Footer
+  ──────────────────────────
+  Adds internal links to model-specific pages on collection pages.
+  Improves internal link equity and helps Google discover model pages.
+  Styled as a subtle "Shop by Model" section at the bottom.
+{% endcomment %}
+
+{% if template contains 'collection' %}
+<div class="grl-collection-seo" style="padding:40px 20px;max-width:1200px;margin:0 auto;border-top:1px solid #eee;">
+  <h2 style="font-size:16px;font-weight:600;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:20px;color:#333;">Shop by Phone Model</h2>
+
+  <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;">
+    <span style="font-size:13px;font-weight:600;color:#666;margin-right:8px;">iPhone:</span>
+    {% assign iphone_models = "iPhone X,iPhone 11,iPhone 11 Pro,iPhone 11 Pro Max,iPhone 12 Mini,iPhone 12,iPhone 12 Pro,iPhone 12 Pro Max,iPhone 13 Mini,iPhone 13,iPhone 13 Pro,iPhone 13 Pro Max,iPhone 14,iPhone 14 Plus,iPhone 14 Pro,iPhone 14 Pro Max,iPhone 15,iPhone 15 Plus,iPhone 15 Pro,iPhone 15 Pro Max,iPhone 16,iPhone 16 Plus,iPhone 16 Pro,iPhone 16 Pro Max,iPhone 16E,iPhone 17,iPhone 17 Air,iPhone 17 Pro,iPhone 17 Pro Max" | split: "," %}
+    {% for model in iphone_models %}
+      {% assign handle = model | downcase | replace: " ", "-" | append: "-cases" %}
+      <a href="/pages/{{ handle }}" style="font-size:12px;color:#888;text-decoration:none;padding:4px 10px;border:1px solid #e5e5e5;border-radius:20px;white-space:nowrap;" title="{{ model }} Cases by GRL®">{{ model }}</a>
+    {% endfor %}
+  </div>
+
+  <div style="display:flex;flex-wrap:wrap;gap:8px;">
+    <span style="font-size:13px;font-weight:600;color:#666;margin-right:8px;">Samsung:</span>
+    {% assign samsung_models = "Galaxy S21,Galaxy S21 Ultra,Galaxy S22,Galaxy S22 Ultra,Galaxy S23,Galaxy S23 FE,Galaxy S23 Ultra,Galaxy S24,Galaxy S24 FE,Galaxy S24 Ultra,Galaxy S25,Galaxy S25 Plus,Galaxy S25 Ultra,Galaxy S26,Galaxy S26 Ultra,Galaxy A14,Galaxy A15,Galaxy A16,Galaxy A25,Galaxy A34,Galaxy A35,Galaxy A36,Galaxy A53,Galaxy A54,Galaxy A55,Galaxy A56" | split: "," %}
+    {% for model in samsung_models %}
+      {% assign handle = model | downcase | replace: "galaxy ", "samsung-galaxy-" | replace: " ", "-" | append: "-cases" %}
+      <a href="/pages/{{ handle }}" style="font-size:12px;color:#888;text-decoration:none;padding:4px 10px;border:1px solid #e5e5e5;border-radius:20px;white-space:nowrap;" title="{{ model }} Cases by GRL®">{{ model }}</a>
+    {% endfor %}
+  </div>
+
+  <p style="font-size:12px;color:#999;margin-top:20px;">All GRL® cases come with free shipping across India. Available in Armoured, Glass, and Slim Snap variants.</p>
+</div>
+{% endif %}

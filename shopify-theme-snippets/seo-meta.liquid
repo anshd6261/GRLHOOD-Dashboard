@@ -39,6 +39,25 @@
   <meta name="twitter:image" content="{{ article.image | image_url: width: 1200 }}">
 {% endif %}
 
+
+{% comment %} ═══ HIDE PRODUCT DESCRIPTION ON PRODUCT PAGES ═══ {% endcomment %}
+{% if template contains 'product' %}
+<style>
+  /* Hide ONLY the product description text block — keeps it in DOM for SEO */
+  [class*="__text_aEtTtq"] {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+</style>
+{% endif %}
+
 {% comment %} ═══ GA4 TRACKING ═══ {% endcomment %}
 <!-- Google Analytics 4 -->
 <script async src="https://www.googletagmanager.com/gtag/js?id=G-9427C33TGQ"></script>
