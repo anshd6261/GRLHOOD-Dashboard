@@ -632,6 +632,7 @@ const bulkApproveOrders = async (shopifyOrderIds, orderIdMap = {}) => {
             pendingApproval.push({ cleanId, marketplaceId });
         } else {
             alreadyApproved++;
+            if (alreadyApproved <= 5) console.log(`[RAPIDSHYP] #${cleanId} already ${status}, mpId=${marketplaceId}`);
         }
     }
 
@@ -663,14 +664,19 @@ const bulkApproveOrders = async (shopifyOrderIds, orderIdMap = {}) => {
 
             const data = res.data || {};
             const failCount = data.failure_count || 0;
-            console.log(`[RAPIDSHYP] Batch response: success=${data.success_count}, fail=${failCount}, order_list=${(data.order_list||[]).length} items`);
+            console.log(`[RAPIDSHYP] Batch approve response:`, JSON.stringify(data).slice(0, 2000));
             approvedCount += data.success_count || 0;
             failedCount += failCount;
 
-            // Log any failure details from the API
-            if (failCount > 0 && data.order_list) {
-                const failedOrders = data.order_list.filter(o => o.status === 'failed' || o.error);
-                failedOrders.forEach(o => console.warn(`[RAPIDSHYP] Failed to approve order_id=${o.order_id}: ${o.error || o.remarks || 'unknown reason'}`));
+            // Log every order result from the API
+            if (data.order_list) {
+                for (const ol of data.order_list) {
+                    const shipments = ol.shipment || [];
+                    const hasShipment = shipments.length > 0;
+                    if (!hasShipment) {
+                        console.warn(`[RAPIDSHYP] Order ${ol.order_id}: NO shipment in response (status=${ol.status || ol.order_status || 'unknown'}, remarks=${JSON.stringify(ol.remarks || ol.error || '')})`);
+                    }
+                }
             }
             if (data.remarks) console.log(`[RAPIDSHYP] API remarks: ${JSON.stringify(data.remarks)}`);
 

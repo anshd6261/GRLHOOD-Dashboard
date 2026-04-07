@@ -766,6 +766,37 @@ app.get('/api/proxy-pdf', async (req, res) => {
 // ==========================================
 
 // Bulk Approve Orders (before AWB assignment)
+// Debug: Check RapidShyp session status for orders
+app.get('/api/rapidshyp/debug-session', async (req, res) => {
+    try {
+        const sessionHeaders = rapidshyp.getSessionHeaders();
+        if (!sessionHeaders) return res.json({ error: 'No JWT configured' });
+        const axios = require('axios');
+        const allOrders = [];
+        for (let page = 1; page <= 3; page++) {
+            const r = await axios.post('https://api.rapidshyp.com/session/orders/get_orders',
+                { page, limit: 200 }, { headers: sessionHeaders, timeout: 10000 });
+            const records = r.data?.records || [];
+            allOrders.push(...records);
+            if (records.length < 200) break;
+        }
+        const statusCounts = {};
+        for (const r of allOrders) {
+            const st = r.order_status || 'UNKNOWN';
+            statusCounts[st] = (statusCounts[st] || 0) + 1;
+        }
+        const sample = allOrders.slice(0, 5).map(r => ({
+            seller_order_id: r.seller_order_id,
+            market_place_order_id: r.market_place_order_id,
+            order_status: r.order_status,
+            awb_number: r.awb_number
+        }));
+        res.json({ total: allOrders.length, statusCounts, sample });
+    } catch (e) {
+        res.status(500).json({ error: e.message, status: e.response?.status });
+    }
+});
+
 app.post('/api/rapidshyp/bulk-approve', async (req, res) => {
     try {
         const { orderIds, orderIdMap } = req.body;
