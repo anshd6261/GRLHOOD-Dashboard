@@ -59,7 +59,7 @@ const RiskReasonPills = React.memo(function RiskReasonPills({ reasons }) {
   );
 });
 
-const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, cancellingId, hideActions, hidePrice, showDate, showRiskDetail, onVerify, isVerified }) {
+const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, cancellingId, hideActions, hidePrice, showDate, showRiskDetail, onVerify, isVerified, onPortal }) {
   const [open, setOpen] = useState(false);
   const phone = group.shippingDetails?.phone || '';
   const cleanPhone = phone.replace(/\D/g, '').slice(-10);
@@ -75,6 +75,10 @@ const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, c
               <span className="text-sm font-bold text-white">#{group.orderId}</span>
               <span className="text-[10px] text-[rgba(245,245,245,0.3)]">{group.items.length} unit{group.items.length > 1 ? 's' : ''}</span>
               {group.aiRiskLevel && <RiskBadge level={group.aiRiskLevel} />}
+              {onPortal && <span className="text-[8px] uppercase font-bold px-1.5 py-0.5 rounded-full tracking-wider bg-[rgba(251,191,36,0.1)] border border-[rgba(251,191,36,0.2)] text-amber-400">On Portal</span>}
+              {group.tags?.filter(t => !['unfulfilled','fulfilled'].includes(t.toLowerCase())).map(t => (
+                <span key={t} className="text-[8px] uppercase font-bold px-1.5 py-0.5 rounded-full tracking-wider bg-[rgba(99,102,241,0.08)] border border-[rgba(99,102,241,0.15)] text-indigo-300">{t}</span>
+              ))}
               {shopifyLink && <a href={shopifyLink} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[rgba(245,245,245,0.2)] hover:text-[#e3cfd8]"><ExternalLink size={10} /></a>}
             </div>
             <div className="text-[11px] text-[rgba(245,245,245,0.35)] truncate">
@@ -148,14 +152,34 @@ const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, c
             ))}
           </div>
           {group.awb && (
-            <div className="text-[11px] flex items-center gap-1.5">
-              <span className="text-[rgba(245,245,245,0.3)]">AWB:</span>
-              <a href={group.awb.startsWith('http') ? group.awb : `https://www.google.com/search?q=${group.awb}+tracking`} target="_blank"
-                className="text-[#e3cfd8] font-mono hover:underline">{group.awb.startsWith('http') ? group.awb.match(/\d{10,}/)?.[0] || 'Label' : group.awb}</a>
+            <div className="flex items-center gap-2 pt-1">
+              <a href={`https://www.delhivery.com/track/package/${group.awb}`} target="_blank" rel="noopener noreferrer"
+                className="flex-1 flex items-center gap-2 glass-btn px-3 py-1.5 rounded-lg text-[11px] text-[#e3cfd8] hover:bg-[rgba(227,207,216,0.08)]">
+                <Package size={12} /> <span className="font-mono">{group.awb}</span>
+                <ExternalLink size={10} className="ml-auto opacity-40" />
+              </a>
             </div>
           )}
         </div>
       )}
+    </div>
+  );
+});
+
+// Mini display showing other orders from same customer
+const OtherOrdersList = React.memo(function OtherOrdersList({ others }) {
+  if (!others?.length) return null;
+  return (
+    <div className="ml-2 mt-1 flex items-center gap-1.5 flex-wrap">
+      <span className="text-[9px] text-[rgba(245,245,245,0.25)]">Also ordered:</span>
+      {others.map(o => (
+        <span key={o.orderId} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[rgba(99,102,241,0.06)] border border-[rgba(99,102,241,0.12)] text-indigo-300">
+          #{o.orderId} · {o.items.length}u
+          {o.tags?.filter(t => !['unfulfilled','fulfilled'].includes(t.toLowerCase())).map(t => (
+            <span key={t} className="ml-1 text-[8px] text-[rgba(245,245,245,0.3)]">{t}</span>
+          ))}
+        </span>
+      ))}
     </div>
   );
 });
@@ -197,6 +221,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const [verifiedIds, setVerifiedIds] = useState(new Set());
   const [approveProgress, setApproveProgress] = useState(null); // { done, total }
   const [shipProgress, setShipProgress] = useState(null);
+  const [nbeUploadedIds] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('nbe_uploaded_ids') || '[]')); } catch { return new Set(); } });
   const [labelProgress, setLabelProgress] = useState(null);
 
   // ═══ Action History Logger ═══
@@ -278,7 +303,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const grouped = useMemo(() => {
     const m = {};
     workingOrders.forEach(o => {
-      if (!m[o.orderId]) m[o.orderId] = { orderId: o.orderId, shopifyId: o.id, customerName: o.customerName, shippingDetails: o.shippingDetails, aiRiskScore: o.aiRiskScore, aiRiskLevel: o.aiRiskLevel, aiRiskReasons: o.aiRiskReasons || [], items: [], createdAt: o.createdAt, awb: o.awb, rsOrderId: o.rsOrderId, customerOrdersCount: o.customerOrdersCount, payment: o.payment };
+      if (!m[o.orderId]) m[o.orderId] = { orderId: o.orderId, shopifyId: o.id, customerName: o.customerName, shippingDetails: o.shippingDetails, aiRiskScore: o.aiRiskScore, aiRiskLevel: o.aiRiskLevel, aiRiskReasons: o.aiRiskReasons || [], items: [], createdAt: o.createdAt, awb: o.awb, rsOrderId: o.rsOrderId, customerOrdersCount: o.customerOrdersCount, payment: o.payment, tags: o.tags || [] };
       m[o.orderId].items.push(o);
     });
     return Object.values(m);
@@ -287,6 +312,25 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const uniqueIds = useMemo(() => [...new Set(workingOrders.map(o => o.orderId))], [workingOrders]);
   const highRisk = useMemo(() => grouped.filter(g => g.aiRiskLevel === 'High'), [grouped]);
   const missingUnits = useMemo(() => workingOrders.map((o, i) => ({ ...o, _idx: i })).filter(o => !o.model?.trim() || o.model.toLowerCase() === 'unknown model'), [workingOrders]);
+
+  // Group all orders by customer phone (for showing "other orders by this customer" across all steps)
+  const ordersByPhone = useMemo(() => {
+    const map = {};
+    grouped.forEach(g => {
+      const ph = (g.shippingDetails?.phone || '').replace(/\D/g, '').slice(-10);
+      if (ph && ph.length >= 10) {
+        if (!map[ph]) map[ph] = [];
+        map[ph].push(g);
+      }
+    });
+    return map;
+  }, [grouped]);
+
+  const getOtherOrders = useCallback((group) => {
+    const ph = (group.shippingDetails?.phone || '').replace(/\D/g, '').slice(-10);
+    if (!ph || ph.length < 10) return [];
+    return (ordersByPhone[ph] || []).filter(g => g.orderId !== group.orderId);
+  }, [ordersByPhone]);
 
   // Repeat customers: group by customer name, show those with >1 orders (exclude if first order delivered)
   const repeatCustomers = useMemo(() => {
@@ -320,7 +364,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
               </div>
               <span className="text-[10px] font-bold text-amber-400 bg-[rgba(251,191,36,0.1)] px-2.5 py-0.5 rounded-full border border-amber-400/20">REPEAT</span>
             </div>
-            {custOrders.map(g => <OrderDetailCard key={g.orderId} group={g} onCancel={handleCancel} cancellingId={cancellingId} showDate hidePrice={isSupplier} showRiskDetail onVerify={handleVerify} isVerified={verifiedIds.has(g.orderId)} />)}
+            {custOrders.map(g => <OrderDetailCard key={g.orderId} group={g} onCancel={handleCancel} cancellingId={cancellingId} showDate hidePrice={isSupplier} showRiskDetail onVerify={handleVerify} isVerified={verifiedIds.has(g.orderId)} onPortal={nbeUploadedIds.has(g.orderId)} />)}
           </div>
         ))
       )}
@@ -367,7 +411,10 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           {sortedCodOrders.map(g => (
             <div key={g.orderId} className="flex items-start gap-2">
               <div className={`text-lg font-black pt-2.5 w-12 text-center shrink-0 ${g.aiRiskLevel === 'High' ? 'text-[#ff1493]' : g.aiRiskLevel === 'Low' ? 'text-emerald-400' : 'text-[#e3cfd8]'}`}>{g.aiRiskScore || 0}%</div>
-              <div className="flex-1"><OrderDetailCard group={g} onCancel={handleCancel} cancellingId={cancellingId} hidePrice={isSupplier} showRiskDetail onVerify={handleVerify} isVerified={verifiedIds.has(g.orderId)} /></div>
+              <div className="flex-1">
+                <OrderDetailCard group={g} onCancel={handleCancel} cancellingId={cancellingId} hidePrice={isSupplier} showRiskDetail onVerify={handleVerify} isVerified={verifiedIds.has(g.orderId)} onPortal={nbeUploadedIds.has(g.orderId)} />
+                <OtherOrdersList others={getOtherOrders(g)} />
+              </div>
             </div>
           ))}
         </div>
@@ -401,6 +448,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           </div>
           {missingByOrder.map(orderGroup => {
             const ph = (orderGroup.shippingDetails?.phone || '').replace(/\D/g, '').slice(-10);
+            const matchedGroup = grouped.find(g => g.orderId === orderGroup.orderId);
             return (
               <div key={orderGroup.orderId} className="glass-card-sm p-3 space-y-2.5">
                 <div className="flex items-center justify-between">
@@ -428,6 +476,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
                     </div>
                   </div>
                 ))}
+                {matchedGroup && <OtherOrdersList others={getOtherOrders(matchedGroup)} />}
               </div>
             );
           })}
@@ -489,6 +538,14 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       const nbeErr = !nbeOk && (nbeRes.value?.data?.error || nbeRes.reason?.message || '');
       setDlStatus('done');
       if (nbeErr) console.error('[NBE] Upload error details:', nbeRes.value?.data);
+      // Track orders uploaded to NBE Portal
+      if (nbeOk) {
+        try {
+          const nbeUploaded = JSON.parse(localStorage.getItem('nbe_uploaded_ids') || '[]');
+          uniqueIds.forEach(id => { if (!nbeUploaded.includes(id)) nbeUploaded.push(id); });
+          localStorage.setItem('nbe_uploaded_ids', JSON.stringify(nbeUploaded));
+        } catch {}
+      }
       setToast({ msg: nbeOk ? 'CSVs downloaded, backed up & NBE order created' : `CSVs downloaded & backed up${nbeErr ? ` (NBE: ${nbeErr})` : ''}` });
       logAction('download_csv', { orders: uniqueIds.length, units: workingOrders.length, nbeOk, dropboxOk: dbxRes.status === 'fulfilled' });
     } catch (e) { setDlStatus('err'); setToast({ msg: `Download failed: ${e.message}`, err: true }); }

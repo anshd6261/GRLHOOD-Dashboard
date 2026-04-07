@@ -275,6 +275,7 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
                     price: price,
                     payment: payment,
                     fulfillmentStatus: order.displayFulfillmentStatus || 'UNFULFILLED',
+                    tags: order.tags || [],
                     createdAt: order.createdAt,
                     // Shiprocket Sense RTO Risk Data
                     // model_probability is confidence in the prediction — invert for low risk so higher % = higher risk
