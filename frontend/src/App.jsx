@@ -68,12 +68,32 @@ function SpotlightCard({ children, className = '', onClick }) {
 /* ═══════════════════════════════════════════
    SETTINGS TAB
    ═══════════════════════════════════════════ */
+const ACTION_LABELS = {
+  approve: 'Approved Orders',
+  download_csv: 'Downloaded CSVs',
+  ship_orders: 'Shipped Orders',
+  generate_labels: 'Generated Labels',
+  fulfillment_complete: 'Fulfillment Complete',
+  cancel_order: 'Cancelled Order',
+  rto_check: 'RTO Check',
+  sync_orders: 'Synced Orders',
+};
+
 function SettingsTab({ historyData, onHistorySelect }) {
+  const [actionHistory, setActionHistory] = useState([]);
+  const [showAllActions, setShowAllActions] = useState(false);
+
+  useEffect(() => {
+    try { setActionHistory(JSON.parse(localStorage.getItem('actionHistory') || '[]')); } catch { setActionHistory([]); }
+  }, []);
+
   const connectedAPIs = [
     { name: 'Shopify Admin', status: 'connected', desc: 'Order sync & management' },
     { name: 'RapidShyp', status: 'connected', desc: 'Shipping & RTO data' },
     { name: 'Dropbox', status: 'connected', desc: 'CSV backup storage' },
   ];
+
+  const visibleActions = showAllActions ? actionHistory : actionHistory.slice(0, 10);
 
   return (
     <div className="space-y-8 max-w-3xl mx-auto">
@@ -95,7 +115,43 @@ function SettingsTab({ historyData, onHistorySelect }) {
         </div>
       </div>
 
-      {/* History */}
+      {/* Action History */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-bold text-[rgba(245,245,245,0.4)] uppercase tracking-[0.15em]">Action History</h3>
+          {actionHistory.length > 0 && (
+            <button onClick={() => { localStorage.removeItem('actionHistory'); setActionHistory([]); }}
+              className="text-[9px] text-[rgba(245,245,245,0.2)] hover:text-[#ff1493] uppercase tracking-wider">Clear</button>
+          )}
+        </div>
+        {actionHistory.length === 0 ? (
+          <div className="glass-card-sm p-6 text-center text-[rgba(245,245,245,0.25)] text-sm">No actions recorded yet</div>
+        ) : (
+          <div className="space-y-2">
+            {visibleActions.map((entry, i) => (
+              <div key={i} className="glass-card-sm p-3 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold text-white">{ACTION_LABELS[entry.action] || entry.action}</div>
+                  <div className="text-[10px] text-[rgba(245,245,245,0.35)] mt-0.5">
+                    {Object.entries(entry.details || {}).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                  </div>
+                  <div className="text-[9px] text-[rgba(245,245,245,0.15)] mt-1">{entry.device}</div>
+                </div>
+                <div className="text-[9px] text-[rgba(245,245,245,0.2)] shrink-0 text-right">
+                  {new Date(entry.timestamp).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+            ))}
+            {actionHistory.length > 10 && (
+              <button onClick={() => setShowAllActions(!showAllActions)} className="text-[10px] text-[#e3cfd8] hover:underline w-full text-center py-2">
+                {showAllActions ? 'Show less' : `Show all ${actionHistory.length} actions`}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Download History */}
       <div>
         <h3 className="text-sm font-bold text-[rgba(245,245,245,0.4)] uppercase tracking-[0.15em] mb-4">Download History</h3>
         {historyData.length === 0 ? (
@@ -125,7 +181,7 @@ function SettingsTab({ historyData, onHistorySelect }) {
         <h3 className="text-sm font-bold text-[rgba(245,245,245,0.4)] uppercase tracking-[0.15em] mb-4">Dashboard</h3>
         <div className="glass-card-sm p-4">
           <div className="text-sm font-bold text-white">GRLHOOD Dashboard</div>
-          <div className="text-xs text-[rgba(245,245,245,0.3)] mt-1">Version 3.0 — Dark Neumorphic</div>
+          <div className="text-xs text-[rgba(245,245,245,0.3)] mt-1">Version 3.1 — Glass Morphic</div>
         </div>
       </div>
     </div>
