@@ -431,8 +431,8 @@ function App() {
             const updatedCheckedIds = [...checkedSet];
             for (const [orderId, rto] of Object.entries(rtoResults)) {
               updatedCache[orderId] = { aiRiskLevel: rto.aiRiskLevel, aiRiskScore: rto.aiRiskScore, aiRiskReasons: rto.aiRiskReasons };
-              // Mark as checked permanently — never re-check
-              if (!checkedSet.has(orderId)) {
+              // Only mark as checked if we got a real result — allows retries for failed/unknown
+              if (rto.aiRiskLevel && rto.aiRiskLevel !== 'Unknown' && !checkedSet.has(orderId)) {
                 updatedCheckedIds.push(orderId);
                 checkedSet.add(orderId);
               }
@@ -448,12 +448,7 @@ function App() {
           }
         } catch (rtoErr) {
           console.warn('RTO enrichment failed (non-blocking):', rtoErr.message);
-          // Even on failure, mark these as checked to prevent re-billing
-          const updatedCheckedIds = [...checkedSet];
-          for (const o of uniqueUnchecked) {
-            if (!checkedSet.has(o.orderId)) updatedCheckedIds.push(o.orderId);
-          }
-          try { localStorage.setItem('rto_checked_ids', JSON.stringify(updatedCheckedIds)); } catch {}
+          // Do NOT mark as checked on failure — allow retry on next sync
         }
       } else {
         console.log('[RTO] No new orders to check — all already checked or cached');
