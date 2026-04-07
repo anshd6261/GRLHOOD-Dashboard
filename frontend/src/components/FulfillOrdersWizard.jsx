@@ -171,7 +171,7 @@ const CsvRow = React.memo(function CsvRow({ r, i, isSupplier, onCategory, onMode
       <td className="text-[10px] text-[rgba(245,245,245,0.5)] px-2 py-1.5">{r.customerName}</td>
       <td className="text-[10px] text-white font-bold px-2 py-1.5">{r.orderId}</td>
       <td className="text-[10px] text-[rgba(245,245,245,0.45)] px-2 py-1.5">{r.payment||'—'}</td>
-      {!isSupplier && <td className="text-[10px] text-[rgba(245,245,245,0.45)] px-2 py-1.5">₹{r.price||0}</td>}
+      <td className="text-[10px] text-[rgba(245,245,245,0.45)] px-2 py-1.5">₹{r.price||0}</td>
       {!isSupplier && <td className="text-[10px] text-[#e3cfd8] px-2 py-1.5">₹{r.cogs||0}</td>}
       <td className="px-2 py-1.5"><button onClick={() => onDelete(i)} className="text-[rgba(245,245,245,0.15)] hover:text-[#ff1493]"><Trash2 size={11} /></button></td>
     </tr>
@@ -195,6 +195,25 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const [dlStatus, setDlStatus] = useState(null);
   const [toast, setToast] = useState(null);
   const [verifiedIds, setVerifiedIds] = useState(new Set());
+  const [approveProgress, setApproveProgress] = useState(null); // { done, total }
+  const [shipProgress, setShipProgress] = useState(null);
+  const [labelProgress, setLabelProgress] = useState(null);
+
+  // ═══ Action History Logger ═══
+  const logAction = useCallback((action, details = {}) => {
+    try {
+      const history = JSON.parse(localStorage.getItem('actionHistory') || '[]');
+      history.unshift({
+        action,
+        details,
+        timestamp: new Date().toISOString(),
+        device: `${navigator.userAgent.match(/\(([^)]+)\)/)?.[1] || 'Unknown'} · ${navigator.platform}`,
+        screen: `${window.innerWidth}x${window.innerHeight}`,
+      });
+      // Keep last 200 entries
+      localStorage.setItem('actionHistory', JSON.stringify(history.slice(0, 200)));
+    } catch {}
+  }, []);
 
   useEffect(() => {
     setWorkingOrders(orders.map(o => {
@@ -419,7 +438,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
 
   // ═══ STEP 3: CSV Check ═══
   const csvHeaders = isSupplier
-    ? ['#','Category','Model','SKU','Customer','Order ID','Payment','']
+    ? ['#','Category','Model','SKU','Customer','Order ID','Payment','Price','']
     : ['#','Category','Model','SKU','Customer','Order ID','Payment','Price','COGS',''];
   const renderCSV = () => (
     <div className="space-y-3">
@@ -471,6 +490,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       setDlStatus('done');
       if (nbeErr) console.error('[NBE] Upload error details:', nbeRes.value?.data);
       setToast({ msg: nbeOk ? 'CSVs downloaded, backed up & NBE order created' : `CSVs downloaded & backed up${nbeErr ? ` (NBE: ${nbeErr})` : ''}` });
+      logAction('download_csv', { orders: uniqueIds.length, units: workingOrders.length, nbeOk, dropboxOk: dbxRes.status === 'fulfilled' });
     } catch (e) { setDlStatus('err'); setToast({ msg: `Download failed: ${e.message}`, err: true }); }
   };
 
@@ -508,25 +528,37 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const handleApprove = async () => {
     if (approveResult || approveLoading) return;
     setApproveLoading(true);
+    setApproveProgress({ done: 0, total: uniqueIds.length });
     try {
-      // Build orderId → shopifyId map so backend can use marketplace IDs directly (no JWT needed)
       const orderIdMap = {};
       workingOrders.forEach(o => { if (o.orderId && o.id) orderIdMap[o.orderId] = o.id; });
-      console.log('[APPROVE] orderIdMap sample:', Object.entries(orderIdMap).slice(0, 3), 'total:', Object.keys(orderIdMap).length);
-      console.log('[APPROVE] sample order fields:', workingOrders[0] ? { orderId: workingOrders[0].orderId, id: workingOrders[0].id, keys: Object.keys(workingOrders[0]).slice(0, 15) } : 'no orders');
-      const r = await axios.post(`${API_URL}/rapidshyp/bulk-approve`, { orderIds: uniqueIds, orderIdMap });
+      const r = await axios.post(`${API_URL}/rapidshyp/bulk-approve`, { orderIds: uniqueIds, orderIdMap }, { timeout: 120000 });
       // Merge new shipment_ids with any previously saved ones (persist across sessions)
       const savedMap = JSON.parse(localStorage.getItem('shipmentMap') || '{}');
       const mergedMap = { ...savedMap, ...(r.data.shipmentMap || {}) };
       r.data.shipmentMap = mergedMap;
       localStorage.setItem('shipmentMap', JSON.stringify(mergedMap));
-      setApproveResult(r.data);
-      if (r.data.approved > 0) {
-        setToast({ msg: `${r.data.approved} orders approved in RapidShyp` });
+      // Treat partial errors as success — don't show yellow if orders were approved
+      if (r.data.errors?.length && !r.data.error) {
+        r.data.partialErrors = r.data.errors;
+        delete r.data.errors;
       }
+      setApproveResult(r.data);
+      setApproveProgress({ done: (r.data.approved || 0) + (r.data.alreadyApproved || 0), total: uniqueIds.length });
+      const msg = r.data.approved > 0 ? `${r.data.approved} approved` : r.data.alreadyApproved > 0 ? `${r.data.alreadyApproved} already approved` : 'Approve complete';
+      setToast({ msg });
+      // Log action
+      logAction('approve', { approved: r.data.approved, alreadyApproved: r.data.alreadyApproved, orders: uniqueIds.length });
     } catch (e) {
-      setApproveResult({ success: false, error: e.response?.data?.error || e.message });
-      setToast({ msg: `Approve failed: ${e.response?.data?.error || e.message}`, err: true });
+      // If timeout or network error but approve may have partially worked, show warning not error
+      const errMsg = e.response?.data?.error || e.message;
+      const isTimeout = e.code === 'ECONNABORTED' || errMsg.includes('timeout');
+      if (isTimeout) {
+        setApproveResult({ success: true, approved: 0, alreadyApproved: 0, notFound: 0, shipmentMap: {}, warning: 'Request timed out — orders may still be processing. Proceed to Ship.' });
+      } else {
+        setApproveResult({ success: false, error: errMsg });
+      }
+      setToast({ msg: isTimeout ? 'Approve timed out — try shipping anyway' : `Approve failed: ${errMsg}`, err: !isTimeout });
     } finally {
       setApproveLoading(false);
     }
@@ -545,7 +577,10 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       console.log('[SHIP] shipmentMap keys:', Object.keys(sm).length, 'sample:', Object.entries(sm).slice(0, 3));
       const r = await axios.post(`${API_URL}/rapidshyp/bulk-assign`, { orderNames: uniqueIds, shipmentMap: sm });
       setShipResults(r.data);
-      setToast({ msg: `${r.data?.results?.filter(x=>x.success).length}/${uniqueIds.length} shipped` });
+      const shipped = r.data?.results?.filter(x=>x.success).length || 0;
+      setShipProgress({ done: shipped, total: uniqueIds.length });
+      setToast({ msg: `${shipped}/${uniqueIds.length} shipped` });
+      logAction('ship_orders', { shipped, total: uniqueIds.length });
     } catch (e) { setToast({ msg: `Ship failed: ${e.response?.data?.error||e.message}`, err: true }); }
     finally { setShipLoading(false); }
   };
@@ -560,12 +595,16 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       <div className="glass-card-sm p-3">
         {approveLoading ? (
           <div className="flex items-center gap-2 text-[11px] text-[rgba(245,245,245,0.5)]">
-            <RefreshCw size={11} className="animate-spin text-[#e3cfd8]" /> Approving orders in RapidShyp...
+            <RefreshCw size={11} className="animate-spin text-[#e3cfd8]" />
+            <span>Approving orders... {approveProgress ? `${approveProgress.done}/${approveProgress.total}` : ''}</span>
           </div>
         ) : approveResult ? (
           <div className="flex items-center gap-2 text-[11px]">
             {approveResult.error ? (
-              <><AlertTriangle size={11} className="text-amber-400" /><span className="text-amber-400">Approve: {approveResult.error}</span></>
+              <><AlertTriangle size={11} className="text-amber-400" /><span className="text-amber-400">Approve: {approveResult.error}</span>
+                <button onClick={() => { setApproveResult(null); setApproveLoading(false); }} className="text-[9px] text-[#e3cfd8] underline ml-1">Retry</button></>
+            ) : approveResult.warning ? (
+              <><AlertTriangle size={11} className="text-amber-400" /><span className="text-amber-400/80">{approveResult.warning}</span></>
             ) : (
               <><CheckCircle size={11} className="text-emerald-400" />
               <span className="text-[rgba(245,245,245,0.5)]">
@@ -653,10 +692,11 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       setLabelResult(r.data);
       const url = r.data?.label_pdf_url || r.data?.labelUrl;
       if (url) {
-        const batchName = `${getOrdinalDate()} - Labels.pdf`;
-        try { const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(batchName)}`; const pr = await fetch(proxyUrl); if (!pr.ok) throw new Error('fail'); const bl = new Blob([await pr.arrayBuffer()], { type: 'application/pdf' }); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = batchName; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(bu), 1000); } catch { window.open(url, '_blank'); }
+        const labelFileName = `${getOrdinalDate()} - Labels.pdf`;
+        try { const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(labelFileName)}`; const pr = await fetch(proxyUrl); if (!pr.ok) throw new Error('fail'); const bl = new Blob([await pr.arrayBuffer()], { type: 'application/pdf' }); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = labelFileName; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(bu), 1000); } catch { window.open(url, '_blank'); }
       }
-      setToast({ msg: 'Labels generated' });
+      setToast({ msg: 'Labels generated & downloading' });
+      logAction('generate_labels', { orders: uniqueIds.length, hasUrl: !!url });
     } catch (e) { setToast({ msg: `Labels failed: ${e.response?.data?.error||e.message}`, err: true }); }
     finally { setLabelLoading(false); }
   };
@@ -673,7 +713,10 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="space-y-2">
             <CheckCircle size={40} className="mx-auto text-emerald-400" />
             <p className="text-sm font-bold text-white">labels ready</p>
-            {labelUrl && <a href={labelUrl} target="_blank" rel="noopener noreferrer" className="glass-btn-accent px-5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2"><Download size={12} /> Download PDF</a>}
+            {labelUrl && <button onClick={async () => {
+              const labelFileName = `${getOrdinalDate()} - Labels.pdf`;
+              try { const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(labelUrl)}&filename=${encodeURIComponent(labelFileName)}`; const pr = await fetch(proxyUrl); if (!pr.ok) throw new Error('fail'); const bl = new Blob([await pr.arrayBuffer()], { type: 'application/pdf' }); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = labelFileName; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(bu), 1000); } catch { window.open(labelUrl, '_blank'); }
+            }} className="glass-btn-accent px-5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2"><Download size={12} /> Download PDF</button>}
             {labelResult.dropboxPath && <p className="text-[9px] text-[rgba(245,245,245,0.2)]">Dropbox: {labelResult.dropboxPath}</p>}
           </motion.div>
         ) : (
@@ -687,6 +730,25 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   };
 
   // ═══ STEP 7: Done ═══
+  useEffect(() => {
+    if (step === 7) {
+      logAction('fulfillment_complete', {
+        orders: uniqueIds.length,
+        units: workingOrders.length,
+        awbs: shipResults?.results?.filter(r=>r.success).length || 0,
+        batchName: `${getOrdinalDate()} Order`,
+      });
+    }
+  }, [step]);
+
+  const batchName = `${getOrdinalDate()} Order`;
+  const awbCount = shipResults?.results?.filter(r=>r.success).length || 0;
+  const summaryText = `*${batchName}*\n\nOrders: ${uniqueIds.length}\nUnits: ${workingOrders.length}\nAWBs Assigned: ${awbCount}`;
+
+  const copySummary = () => {
+    navigator.clipboard.writeText(summaryText.replace(/\*/g, '')).then(() => setToast({ msg: 'Summary copied' })).catch(() => {});
+  };
+
   const renderDone = () => (
     <div className="flex flex-col items-center justify-center py-12 space-y-5">
       <motion.div initial={{ scale: 0, rotate: -180 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: 'spring', damping: 12, stiffness: 200 }}>
@@ -701,7 +763,19 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="glass-card-sm p-4 flex gap-6 text-center">
         <div><div className="text-xl font-black text-white">{uniqueIds.length}</div><div className="text-[9px] text-[rgba(245,245,245,0.25)] uppercase">orders</div></div>
         <div><div className="text-xl font-black text-white">{workingOrders.length}</div><div className="text-[9px] text-[rgba(245,245,245,0.25)] uppercase">units</div></div>
-        <div><div className="text-xl font-black text-emerald-400">{shipResults?.results?.filter(r=>r.success).length||'—'}</div><div className="text-[9px] text-[rgba(245,245,245,0.25)] uppercase">AWBs</div></div>
+        <div><div className="text-xl font-black text-emerald-400">{awbCount||'—'}</div><div className="text-[9px] text-[rgba(245,245,245,0.25)] uppercase">AWBs</div></div>
+      </motion.div>
+      {/* Order Summary Message */}
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="glass-card-sm p-4 w-full max-w-sm space-y-3">
+        <div className="text-[10px] uppercase font-bold text-[rgba(245,245,245,0.25)] tracking-wider">Order Summary</div>
+        <div className="text-[11px] text-[rgba(245,245,245,0.5)] whitespace-pre-line bg-[rgba(255,255,255,0.02)] rounded-lg p-3 border border-[rgba(255,255,255,0.04)]">
+          <span className="font-bold text-white">{batchName}</span>{'\n\n'}Orders: {uniqueIds.length}{'\n'}Units: {workingOrders.length}{'\n'}AWBs Assigned: {awbCount}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={copySummary} className="glass-btn px-4 py-2 rounded-xl text-[11px] font-bold flex items-center gap-1.5 flex-1 justify-center"><ClipboardCheck size={12} /> Copy</button>
+          <a href={`https://wa.me/?text=${encodeURIComponent(summaryText)}`} target="_blank" rel="noopener noreferrer"
+            className="glass-btn px-4 py-2 rounded-xl text-[11px] font-bold flex items-center gap-1.5 flex-1 justify-center text-emerald-400"><MessageSquare size={12} /> WhatsApp</a>
+        </div>
       </motion.div>
       <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.7 }} onClick={onClose} className="glass-btn-accent px-8 py-2.5 rounded-xl text-sm font-bold">Close</motion.button>
     </div>
