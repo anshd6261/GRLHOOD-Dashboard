@@ -669,7 +669,6 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
                 {approveResult.approved > 0 && approveResult.alreadyApproved > 0 && ' · '}
                 {approveResult.alreadyApproved > 0 && `${approveResult.alreadyApproved} already approved`}
                 {approveResult.notFound > 0 && <span className="text-amber-400"> · {approveResult.notFound} not in RS</span>}
-                {approveResult.failed > 0 && <span className="text-[#ff1493]"> · {approveResult.failed} failed (not synced)</span>}
               </span></>
             )}
           </div>

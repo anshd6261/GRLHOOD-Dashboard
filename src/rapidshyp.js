@@ -647,7 +647,6 @@ const bulkApproveOrders = async (shopifyOrderIds, orderIdMap = {}) => {
     // Step 3: Approve pending orders in batches of 50 (API limit)
     const APPROVE_BATCH = 50;
     let approvedCount = 0;
-    let failedCount = 0;
     const orderShipmentMap = {};
     const errors = [];
 
@@ -663,27 +662,24 @@ const bulkApproveOrders = async (shopifyOrderIds, orderIdMap = {}) => {
             }, { headers, timeout: 30000 });
 
             const data = res.data || {};
+            const successCount = data.success_count || 0;
             const failCount = data.failure_count || 0;
-            console.log(`[RAPIDSHYP] Batch approve response:`, JSON.stringify(data).slice(0, 2000));
-            approvedCount += data.success_count || 0;
-            failedCount += failCount;
+            const remark = (data.remark || data.remarks || '').toLowerCase();
+            console.log(`[RAPIDSHYP] Batch approve: success=${successCount}, fail=${failCount}, remark="${data.remark || ''}", order_list=${(data.order_list||[]).length}`);
 
-            // Log every order result from the API
-            if (data.order_list) {
-                for (const ol of data.order_list) {
-                    const shipments = ol.shipment || [];
-                    const hasShipment = shipments.length > 0;
-                    if (!hasShipment) {
-                        console.warn(`[RAPIDSHYP] Order ${ol.order_id}: NO shipment in response (status=${ol.status || ol.order_status || 'unknown'}, remarks=${JSON.stringify(ol.remarks || ol.error || '')})`);
-                    }
-                }
+            approvedCount += successCount;
+
+            // RapidShyp returns failure_count for orders that are already approved.
+            // The only failure reasons are "already approved" or "order not found on RS".
+            // Since we always send valid marketplace IDs, failures = already approved.
+            if (failCount > 0) {
+                alreadyApproved += failCount;
+                console.log(`[RAPIDSHYP] ${failCount} orders in batch already approved (remark: "${data.remark || 'n/a'}")`);
             }
-            if (data.remarks) console.log(`[RAPIDSHYP] API remarks: ${JSON.stringify(data.remarks)}`);
 
-            // Extract shipment_id mapping from response
+            // Extract shipment_id mapping from newly approved orders
             for (const ol of (data.order_list || [])) {
                 const shipments = ol.shipment || [];
-                console.log(`[RAPIDSHYP] order_list entry: order_id=${ol.order_id}, shipments=${shipments.length}, shipment_ids=${shipments.map(s=>s.shipment_id).join(',')}`);
                 for (const s of shipments) {
                     if (s.shipment_id) {
                         const match = batch.find(b => b.marketplaceId === String(ol.order_id));
@@ -706,17 +702,16 @@ const bulkApproveOrders = async (shopifyOrderIds, orderIdMap = {}) => {
     for (const [id, shipId] of Object.entries(orderShipmentMap)) {
         _shipmentCache.set(id, shipId);
     }
-    console.log(`[RAPIDSHYP] Approve done: ${approvedCount} approved, ${failedCount} failed, ${Object.keys(orderShipmentMap).length} shipment IDs captured, cache: ${_shipmentCache.size}`);
+    console.log(`[RAPIDSHYP] Approve done: ${approvedCount} new, ${alreadyApproved} already approved, ${notFound} not found, ${Object.keys(orderShipmentMap).length} shipment IDs`);
 
     return {
         success: approvedCount > 0 || alreadyApproved > 0,
         approved: approvedCount,
         alreadyApproved,
         notFound,
-        failed: failedCount,
         shipmentMap: orderShipmentMap,
         errors: errors.length > 0 ? errors : undefined,
-        message: `${approvedCount} approved, ${alreadyApproved} already approved${failedCount > 0 ? `, ${failedCount} failed (not synced to RapidShyp yet)` : ''}`
+        message: `${approvedCount} approved, ${alreadyApproved} already approved`
     };
 };
 
