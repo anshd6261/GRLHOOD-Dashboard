@@ -766,6 +766,24 @@ app.get('/api/proxy-pdf', async (req, res) => {
 // ==========================================
 
 // Bulk Approve Orders (before AWB assignment)
+// Debug: Test approve with raw response capture
+app.post('/api/rapidshyp/debug-approve', async (req, res) => {
+    try {
+        const { marketplaceIds } = req.body; // Array of marketplace IDs to test
+        if (!marketplaceIds?.length) return res.status(400).json({ error: 'Send { marketplaceIds: ["123",...] }' });
+        const axios = require('axios');
+        const apiKey = (process.env.RAPIDSHYP_API_KEY || '').trim();
+        const headers = { 'Content-Type': 'application/json', 'rapidshyp-token': apiKey };
+        const r = await axios.post('https://api.rapidshyp.com/rapidshyp/apis/v1/approve_orders', {
+            order_id: marketplaceIds.slice(0, 5), // Max 5 for debug
+            store_name: 'GRLHOOD'
+        }, { headers, timeout: 30000 });
+        res.json({ status: r.status, data: r.data });
+    } catch (e) {
+        res.json({ error: e.message, status: e.response?.status, data: e.response?.data });
+    }
+});
+
 // Debug: Check RapidShyp session status for orders
 app.get('/api/rapidshyp/debug-session', async (req, res) => {
     try {
