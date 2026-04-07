@@ -192,6 +192,21 @@ async function handleOrders(req, res) {
     }
 }
 
+// 2.2b RTO Status — Read-only diagnostic (no API calls, no credits used)
+app.get('/api/rto-status', (req, res) => {
+    const senseKey = (process.env.SHIPROCKET_SENSE_API_KEY || '').trim();
+    const senseSecret = (process.env.SHIPROCKET_SENSE_API_SECRET || '').trim();
+    const cached = shiprocketSense.exportCache();
+    const cacheSize = cached ? Object.keys(cached).length : 0;
+    res.json({
+        credsConfigured: !!(senseKey && senseSecret),
+        keyPrefix: senseKey ? senseKey.slice(0, 4) + '...' : 'MISSING',
+        secretPrefix: senseSecret ? senseSecret.slice(0, 4) + '...' : 'MISSING',
+        cacheSize,
+        sampleCached: cached ? Object.entries(cached).slice(0, 3).map(([k, v]) => ({ orderId: k, risk: v.risk, probability: v.probability })) : [],
+    });
+});
+
 // 2.3 RTO Risk Check — Dedicated endpoint for Sense API (gets full 10s budget)
 // Frontend calls this after loading orders to enrich them with RTO data
 app.post('/api/rto-check', async (req, res) => {
