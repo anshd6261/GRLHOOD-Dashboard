@@ -372,11 +372,14 @@ async function batchPredictRisk(shopifyOrders) {
 
     if (pendingOrders.length > 0) {
         const tasks = pendingOrders.map(({ order, orderId }) => async () => {
-            // Mark as checked BEFORE the call — even if it fails, never retry
-            checkedOrderIds.add(orderId);
             const result = await predictSingleOrder(order, authHeader);
             results[orderId] = result;
-            rtoCache.set(orderId, result); // Cache ALL results, even unknown
+            // Only mark as checked + cache if we got a REAL result (not unknown/failed)
+            // This allows failed orders to be retried on next sync without double-billing
+            if (result.risk && result.risk !== 'unknown') {
+                checkedOrderIds.add(orderId);
+                rtoCache.set(orderId, result);
+            }
         });
 
         try {
