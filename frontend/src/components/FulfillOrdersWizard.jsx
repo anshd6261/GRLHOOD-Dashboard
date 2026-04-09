@@ -59,7 +59,7 @@ const RiskReasonPills = React.memo(function RiskReasonPills({ reasons }) {
   );
 });
 
-const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, cancellingId, hideActions, hidePrice, showDate, showRiskDetail, onVerify, isVerified, onPortal }) {
+const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, cancellingId, hideActions, hidePrice, showDate, showRiskDetail, onVerify, isVerified, onPortal, showFulfillment }) {
   const [open, setOpen] = useState(false);
   const phone = group.shippingDetails?.phone || '';
   const cleanPhone = phone.replace(/\D/g, '').slice(-10);
@@ -75,7 +75,14 @@ const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, c
               <span className="text-sm font-bold text-white">#{group.orderId}</span>
               <span className="text-[10px] text-[rgba(245,245,245,0.3)]">{group.items.length} unit{group.items.length > 1 ? 's' : ''}</span>
               {group.aiRiskLevel && <RiskBadge level={group.aiRiskLevel} />}
+              {group.payment && (group.payment === 'Prepaid'
+                ? <span className="text-[8px] uppercase font-black px-1.5 py-0.5 rounded-full tracking-wider bg-[rgba(52,211,153,0.1)] border border-[rgba(52,211,153,0.2)] text-emerald-400">PREPAID</span>
+                : <span className="text-[8px] uppercase font-black px-1.5 py-0.5 rounded-full tracking-wider bg-[rgba(251,191,36,0.1)] border border-[rgba(251,191,36,0.2)] text-amber-400">COD</span>
+              )}
               {onPortal && <span className="text-[8px] uppercase font-bold px-1.5 py-0.5 rounded-full tracking-wider bg-[rgba(251,191,36,0.1)] border border-[rgba(251,191,36,0.2)] text-amber-400">On Portal</span>}
+              {showFulfillment && group.fulfillmentStatus && group.fulfillmentStatus !== 'UNFULFILLED' && (
+                <span className={`text-[8px] uppercase font-bold px-1.5 py-0.5 rounded-full tracking-wider ${group.fulfillmentStatus === 'FULFILLED' ? 'bg-[rgba(52,211,153,0.08)] border border-[rgba(52,211,153,0.15)] text-emerald-400' : 'bg-[rgba(99,102,241,0.08)] border border-[rgba(99,102,241,0.15)] text-indigo-300'}`}>{group.fulfillmentStatus}</span>
+              )}
               {group.tags?.filter(t => !['unfulfilled','fulfilled'].includes(t.toLowerCase())).map(t => (
                 <span key={t} className="text-[8px] uppercase font-bold px-1.5 py-0.5 rounded-full tracking-wider bg-[rgba(99,102,241,0.08)] border border-[rgba(99,102,241,0.15)] text-indigo-300">{t}</span>
               ))}
@@ -303,7 +310,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const grouped = useMemo(() => {
     const m = {};
     workingOrders.forEach(o => {
-      if (!m[o.orderId]) m[o.orderId] = { orderId: o.orderId, shopifyId: o.id, customerName: o.customerName, shippingDetails: o.shippingDetails, aiRiskScore: o.aiRiskScore, aiRiskLevel: o.aiRiskLevel, aiRiskReasons: o.aiRiskReasons || [], items: [], createdAt: o.createdAt, awb: o.awb, rsOrderId: o.rsOrderId, customerOrdersCount: o.customerOrdersCount, payment: o.payment, tags: o.tags || [] };
+      if (!m[o.orderId]) m[o.orderId] = { orderId: o.orderId, shopifyId: o.id, customerName: o.customerName, shippingDetails: o.shippingDetails, aiRiskScore: o.aiRiskScore, aiRiskLevel: o.aiRiskLevel, aiRiskReasons: o.aiRiskReasons || [], items: [], createdAt: o.createdAt, awb: o.awb, rsOrderId: o.rsOrderId, customerOrdersCount: o.customerOrdersCount, payment: o.payment, tags: o.tags || [], fulfillmentStatus: o.fulfillmentStatus || 'UNFULFILLED' };
       m[o.orderId].items.push(o);
     });
     return Object.values(m);
@@ -332,7 +339,8 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
     return (ordersByPhone[ph] || []).filter(g => g.orderId !== group.orderId);
   }, [ordersByPhone]);
 
-  // Repeat customers: group by customer name, show those with >1 orders (exclude if first order delivered)
+  // Repeat customers: group by customer name, show those with >1 orders
+  // Skip flagging if ALL orders from this customer are Prepaid
   const repeatCustomers = useMemo(() => {
     const byCustomer = {};
     grouped.forEach(g => {
@@ -341,7 +349,13 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       byCustomer[name].push(g);
     });
     return Object.entries(byCustomer)
-      .filter(([, ords]) => ords.length > 1 || (ords[0]?.customerOrdersCount || 1) > 1)
+      .filter(([, ords]) => {
+        const isRepeat = ords.length > 1 || (ords[0]?.customerOrdersCount || 1) > 1;
+        if (!isRepeat) return false;
+        // Don't flag repeat if all orders from this customer are prepaid
+        const allPrepaid = ords.every(o => o.payment === 'Prepaid');
+        return !allPrepaid;
+      })
       .map(([name, ords]) => ({ name, orders: ords, totalOrders: ords[0]?.customerOrdersCount || ords.length }));
   }, [grouped]);
 
@@ -364,7 +378,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
               </div>
               <span className="text-[10px] font-bold text-amber-400 bg-[rgba(251,191,36,0.1)] px-2.5 py-0.5 rounded-full border border-amber-400/20">REPEAT</span>
             </div>
-            {custOrders.map(g => <OrderDetailCard key={g.orderId} group={g} onCancel={handleCancel} cancellingId={cancellingId} showDate hidePrice={isSupplier} showRiskDetail onVerify={handleVerify} isVerified={verifiedIds.has(g.orderId)} onPortal={nbeUploadedIds.has(g.orderId)} />)}
+            {custOrders.map(g => <OrderDetailCard key={g.orderId} group={g} onCancel={handleCancel} cancellingId={cancellingId} showDate showFulfillment hidePrice={isSupplier} showRiskDetail onVerify={handleVerify} isVerified={verifiedIds.has(g.orderId)} onPortal={nbeUploadedIds.has(g.orderId)} />)}
           </div>
         ))
       )}

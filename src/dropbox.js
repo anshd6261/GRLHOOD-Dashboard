@@ -133,8 +133,12 @@ const uploadOrderPayload = async (pdfUrl, standardCsvContent, financialCsvConten
     const folderPath = `${monthPath}/${dateLabel} Order`;
     console.log(`[DROPBOX] Target: ${folderPath}`);
 
-    // Clean up any duplicate/existing folders for this date
-    await cleanDuplicateFolders(token, monthPath, dateLabel);
+    // Only clean up existing folders when uploading CSVs (initial upload).
+    // When uploading only labels (pdfUrl set, no CSVs), skip cleanup to preserve existing CSVs.
+    const isLabelOnly = pdfUrl && !standardCsvContent && !financialCsvContent;
+    if (!isLabelOnly) {
+        await cleanDuplicateFolders(token, monthPath, dateLabel);
+    }
 
     // Upload Standard Supplier CSV
     if (standardCsvContent) {
@@ -146,7 +150,7 @@ const uploadOrderPayload = async (pdfUrl, standardCsvContent, financialCsvConten
         await uploadFile(token, `${folderPath}/${dateLabel} Order - Financial report.csv`, Buffer.from(financialCsvContent, 'utf-8'));
     }
 
-    // Upload PDF Labels (if provided)
+    // Upload PDF Labels (if provided) — uses mode:'overwrite' so only this file is replaced
     if (pdfUrl) {
         const pdfRes = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
         await uploadFile(token, `${folderPath}/${dateLabel} Labels.pdf`, Buffer.from(pdfRes.data));

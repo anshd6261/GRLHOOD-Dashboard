@@ -485,8 +485,9 @@ app.post('/api/nbe/upload-order', async (req, res) => {
         const finalizeRes = await axios.post(`${nbeBase}/raw-order-files/finalize/`, {
             key,
             description: `${getFormattedDate()} Order`,
-            order_type: 'Bulkship POD',
-            partial_fulfillment: 'yes',
+            order_type: 'Dropship POD',
+            partial_fulfillment: 'no',
+            providing_shipping_label: 'no',
             is_urgent_order: false,
         }, { headers: nbeHeaders, timeout: 30000 });
 
