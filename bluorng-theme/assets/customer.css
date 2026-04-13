@@ -1,0 +1,175 @@
+/* Exact from bluorng CDN: customer.css */
+
+.customer:not(.account):not(.order) {
+  margin: 0 auto;
+  max-width: 33.4rem;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+  text-align: center;
+}
+
+@media screen and (min-width: 750px) {
+  .customer:not(.account):not(.order) {
+    max-width: 47.8rem;
+  }
+}
+
+.customer > h1,
+.customer__title {
+  margin-top: 0;
+}
+
+.customer form {
+  margin-top: 2rem;
+}
+
+.customer button {
+  margin: 4rem 0 1.5rem;
+}
+
+.customer ul {
+  line-height: calc(1 + .6 / var(--font-body-scale));
+  padding-left: 4.4rem;
+  text-align: left;
+  margin-bottom: 4rem;
+}
+
+.customer ul a {
+  display: inline;
+}
+
+.customer .field {
+  margin: 2rem 0 0;
+}
+
+.customer .field:first-of-type {
+  margin-top: 0;
+}
+
+.customer table {
+  table-layout: auto;
+  border-collapse: collapse;
+  border-bottom: .01rem solid rgba(var(--color-foreground), .08);
+  box-shadow: none;
+  width: 100%;
+  font-size: 1.6rem;
+  position: relative;
+}
+
+@media screen and (min-width: 750px) {
+  .customer table {
+    border: none;
+    box-shadow: 0 0 0 .1rem rgba(var(--color-foreground), .08);
+  }
+}
+
+.customer tbody {
+  color: rgb(var(--color-foreground));
+}
+
+.customer th,
+.customer td {
+  font-weight: 400;
+  line-height: 1;
+  border: none;
+  padding: 0;
+}
+
+.customer thead th {
+  font-size: 1.2rem;
+  letter-spacing: .07rem;
+  text-transform: uppercase;
+}
+
+@media screen and (min-width: 750px) {
+  .customer th,
+  .customer td:first-of-type {
+    text-align: left;
+    padding-left: 0;
+    padding-right: 2.2rem;
+  }
+
+  .customer thead th,
+  .customer tbody td {
+    padding-top: 2.4rem;
+    padding-bottom: 2.4rem;
+  }
+
+  .customer th:first-of-type,
+  .customer td:first-of-type {
+    padding-left: 2.2rem;
+  }
+}
+
+.customer tbody tr {
+  border-top: .01rem solid rgba(var(--color-foreground), .08);
+}
+
+:is(.account, .order) {
+  margin: 0 auto;
+  max-width: var(--page-width);
+  padding-left: 2rem;
+  padding-right: 2rem;
+}
+
+@media screen and (min-width: 750px) {
+  :is(.account, .order) {
+    padding-left: 5rem;
+    padding-right: 5rem;
+  }
+}
+
+:is(.account, .order) p {
+  margin: 0 0 2rem;
+  font-size: 12px;
+}
+
+:is(.account, .order) h1 {
+  margin-bottom: 1rem;
+}
+
+:is(.account, .order) h2 {
+  margin-top: 4rem;
+  margin-bottom: 1rem;
+}
+
+@media screen and (min-width: 990px) {
+  :is(.account, .order) h2 {
+    margin-top: 0;
+  }
+
+  :is(.account, .order) > div:nth-of-type(2) {
+    display: flex;
+    margin-top: 5rem;
+  }
+
+  :is(.account, .order) > div:nth-of-type(2) > div:first-of-type {
+    flex-grow: 1;
+    padding-right: 3.2rem;
+  }
+}
+
+.login a {
+  display: block;
+  margin: 0 auto;
+  width: fit-content;
+}
+
+.login a[href="#recover"] {
+  margin-left: 0;
+  margin-right: 0;
+}
+
+.login .field + a {
+  margin-top: 1rem;
+}
+
+.login p {
+  margin: 1.5rem 0;
+}
+
+.login h3 {
+  margin-top: 1.5rem;
+  text-align: left;
+  font-size: calc(var(--font-heading-scale) * 1.6rem);
+}
