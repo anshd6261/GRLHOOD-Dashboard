@@ -12,16 +12,23 @@
   {{ font_heading_bold | font_face: font_display: 'swap' }}
 
   :root {
-    /* Colors */
-    --color-background: {{ settings.color_background }};
-    --color-foreground: {{ settings.color_foreground }};
-    --color-button: {{ settings.color_button }};
-    --color-button-text: {{ settings.color_button_text }};
-    --color-link: {{ settings.color_link }};
-    --color-sale: {{ settings.color_sale }};
-    --color-badge-bg: {{ settings.color_badge_bg }};
-    --color-badge-text: {{ settings.color_badge_text }};
-    --color-border: {{ settings.color_border }};
+    /* Colors - stored as R,G,B for rgba() usage */
+    --color-background: {{ settings.color_background.red }},{{ settings.color_background.green }},{{ settings.color_background.blue }};
+    --color-foreground: {{ settings.color_foreground.red }},{{ settings.color_foreground.green }},{{ settings.color_foreground.blue }};
+    --color-button: {{ settings.color_button.red }},{{ settings.color_button.green }},{{ settings.color_button.blue }};
+    --color-button-text: {{ settings.color_button_text.red }},{{ settings.color_button_text.green }},{{ settings.color_button_text.blue }};
+    --color-link: {{ settings.color_link.red }},{{ settings.color_link.green }},{{ settings.color_link.blue }};
+    --color-sale: {{ settings.color_sale.red }},{{ settings.color_sale.green }},{{ settings.color_sale.blue }};
+    --color-badge-bg: {{ settings.color_badge_bg.red }},{{ settings.color_badge_bg.green }},{{ settings.color_badge_bg.blue }};
+    --color-badge-text: {{ settings.color_badge_text.red }},{{ settings.color_badge_text.green }},{{ settings.color_badge_text.blue }};
+    --color-border: {{ settings.color_border.red }},{{ settings.color_border.green }},{{ settings.color_border.blue }};
+    --color-shadow: 18,18,18;
+
+    /* Alpha values */
+    --alpha-button-background: 1;
+    --alpha-button-border: 1;
+    --alpha-link: .85;
+    --alpha-badge-border: .1;
     --border-opacity: {{ settings.border_opacity | divided_by: 100.0 }};
 
     /* Typography */
@@ -37,29 +44,94 @@
     --font-heading-scale: {{ settings.heading_scale | divided_by: 100.0 }};
 
     /* Layout */
-    --page-width: {{ settings.page_width }}px;
-    --grid-horizontal-spacing: {{ settings.grid_horizontal_spacing }}px;
-    --grid-vertical-spacing: {{ settings.grid_vertical_spacing }}px;
+    --page-width: {{ settings.page_width | divided_by: 10.0 }}rem;
+    --grid-desktop-horizontal-spacing: {{ settings.grid_horizontal_spacing }}px;
+    --grid-desktop-vertical-spacing: {{ settings.grid_vertical_spacing }}px;
+    --grid-mobile-horizontal-spacing: 4px;
+    --grid-mobile-vertical-spacing: 4px;
+    --grid-horizontal-spacing: var(--grid-desktop-horizontal-spacing);
+    --grid-vertical-spacing: var(--grid-desktop-vertical-spacing);
     --section-spacing: {{ settings.section_spacing }}px;
 
     /* Buttons */
-    --buttons-border-radius: {{ settings.buttons_border_radius }}px;
+    --buttons-radius: {{ settings.buttons_border_radius }}px;
+    --buttons-radius-outset: {{ settings.buttons_border_radius }}px;
     --buttons-border-width: {{ settings.buttons_border_width }}px;
+    --buttons-border-radius: {{ settings.buttons_border_radius }}px;
+    --buttons-border-opacity: 1.0;
     --variant-pills-radius: {{ settings.variant_pills_radius }}px;
+    --variant-pills-border-width: 1px;
+    --variant-pills-shadow-horizontal-offset: 0px;
+    --variant-pills-shadow-vertical-offset: 0px;
+    --variant-pills-shadow-blur-radius: 0px;
+    --variant-pills-shadow-opacity: 0;
 
     /* Inputs */
+    --inputs-radius: {{ settings.inputs_border_radius }}px;
     --inputs-border-radius: {{ settings.inputs_border_radius }}px;
     --inputs-border-width: {{ settings.inputs_border_width }}px;
+    --inputs-border-opacity: 0.55;
 
     /* Product cards */
+    --product-card-corner-radius: {{ settings.card_corner_radius }}px;
+    --product-card-image-padding: {{ settings.card_image_padding }}rem;
     --card-corner-radius: {{ settings.card_corner_radius }}px;
     --card-image-padding: {{ settings.card_image_padding }}px;
     --card-text-alignment: {{ settings.card_text_alignment }};
 
-    /* Durations */
-    --duration-short: 150ms;
-    --duration-default: 300ms;
-    --duration-long: 500ms;
-    --duration-extended: 800ms;
+    /* Media */
+    --media-radius: 0px;
+    --media-border-width: 0px;
+    --media-border-opacity: 0;
+    --media-shadow-visible: 0;
+    --media-shadow-horizontal-offset: 0px;
+    --media-shadow-vertical-offset: 0px;
+    --media-shadow-blur-radius: 0px;
+    --media-shadow-opacity: 0;
+
+    /* Popup/drawer */
+    --popup-border-width: 1px;
+    --popup-border-opacity: .1;
+    --popup-corner-radius: 0px;
+    --popup-shadow-horizontal-offset: 0px;
+    --popup-shadow-vertical-offset: 4px;
+    --popup-shadow-blur-radius: 20px;
+    --popup-shadow-opacity: .08;
+    --drawer-border-width: 0px;
+    --drawer-border-opacity: 1;
+    --drawer-shadow-horizontal-offset: 0px;
+    --drawer-shadow-vertical-offset: 0px;
+    --drawer-shadow-blur-radius: 12px;
+    --drawer-shadow-opacity: .12;
+
+    /* Exact duration values from bluorng theme */
+    --duration-short: .1s;
+    --duration-default: .2s;
+    --duration-announcement-bar: .25s;
+    --duration-medium: .3s;
+    --duration-long: .5s;
+    --duration-extra-long: .7s;
+    --duration-extended: 3s;
+
+    /* Easing */
+    --ease-out-slow: cubic-bezier(0, 0, 0, 1);
+    --animation-fade-in: fadeIn var(--duration-extra-long) var(--ease-out-slow);
+  }
+
+  @media screen and (max-width: 749px) {
+    :root {
+      --grid-horizontal-spacing: var(--grid-mobile-horizontal-spacing);
+      --grid-vertical-spacing: var(--grid-mobile-vertical-spacing);
+    }
+  }
+
+  @keyframes fadeIn {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+
+  @keyframes animateMenuOpen {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
   }
 {% endstyle %}
