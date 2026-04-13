@@ -1,0 +1,90 @@
+<section class="blog-page" data-section-id="{{ section.id }}">
+  <div class="blog-page__inner page-width">
+    <h1 class="blog-page__title">{{ blog.title }}</h1>
+
+    {%- paginate blog.articles by section.settings.articles_per_page -%}
+      <div class="blog-page__grid" data-columns-desktop="{{ section.settings.columns }}">
+        {%- for article in blog.articles -%}
+          <article class="blog-page__card">
+            {%- if article.image -%}
+              <a href="{{ article.url }}" class="blog-page__card-image-link">
+                <img
+                  class="blog-page__card-image"
+                  src="{{ article.image | image_url: width: 600 }}"
+                  alt="{{ article.image.alt | escape }}"
+                  loading="lazy"
+                  width="600"
+                  height="{{ 600 | divided_by: article.image.aspect_ratio }}"
+                >
+              </a>
+            {%- endif -%}
+
+            <div class="blog-page__card-info">
+              {%- if section.settings.show_date -%}
+                <time class="blog-page__card-date" datetime="{{ article.published_at | date: '%Y-%m-%d' }}">
+                  {{ article.published_at | date: '%B %d, %Y' }}
+                </time>
+              {%- endif -%}
+
+              <h2 class="blog-page__card-title">
+                <a href="{{ article.url }}">{{ article.title }}</a>
+              </h2>
+
+              {%- if section.settings.show_excerpt -%}
+                <p class="blog-page__card-excerpt">{{ article.excerpt_or_content | strip_html | truncatewords: 30 }}</p>
+              {%- endif -%}
+
+              <a href="{{ article.url }}" class="blog-page__card-link">
+                {{ 'blogs.article.read_more' | t }}
+                {% render 'icon-arrow', direction: 'right' %}
+              </a>
+            </div>
+          </article>
+        {%- endfor -%}
+      </div>
+
+      {%- if paginate.pages > 1 -%}
+        {% render 'pagination', paginate: paginate %}
+      {%- endif -%}
+    {%- endpaginate -%}
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Blog page",
+  "class": "blog-page-section",
+  "settings": [
+    {
+      "type": "range",
+      "id": "articles_per_page",
+      "label": "Articles per page",
+      "min": 3,
+      "max": 24,
+      "step": 3,
+      "default": 9
+    },
+    {
+      "type": "range",
+      "id": "columns",
+      "label": "Columns",
+      "min": 2,
+      "max": 4,
+      "step": 1,
+      "default": 3
+    },
+    {
+      "type": "checkbox",
+      "id": "show_date",
+      "label": "Show date",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_excerpt",
+      "label": "Show excerpt",
+      "default": true
+    }
+  ]
+}
+{% endschema %}

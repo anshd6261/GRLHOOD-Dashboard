@@ -1,0 +1,106 @@
+{{ 'section-featured-collection.css' | asset_url | stylesheet_tag }}
+
+<section class="featured-collection" data-section-id="{{ section.id }}">
+  <div class="featured-collection__inner page-width">
+    {%- if section.settings.heading != blank -%}
+      <div class="featured-collection__header">
+        <h2 class="featured-collection__heading">{{ section.settings.heading }}</h2>
+        {%- if section.settings.collection != blank and section.settings.show_view_all -%}
+          <a href="{{ section.settings.collection.url }}" class="featured-collection__view-all">
+            {{ 'sections.featured_collection.view_all' | t }}
+            {% render 'icon-arrow', direction: 'right' %}
+          </a>
+        {%- endif -%}
+      </div>
+    {%- endif -%}
+
+    <div class="featured-collection__grid" data-columns-desktop="{{ section.settings.columns_desktop }}" data-columns-mobile="{{ section.settings.columns_mobile }}">
+      {%- if section.settings.collection != blank -%}
+        {%- for product in section.settings.collection.products limit: section.settings.products_to_show -%}
+          <div class="featured-collection__item">
+            {% render 'product-card',
+              product: product,
+              columns_desktop: section.settings.columns_desktop,
+              columns_mobile: section.settings.columns_mobile,
+              lazy_load: true
+            %}
+          </div>
+        {%- endfor -%}
+      {%- else -%}
+        {%- for i in (1..section.settings.products_to_show) -%}
+          <div class="featured-collection__item">
+            <div class="product-card product-card--placeholder">
+              <div class="product-card__media">
+                {{ 'product-1' | placeholder_svg_tag: 'product-card__placeholder-svg' }}
+              </div>
+              <div class="product-card__info">
+                <h3 class="product-card__title">{{ 'sections.featured_collection.product_title' | t }}</h3>
+                <div class="product-card__price">
+                  <span class="price__amount">{{ settings.currency_prefix }} 0</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        {%- endfor -%}
+      {%- endif -%}
+    </div>
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Featured collection",
+  "class": "featured-collection-section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Featured Collection"
+    },
+    {
+      "type": "collection",
+      "id": "collection",
+      "label": "Collection"
+    },
+    {
+      "type": "range",
+      "id": "products_to_show",
+      "label": "Products to show",
+      "min": 2,
+      "max": 24,
+      "step": 1,
+      "default": 8
+    },
+    {
+      "type": "range",
+      "id": "columns_desktop",
+      "label": "Desktop columns",
+      "min": 2,
+      "max": 5,
+      "step": 1,
+      "default": 4
+    },
+    {
+      "type": "range",
+      "id": "columns_mobile",
+      "label": "Mobile columns",
+      "min": 1,
+      "max": 3,
+      "step": 1,
+      "default": 2
+    },
+    {
+      "type": "checkbox",
+      "id": "show_view_all",
+      "label": "Show 'View all' link",
+      "default": true
+    }
+  ],
+  "presets": [
+    {
+      "name": "Featured collection"
+    }
+  ]
+}
+{% endschema %}

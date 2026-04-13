@@ -1,0 +1,49 @@
+{%- comment -%}
+  Renders product price.
+
+  Accepts:
+  - product: {Object} Product Liquid object
+  - use_variant: {Boolean} Use selected variant price (default: false)
+{%- endcomment -%}
+
+{%- liquid
+  if use_variant
+    assign target = product.selected_or_first_available_variant
+  else
+    assign target = product
+  endif
+  assign compare_at_price = target.compare_at_price
+  assign price = target.price
+  assign price_varies = false
+  unless use_variant
+    if product.price_varies
+      assign price_varies = true
+    endif
+  endunless
+-%}
+
+<div class="price{% if compare_at_price > price %} price--on-sale{% endif %}{% unless product.available %} price--sold-out{% endunless %}">
+  <div class="price__regular">
+    {%- if price_varies -%}
+      <span class="price__from">{{ 'products.product.price_from' | t }}</span>
+    {%- endif -%}
+    <span class="price__amount">
+      {{ settings.currency_prefix }} {{ price | money_without_currency | replace: ',', ',' }}
+    </span>
+  </div>
+
+  {%- if compare_at_price > price -%}
+    <div class="price__sale">
+      <span class="price__amount price__amount--sale">
+        {{ settings.currency_prefix }} {{ price | money_without_currency | replace: ',', ',' }}
+      </span>
+      <span class="price__amount price__amount--compare">
+        <s>{{ settings.currency_prefix }} {{ compare_at_price | money_without_currency | replace: ',', ',' }}</s>
+      </span>
+    </div>
+  {%- endif -%}
+
+  {%- unless product.available -%}
+    <span class="price__sold-out">{{ 'products.product.sold_out' | t }}</span>
+  {%- endunless -%}
+</div>

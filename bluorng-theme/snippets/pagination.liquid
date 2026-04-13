@@ -1,0 +1,42 @@
+{%- comment -%}
+  Renders pagination for collections, blogs, search results.
+
+  Accepts:
+  - paginate: {Object} Shopify paginate object
+{%- endcomment -%}
+
+{%- if paginate.pages > 1 -%}
+  <nav class="pagination" role="navigation" aria-label="{{ 'general.pagination.label' | t }}">
+    <ul class="pagination__list">
+      {%- if paginate.previous -%}
+        <li class="pagination__item">
+          <a href="{{ paginate.previous.url }}" class="pagination__link pagination__link--prev" aria-label="{{ 'general.pagination.previous' | t }}">
+            {%- render 'icon-chevron', direction: 'left' -%}
+          </a>
+        </li>
+      {%- endif -%}
+
+      {%- for part in paginate.parts -%}
+        <li class="pagination__item">
+          {%- if part.is_link -%}
+            <a href="{{ part.url }}" class="pagination__link">{{ part.title }}</a>
+          {%- else -%}
+            {%- if part.title == paginate.current_page -%}
+              <span class="pagination__link pagination__link--current" aria-current="page">{{ part.title }}</span>
+            {%- else -%}
+              <span class="pagination__link pagination__link--ellipsis">{{ part.title }}</span>
+            {%- endif -%}
+          {%- endif -%}
+        </li>
+      {%- endfor -%}
+
+      {%- if paginate.next -%}
+        <li class="pagination__item">
+          <a href="{{ paginate.next.url }}" class="pagination__link pagination__link--next" aria-label="{{ 'general.pagination.next' | t }}">
+            {%- render 'icon-chevron', direction: 'right' -%}
+          </a>
+        </li>
+      {%- endif -%}
+    </ul>
+  </nav>
+{%- endif -%}

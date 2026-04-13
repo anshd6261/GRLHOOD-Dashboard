@@ -1,0 +1,49 @@
+{
+  "sections": {
+    "main": {
+      "type": "main-product",
+      "settings": {
+        "enable_zoom": true,
+        "show_vendor": true,
+        "variant_style": "dropdown",
+        "show_quantity": false,
+        "show_dynamic_checkout": true,
+        "show_delivery_estimate": true,
+        "delivery_text": "Free delivery Pan-India. Dispatches Next Day.",
+        "show_cod_badge": true,
+        "cod_text": "Cash On Delivery Available",
+        "show_size_guide": true
+      },
+      "blocks": {
+        "description": {
+          "type": "description",
+          "settings": {
+            "heading": "Details & Description",
+            "show_product_description": true
+          }
+        },
+        "washcare": {
+          "type": "custom_tab",
+          "settings": {
+            "heading": "Washcare"
+          }
+        },
+        "shipping": {
+          "type": "shipping_tab",
+          "settings": {
+            "heading": "Shipping"
+          }
+        }
+      },
+      "block_order": ["description", "washcare", "shipping"]
+    },
+    "recommendations": {
+      "type": "product-recommendations",
+      "settings": {
+        "heading": "Recently visited",
+        "products_to_show": 4
+      }
+    }
+  },
+  "order": ["main", "recommendations"]
+}

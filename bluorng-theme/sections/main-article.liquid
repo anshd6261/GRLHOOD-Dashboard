@@ -1,0 +1,129 @@
+<section class="article-page" data-section-id="{{ section.id }}">
+  <div class="article-page__inner page-width">
+    <article class="article-page__article">
+      <header class="article-page__header">
+        <h1 class="article-page__title">{{ article.title }}</h1>
+        {%- if section.settings.show_date -%}
+          <time class="article-page__date" datetime="{{ article.published_at | date: '%Y-%m-%d' }}">
+            {{ article.published_at | date: '%B %d, %Y' }}
+          </time>
+        {%- endif -%}
+        {%- if section.settings.show_author -%}
+          <p class="article-page__author">{{ 'blogs.article.by' | t }} {{ article.author }}</p>
+        {%- endif -%}
+      </header>
+
+      {%- if article.image and section.settings.show_image -%}
+        <div class="article-page__image">
+          <img
+            src="{{ article.image | image_url: width: 1200 }}"
+            alt="{{ article.image.alt | escape }}"
+            loading="eager"
+            width="{{ article.image.width }}"
+            height="{{ article.image.height }}"
+          >
+        </div>
+      {%- endif -%}
+
+      <div class="article-page__content rte">
+        {{ article.content }}
+      </div>
+
+      {%- if section.settings.show_share -%}
+        <div class="article-page__share">
+          <span class="article-page__share-label">{{ 'blogs.article.share' | t }}</span>
+          <a href="https://www.facebook.com/sharer/sharer.php?u={{ article.url | prepend: request.origin | url_encode }}" target="_blank" rel="noopener" class="article-page__share-link" aria-label="Share on Facebook">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
+          </a>
+          <a href="https://twitter.com/intent/tweet?url={{ article.url | prepend: request.origin | url_encode }}&text={{ article.title | url_encode }}" target="_blank" rel="noopener" class="article-page__share-link" aria-label="Share on Twitter">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4l11.733 16h4.267l-11.733 -16z"/><path d="M4 20l6.768 -6.768m2.46 -2.46l6.772 -6.772"/></svg>
+          </a>
+        </div>
+      {%- endif -%}
+    </article>
+
+    {%- if blog.comments_enabled? -%}
+      <div class="article-page__comments">
+        <h3 class="article-page__comments-title">{{ 'blogs.comments.title' | t }} ({{ article.comments_count }})</h3>
+
+        {%- if article.comments.size > 0 -%}
+          {%- paginate article.comments by 10 -%}
+            <div class="article-page__comments-list">
+              {%- for comment in article.comments -%}
+                <div class="article-page__comment">
+                  <p class="article-page__comment-author">{{ comment.author }}</p>
+                  <time class="article-page__comment-date" datetime="{{ comment.created_at | date: '%Y-%m-%d' }}">
+                    {{ comment.created_at | date: '%B %d, %Y' }}
+                  </time>
+                  <div class="article-page__comment-body">{{ comment.content }}</div>
+                </div>
+              {%- endfor -%}
+            </div>
+            {% render 'pagination', paginate: paginate %}
+          {%- endpaginate -%}
+        {%- endif -%}
+
+        {%- form 'new_comment', article, class: 'article-page__comment-form' -%}
+          {%- if form.errors -%}
+            <div class="article-page__form-errors">
+              {{ form.errors | default_errors }}
+            </div>
+          {%- endif -%}
+          {%- if form.posted_successfully? -%}
+            <p class="article-page__form-success">{{ 'blogs.comments.success' | t }}</p>
+          {%- endif -%}
+
+          <div class="article-page__form-fields">
+            <div class="article-page__form-field">
+              <label for="CommentAuthor">{{ 'blogs.comments.name' | t }}</label>
+              <input type="text" id="CommentAuthor" name="comment[author]" value="{{ form.author }}" required class="input">
+            </div>
+            <div class="article-page__form-field">
+              <label for="CommentEmail">{{ 'blogs.comments.email' | t }}</label>
+              <input type="email" id="CommentEmail" name="comment[email]" value="{{ form.email }}" required class="input">
+            </div>
+            <div class="article-page__form-field article-page__form-field--full">
+              <label for="CommentBody">{{ 'blogs.comments.message' | t }}</label>
+              <textarea id="CommentBody" name="comment[body]" required class="input">{{ form.body }}</textarea>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn--primary">{{ 'blogs.comments.submit' | t }}</button>
+        {%- endform -%}
+      </div>
+    {%- endif -%}
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Article page",
+  "class": "article-page-section",
+  "settings": [
+    {
+      "type": "checkbox",
+      "id": "show_image",
+      "label": "Show featured image",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_date",
+      "label": "Show date",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_author",
+      "label": "Show author",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_share",
+      "label": "Show share buttons",
+      "default": true
+    }
+  ]
+}
+{% endschema %}

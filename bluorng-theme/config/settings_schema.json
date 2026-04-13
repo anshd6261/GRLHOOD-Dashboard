@@ -1,0 +1,345 @@
+[
+  {
+    "name": "theme_info",
+    "theme_name": "Bluorng",
+    "theme_version": "1.0.0",
+    "theme_author": "Bluorng",
+    "theme_documentation_url": "",
+    "theme_support_url": ""
+  },
+  {
+    "name": "Colors",
+    "settings": [
+      {
+        "type": "header",
+        "content": "Primary colors"
+      },
+      {
+        "type": "color",
+        "id": "color_background",
+        "label": "Background",
+        "default": "#ffffff"
+      },
+      {
+        "type": "color",
+        "id": "color_foreground",
+        "label": "Text",
+        "default": "#121212"
+      },
+      {
+        "type": "color",
+        "id": "color_button",
+        "label": "Button background",
+        "default": "#121212"
+      },
+      {
+        "type": "color",
+        "id": "color_button_text",
+        "label": "Button text",
+        "default": "#ffffff"
+      },
+      {
+        "type": "color",
+        "id": "color_link",
+        "label": "Link color",
+        "default": "#121212"
+      },
+      {
+        "type": "header",
+        "content": "Sale & badge colors"
+      },
+      {
+        "type": "color",
+        "id": "color_sale",
+        "label": "Sale price color",
+        "default": "#b71c1c"
+      },
+      {
+        "type": "color",
+        "id": "color_badge_bg",
+        "label": "Badge background",
+        "default": "#121212"
+      },
+      {
+        "type": "color",
+        "id": "color_badge_text",
+        "label": "Badge text",
+        "default": "#ffffff"
+      },
+      {
+        "type": "header",
+        "content": "Border & divider"
+      },
+      {
+        "type": "color",
+        "id": "color_border",
+        "label": "Border color",
+        "default": "#121212"
+      },
+      {
+        "type": "range",
+        "id": "border_opacity",
+        "label": "Border opacity",
+        "min": 0,
+        "max": 100,
+        "step": 5,
+        "default": 10,
+        "unit": "%"
+      }
+    ]
+  },
+  {
+    "name": "Typography",
+    "settings": [
+      {
+        "type": "header",
+        "content": "Headings"
+      },
+      {
+        "type": "font_picker",
+        "id": "font_heading",
+        "label": "Heading font",
+        "default": "assistant_n4"
+      },
+      {
+        "type": "range",
+        "id": "heading_scale",
+        "label": "Heading font size scale",
+        "min": 80,
+        "max": 150,
+        "step": 5,
+        "default": 100,
+        "unit": "%"
+      },
+      {
+        "type": "header",
+        "content": "Body"
+      },
+      {
+        "type": "font_picker",
+        "id": "font_body",
+        "label": "Body font",
+        "default": "assistant_n4"
+      },
+      {
+        "type": "range",
+        "id": "body_scale",
+        "label": "Body font size scale",
+        "min": 80,
+        "max": 150,
+        "step": 5,
+        "default": 100,
+        "unit": "%"
+      }
+    ]
+  },
+  {
+    "name": "Layout",
+    "settings": [
+      {
+        "type": "range",
+        "id": "page_width",
+        "label": "Page width",
+        "min": 1000,
+        "max": 1920,
+        "step": 20,
+        "default": 1200,
+        "unit": "px"
+      },
+      {
+        "type": "range",
+        "id": "grid_horizontal_spacing",
+        "label": "Grid horizontal spacing",
+        "min": 0,
+        "max": 40,
+        "step": 2,
+        "default": 8,
+        "unit": "px"
+      },
+      {
+        "type": "range",
+        "id": "grid_vertical_spacing",
+        "label": "Grid vertical spacing",
+        "min": 0,
+        "max": 40,
+        "step": 2,
+        "default": 8,
+        "unit": "px"
+      },
+      {
+        "type": "range",
+        "id": "section_spacing",
+        "label": "Space between sections",
+        "min": 0,
+        "max": 100,
+        "step": 4,
+        "default": 0,
+        "unit": "px"
+      }
+    ]
+  },
+  {
+    "name": "Buttons",
+    "settings": [
+      {
+        "type": "range",
+        "id": "buttons_border_radius",
+        "label": "Button border radius",
+        "min": 0,
+        "max": 40,
+        "step": 1,
+        "default": 0,
+        "unit": "px"
+      },
+      {
+        "type": "range",
+        "id": "buttons_border_width",
+        "label": "Button border width",
+        "min": 0,
+        "max": 5,
+        "step": 1,
+        "default": 1,
+        "unit": "px"
+      },
+      {
+        "type": "range",
+        "id": "variant_pills_radius",
+        "label": "Variant pill border radius",
+        "min": 0,
+        "max": 40,
+        "step": 1,
+        "default": 40,
+        "unit": "px"
+      }
+    ]
+  },
+  {
+    "name": "Inputs",
+    "settings": [
+      {
+        "type": "range",
+        "id": "inputs_border_radius",
+        "label": "Input border radius",
+        "min": 0,
+        "max": 40,
+        "step": 1,
+        "default": 0,
+        "unit": "px"
+      },
+      {
+        "type": "range",
+        "id": "inputs_border_width",
+        "label": "Input border width",
+        "min": 0,
+        "max": 5,
+        "step": 1,
+        "default": 1,
+        "unit": "px"
+      }
+    ]
+  },
+  {
+    "name": "Product cards",
+    "settings": [
+      {
+        "type": "range",
+        "id": "card_corner_radius",
+        "label": "Card corner radius",
+        "min": 0,
+        "max": 40,
+        "step": 1,
+        "default": 0,
+        "unit": "px"
+      },
+      {
+        "type": "range",
+        "id": "card_image_padding",
+        "label": "Card image padding",
+        "min": 0,
+        "max": 20,
+        "step": 1,
+        "default": 0,
+        "unit": "px"
+      },
+      {
+        "type": "select",
+        "id": "card_text_alignment",
+        "label": "Card text alignment",
+        "options": [
+          { "value": "left", "label": "Left" },
+          { "value": "center", "label": "Center" },
+          { "value": "right", "label": "Right" }
+        ],
+        "default": "left"
+      },
+      {
+        "type": "checkbox",
+        "id": "card_show_vendor",
+        "label": "Show vendor",
+        "default": false
+      },
+      {
+        "type": "checkbox",
+        "id": "card_show_secondary_image",
+        "label": "Show secondary image on hover",
+        "default": true
+      }
+    ]
+  },
+  {
+    "name": "Currency",
+    "settings": [
+      {
+        "type": "text",
+        "id": "currency_prefix",
+        "label": "Currency prefix",
+        "default": "RS."
+      }
+    ]
+  },
+  {
+    "name": "Social media",
+    "settings": [
+      {
+        "type": "text",
+        "id": "social_instagram",
+        "label": "Instagram URL"
+      },
+      {
+        "type": "text",
+        "id": "social_facebook",
+        "label": "Facebook URL"
+      },
+      {
+        "type": "text",
+        "id": "social_twitter",
+        "label": "Twitter / X URL"
+      },
+      {
+        "type": "text",
+        "id": "social_youtube",
+        "label": "YouTube URL"
+      },
+      {
+        "type": "text",
+        "id": "social_pinterest",
+        "label": "Pinterest URL"
+      },
+      {
+        "type": "text",
+        "id": "social_tiktok",
+        "label": "TikTok URL"
+      }
+    ]
+  },
+  {
+    "name": "Favicon",
+    "settings": [
+      {
+        "type": "image_picker",
+        "id": "favicon",
+        "label": "Favicon"
+      }
+    ]
+  }
+]

@@ -1,0 +1,67 @@
+{
+  "sections": {
+    "hero": {
+      "type": "hero",
+      "settings": {
+        "heading": "",
+        "button_label": "Shop now",
+        "button_style": "white",
+        "content_position": "center",
+        "full_height": true
+      }
+    },
+    "story-viewer": {
+      "type": "story-viewer",
+      "settings": {
+        "heading": "",
+        "duration": 5
+      },
+      "blocks": {}
+    },
+    "featured-collection": {
+      "type": "featured-collection",
+      "settings": {
+        "heading": "Featured Collection",
+        "products_to_show": 8,
+        "columns_desktop": 4,
+        "columns_mobile": 2,
+        "show_view_all": true
+      }
+    },
+    "collection-slider": {
+      "type": "collection-slider",
+      "settings": {
+        "heading": "Collections",
+        "auto_scroll": true,
+        "scroll_interval": 8
+      },
+      "blocks": {}
+    },
+    "featured-collection-2": {
+      "type": "featured-collection",
+      "settings": {
+        "heading": "New Arrivals",
+        "products_to_show": 8,
+        "columns_desktop": 4,
+        "columns_mobile": 2,
+        "show_view_all": true
+      }
+    },
+    "image-banner": {
+      "type": "image-banner",
+      "settings": {
+        "height": 500,
+        "content_position": "center",
+        "button_style": "white"
+      }
+    }
+  },
+  "order": [
+    "hero",
+    "story-viewer",
+    "featured-collection",
+    "collection-slider",
+    "featured-collection-2",
+    "image-banner"
+  ]
+}

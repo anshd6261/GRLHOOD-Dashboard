@@ -1,0 +1,75 @@
+{%- comment -%}
+  Renders a product card.
+
+  Accepts:
+  - product: {Object} Product Liquid object
+  - show_vendor: {Boolean} Show vendor name (default: false)
+  - show_secondary_image: {Boolean} Show secondary image on hover (default: settings)
+  - lazy_load: {Boolean} Lazy load images (default: true)
+  - columns_desktop: {Number} Desktop grid columns (default: 4)
+  - columns_mobile: {Number} Mobile grid columns (default: 2)
+{%- endcomment -%}
+
+{%- liquid
+  assign show_vendor = show_vendor | default: settings.card_show_vendor
+  assign show_secondary_image = show_secondary_image | default: settings.card_show_secondary_image
+  assign lazy_load = lazy_load | default: true
+  assign columns_desktop = columns_desktop | default: 4
+  assign columns_mobile = columns_mobile | default: 2
+-%}
+
+<div class="product-card" data-product-id="{{ product.id }}">
+  <a href="{{ product.url }}" class="product-card__link" aria-label="{{ product.title | escape }}">
+    <div class="product-card__media">
+      {%- if product.featured_media -%}
+        <img
+          class="product-card__image product-card__image--primary"
+          src="{{ product.featured_media | image_url: width: 600 }}"
+          alt="{{ product.featured_media.alt | escape }}"
+          loading="{% if lazy_load %}lazy{% else %}eager{% endif %}"
+          width="{{ product.featured_media.width }}"
+          height="{{ product.featured_media.height }}"
+          sizes="(min-width: 990px) calc({{ 100 | divided_by: columns_desktop }}vw - {{ settings.grid_horizontal_spacing }}px), (min-width: 750px) calc(50vw - {{ settings.grid_horizontal_spacing }}px), calc({{ 100 | divided_by: columns_mobile }}vw - {{ settings.grid_horizontal_spacing }}px)"
+        >
+        {%- if show_secondary_image and product.media.size > 1 -%}
+          <img
+            class="product-card__image product-card__image--secondary"
+            src="{{ product.media[1] | image_url: width: 600 }}"
+            alt="{{ product.media[1].alt | escape }}"
+            loading="lazy"
+            width="{{ product.media[1].width }}"
+            height="{{ product.media[1].height }}"
+          >
+        {%- endif -%}
+      {%- else -%}
+        <div class="product-card__placeholder">
+          {{ 'product-1' | placeholder_svg_tag: 'product-card__placeholder-svg' }}
+        </div>
+      {%- endif -%}
+
+      {%- if product.compare_at_price > product.price -%}
+        <span class="product-card__badge product-card__badge--sale">
+          {{ 'products.product.on_sale' | t }}
+        </span>
+      {%- endif -%}
+
+      {%- unless product.available -%}
+        <span class="product-card__badge product-card__badge--sold-out">
+          {{ 'products.product.sold_out' | t }}
+        </span>
+      {%- endunless -%}
+    </div>
+
+    <div class="product-card__info">
+      {%- if show_vendor -%}
+        <p class="product-card__vendor">{{ product.vendor }}</p>
+      {%- endif -%}
+
+      <h3 class="product-card__title">{{ product.title }}</h3>
+
+      <div class="product-card__price">
+        {% render 'price', product: product %}
+      </div>
+    </div>
+  </a>
+</div>

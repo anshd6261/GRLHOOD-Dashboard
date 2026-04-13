@@ -1,0 +1,35 @@
+<section class="account-page" data-section-id="{{ section.id }}">
+  <div class="account-page__inner page-width">
+    <h1 class="account-page__title">{{ 'customer.activate_account.title' | t }}</h1>
+    <p>{{ 'customer.activate_account.subtext' | t }}</p>
+
+    <div class="account-page__form-wrapper">
+      {%- form 'activate_customer_password', class: 'account-page__form' -%}
+        {%- if form.errors -%}
+          <div class="account-page__errors">{{ form.errors | default_errors }}</div>
+        {%- endif -%}
+
+        <div class="account-page__field">
+          <label for="ActivatePassword">{{ 'customer.activate_account.password' | t }}</label>
+          <input type="password" id="ActivatePassword" name="customer[password]" required class="input">
+        </div>
+
+        <div class="account-page__field">
+          <label for="ActivatePasswordConfirm">{{ 'customer.activate_account.password_confirm' | t }}</label>
+          <input type="password" id="ActivatePasswordConfirm" name="customer[password_confirmation]" required class="input">
+        </div>
+
+        <button type="submit" class="btn btn--primary">{{ 'customer.activate_account.submit' | t }}</button>
+        <a href="{{ routes.account_url }}">{{ 'customer.activate_account.cancel' | t }}</a>
+      {%- endform -%}
+    </div>
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Activate account",
+  "class": "account-page-section",
+  "settings": []
+}
+{% endschema %}

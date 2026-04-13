@@ -1,0 +1,116 @@
+/* ============================================
+   MEGA MENU - Desktop dropdown navigation
+   ============================================ */
+
+.mega-menu {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 600px;
+  background: var(--color-background);
+  border: 1px solid rgba(18, 18, 18, 0.1);
+  padding: 2.5rem;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--duration-default) ease,
+              visibility var(--duration-default) ease;
+  z-index: 100;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.header__nav-item:hover .mega-menu,
+.mega-menu[aria-hidden="false"] {
+  opacity: 1;
+  visibility: visible;
+}
+
+.mega-menu__inner {
+  display: flex;
+  gap: 3rem;
+}
+
+.mega-menu__columns {
+  display: flex;
+  gap: 3rem;
+  flex: 1;
+}
+
+.mega-menu__column {
+  min-width: 140px;
+}
+
+.mega-menu__heading {
+  font-family: var(--font-heading-family);
+  font-size: 1.2rem;
+  font-weight: var(--font-heading-weight-bold, 700);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 1rem;
+  color: var(--color-foreground);
+}
+
+.mega-menu__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.mega-menu__link {
+  display: block;
+  padding: 0.3rem 0;
+  font-size: 1.2rem;
+  color: var(--color-foreground);
+  text-decoration: none;
+  opacity: 0.7;
+  transition: opacity var(--duration-short) ease;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.mega-menu__link:hover {
+  opacity: 1;
+}
+
+.mega-menu__link--heading {
+  font-weight: var(--font-body-weight-bold, 700);
+  opacity: 1;
+  font-size: 1.3rem;
+}
+
+/* Featured images in mega menu */
+.mega-menu__featured {
+  display: flex;
+  gap: 1.5rem;
+  flex-shrink: 0;
+}
+
+.mega-menu__featured-item {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  width: 160px;
+}
+
+.mega-menu__featured-image {
+  overflow: hidden;
+  margin-bottom: 0.6rem;
+}
+
+.mega-menu__featured-image img {
+  width: 100%;
+  aspect-ratio: 3/4;
+  object-fit: cover;
+  transition: transform var(--duration-long) ease;
+}
+
+.mega-menu__featured-item:hover .mega-menu__featured-image img {
+  transform: scale(1.03);
+}
+
+.mega-menu__featured-title {
+  font-size: 1.1rem;
+  font-weight: var(--font-body-weight-bold, 700);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}

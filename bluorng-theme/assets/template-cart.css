@@ -1,0 +1,309 @@
+/* ============================================
+   CART PAGE
+   ============================================ */
+
+.cart-page {
+  padding: 2rem 0 4rem;
+}
+
+.cart-page__title {
+  margin-bottom: 2rem;
+}
+
+/* Layout */
+.cart-page__layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 3rem;
+}
+
+@media screen and (min-width: 990px) {
+  .cart-page__layout {
+    grid-template-columns: 1fr 380px;
+    gap: 4rem;
+  }
+}
+
+/* Header row */
+.cart-page__header-row {
+  display: none;
+  padding: 0 0 1rem;
+  border-bottom: 1px solid rgba(18, 18, 18, 0.1);
+  font-size: 1.1rem;
+  font-weight: var(--font-body-weight-bold, 700);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+@media screen and (min-width: 750px) {
+  .cart-page__header-row {
+    display: grid;
+    grid-template-columns: 3fr 1fr 1fr;
+    gap: 1rem;
+  }
+}
+
+.cart-page__header-quantity,
+.cart-page__header-total {
+  text-align: center;
+}
+
+/* Cart item */
+.cart-page__item {
+  display: grid;
+  grid-template-columns: 100px 1fr auto;
+  gap: 1rem;
+  padding: 1.5rem 0;
+  border-bottom: 1px solid rgba(18, 18, 18, 0.05);
+  position: relative;
+}
+
+@media screen and (min-width: 750px) {
+  .cart-page__item {
+    grid-template-columns: 100px 2fr 1fr 1fr auto;
+    gap: 1rem;
+    align-items: center;
+  }
+}
+
+.cart-page__item-image {
+  width: 100px;
+}
+
+.cart-page__item-image img {
+  width: 100%;
+  aspect-ratio: 3/4;
+  object-fit: cover;
+}
+
+.cart-page__item-details {
+  min-width: 0;
+}
+
+.cart-page__item-title {
+  font-size: 1.3rem;
+  font-weight: var(--font-body-weight-bold, 700);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--color-foreground);
+  text-decoration: none;
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+.cart-page__item-variant {
+  font-size: 1.1rem;
+  opacity: 0.6;
+  margin-bottom: 0.3rem;
+}
+
+.cart-page__item-price {
+  margin-bottom: 0.5rem;
+}
+
+.cart-page__item-price .price__amount {
+  font-size: 1.2rem;
+}
+
+/* Quantity */
+.cart-page__item-quantity--desktop {
+  display: none;
+}
+
+@media screen and (min-width: 750px) {
+  .cart-page__item-quantity--mobile {
+    display: none;
+  }
+  .cart-page__item-quantity--desktop {
+    display: flex;
+    justify-content: center;
+  }
+}
+
+.cart-page__quantity-selector {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid rgba(18, 18, 18, 0.2);
+}
+
+.cart-page__quantity-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 3.2rem;
+  height: 3.2rem;
+  font-size: 1.4rem;
+  cursor: pointer;
+  background: none;
+  border: none;
+  color: var(--color-foreground);
+}
+
+.cart-page__quantity-input {
+  width: 4rem;
+  height: 3.2rem;
+  text-align: center;
+  border: none;
+  border-left: 1px solid rgba(18, 18, 18, 0.2);
+  border-right: 1px solid rgba(18, 18, 18, 0.2);
+  font-size: 1.2rem;
+  font-family: var(--font-body-family);
+  color: var(--color-foreground);
+  outline: none;
+  background: transparent;
+  -moz-appearance: textfield;
+}
+
+.cart-page__quantity-input::-webkit-inner-spin-button,
+.cart-page__quantity-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+}
+
+/* Total */
+.cart-page__item-total {
+  display: none;
+  font-size: 1.3rem;
+  font-weight: var(--font-body-weight-bold, 700);
+  text-align: center;
+}
+
+@media screen and (min-width: 750px) {
+  .cart-page__item-total {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* Remove */
+.cart-page__item-remove {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  color: var(--color-foreground);
+  opacity: 0.4;
+  transition: opacity var(--duration-short) ease;
+  padding: 0;
+}
+
+.cart-page__item-remove:hover {
+  opacity: 1;
+}
+
+.cart-page__item-remove .icon-close {
+  width: 16px;
+  height: 16px;
+}
+
+/* Summary */
+.cart-page__summary-inner {
+  position: sticky;
+  top: 100px;
+}
+
+.cart-page__note {
+  margin-bottom: 1.5rem;
+}
+
+.cart-page__note-label {
+  display: block;
+  font-size: 1.2rem;
+  font-weight: var(--font-body-weight-bold, 700);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.5rem;
+}
+
+.cart-page__note-input {
+  width: 100%;
+  min-height: 80px;
+  padding: 0.8rem 1rem;
+  border: 1px solid rgba(18, 18, 18, 0.2);
+  font-size: 1.2rem;
+  font-family: var(--font-body-family);
+  color: var(--color-foreground);
+  outline: none;
+  resize: vertical;
+  border-radius: 0;
+  background: transparent;
+}
+
+.cart-page__totals {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(18, 18, 18, 0.1);
+}
+
+.cart-page__subtotal {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.6rem;
+  font-weight: var(--font-body-weight-bold, 700);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.cart-page__taxes-note {
+  font-size: 1.1rem;
+  opacity: 0.5;
+  margin-top: 0.5rem;
+}
+
+.cart-page__taxes-note a {
+  text-decoration: underline;
+}
+
+.cart-page__checkout {
+  width: 100%;
+  padding: 1.4rem;
+  font-size: 1.4rem;
+}
+
+.cart-page__dynamic-checkout {
+  margin-top: 0.8rem;
+}
+
+/* Empty cart */
+.cart-page__empty {
+  text-align: center;
+  padding: 4rem 0;
+}
+
+.cart-page__empty-title {
+  font-family: var(--font-heading-family);
+  font-size: calc(2rem * var(--font-heading-scale, 1));
+  font-weight: var(--font-heading-weight-bold, 700);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-bottom: 0.5rem;
+}
+
+.cart-page__empty-subtitle {
+  font-size: 1.4rem;
+  opacity: 0.6;
+  margin-bottom: 2rem;
+}
+
+/* Recommendations */
+.cart-page__recommendations {
+  padding: 3rem 0;
+  border-top: 1px solid rgba(18, 18, 18, 0.1);
+}
+
+.cart-page__recommendations-heading {
+  margin-bottom: 2rem;
+  font-size: 1.6rem;
+}
+
+.cart-page__recommendations-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--grid-vertical-spacing) var(--grid-horizontal-spacing);
+}
+
+@media screen and (max-width: 749px) {
+  .cart-page__recommendations-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

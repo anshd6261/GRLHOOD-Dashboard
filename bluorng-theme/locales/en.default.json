@@ -1,0 +1,209 @@
+{
+  "general": {
+    "breadcrumbs": {
+      "home": "Home"
+    },
+    "pagination": {
+      "label": "Pagination",
+      "previous": "Previous page",
+      "next": "Next page"
+    },
+    "slider": {
+      "previous": "Previous",
+      "next": "Next"
+    },
+    "404": {
+      "title": "Page not found",
+      "subtext": "The page you requested does not exist.",
+      "back_home": "Back to home"
+    }
+  },
+  "accessibility": {
+    "skip_to_content": "Skip to content",
+    "close": "Close"
+  },
+  "sections": {
+    "header": {
+      "menu": "Menu",
+      "search": "Search",
+      "account": "Account",
+      "login": "Log in",
+      "cart": "Cart",
+      "navigation": "Main navigation",
+      "mobile_navigation": "Mobile navigation",
+      "search_placeholder": "Search our store..."
+    },
+    "footer": {
+      "rights": "All rights reserved.",
+      "newsletter_placeholder": "Your email",
+      "subscribe": "Subscribe",
+      "newsletter_success": "Thanks for subscribing!"
+    },
+    "announcement": {
+      "label": "Announcement"
+    },
+    "featured_collection": {
+      "view_all": "View all",
+      "product_title": "Product title"
+    },
+    "stories": {
+      "viewer_label": "Stories"
+    },
+    "newsletter": {
+      "placeholder": "Enter your email",
+      "submit": "Subscribe",
+      "success": "Thanks for subscribing!"
+    }
+  },
+  "products": {
+    "product": {
+      "add_to_cart": "Add to bag",
+      "sold_out": "Sold out",
+      "on_sale": "Sale",
+      "price_from": "From",
+      "quantity": "Quantity",
+      "quantity_decrease": "Decrease quantity",
+      "quantity_increase": "Increase quantity",
+      "size_guide": "Size guide",
+      "size_guide_note": "All measurements in the chart refer to body measurements.",
+      "tax_included": "Tax included.",
+      "shipping_policy_html": "<a href=\"{{ link }}\">Shipping<\/a> calculated at checkout.",
+      "media_open": "Open media in modal",
+      "media_select": "Select media {{ index }}"
+    }
+  },
+  "collections": {
+    "general": {
+      "products": "products",
+      "no_products": "No products found. Try clearing your filters.",
+      "browse_all": "Browse all products",
+      "all_collections": "All collections"
+    },
+    "filter": {
+      "title": "Filter",
+      "apply": "Apply filters",
+      "clear_all": "Clear all",
+      "from": "From",
+      "to": "To"
+    },
+    "sorting": {
+      "title": "Sort by"
+    }
+  },
+  "cart": {
+    "general": {
+      "title": "Your bag",
+      "product": "Product",
+      "quantity": "Quantity",
+      "total": "Total",
+      "note": "Order note",
+      "note_placeholder": "Add a note to your order...",
+      "estimated_total": "Estimated total",
+      "taxes_note": "Taxes included. Discounts and shipping calculated at checkout.",
+      "shipping_policy": "Shipping policy",
+      "checkout": "Check out",
+      "empty_title": "Your bag is empty!",
+      "empty_subtitle": "Let's get started",
+      "shop_now": "Shop now",
+      "decrease": "Decrease quantity",
+      "increase": "Increase quantity",
+      "remove": "Remove {{ title }}",
+      "error": "There was an error updating your cart.",
+      "quantity_error": "You can only add [quantity] of this item to your cart.",
+      "recommendations_heading": "Products you may like"
+    }
+  },
+  "blogs": {
+    "article": {
+      "read_more": "Read more",
+      "by": "by",
+      "share": "Share"
+    },
+    "comments": {
+      "title": "Comments",
+      "name": "Name",
+      "email": "Email",
+      "message": "Message",
+      "submit": "Post comment",
+      "success": "Your comment has been posted!"
+    }
+  },
+  "search": {
+    "title": "Search",
+    "placeholder": "Search...",
+    "submit": "Search",
+    "results_count": "{{ count }} results for \"{{ terms }}\"",
+    "no_results": "No results found for \"{{ terms }}\""
+  },
+  "customer": {
+    "login": {
+      "title": "Login",
+      "email": "Email",
+      "password": "Password",
+      "sign_in": "Sign in",
+      "forgot_password": "Forgot your password?",
+      "no_account": "Don't have an account?",
+      "create_account": "Create one"
+    },
+    "register": {
+      "title": "Create account",
+      "first_name": "First name",
+      "last_name": "Last name",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Create",
+      "has_account": "Already have an account?",
+      "sign_in": "Sign in"
+    },
+    "account": {
+      "title": "My account",
+      "logout": "Log out",
+      "order_history": "Order history",
+      "no_orders": "You haven't placed any orders yet.",
+      "details": "Account details",
+      "view_addresses": "View addresses",
+      "return": "Back to account"
+    },
+    "orders": {
+      "order_number": "Order",
+      "date": "Date",
+      "payment_status": "Payment",
+      "fulfillment_status": "Fulfillment",
+      "total": "Total"
+    },
+    "order": {
+      "title": "Order {{ name }}",
+      "date_html": "Placed on {{ date }}",
+      "cancelled_on": "Order cancelled on {{ date }}.",
+      "cancelled_reason": "Reason: {{ reason }}",
+      "product": "Product",
+      "sku": "SKU",
+      "price": "Price",
+      "quantity": "Quantity",
+      "total": "Total",
+      "subtotal": "Subtotal",
+      "discount": "Discount",
+      "shipping": "Shipping",
+      "tax": "Tax",
+      "fulfilled_at_html": "Fulfilled {{ date }}",
+      "billing_address": "Billing address",
+      "shipping_address": "Shipping address",
+      "payment_status": "Payment status",
+      "fulfillment_status": "Fulfillment status"
+    },
+    "activate_account": {
+      "title": "Activate account",
+      "subtext": "Create a password to activate your account.",
+      "password": "Password",
+      "password_confirm": "Confirm password",
+      "submit": "Activate account",
+      "cancel": "Decline invitation"
+    },
+    "reset_password": {
+      "title": "Reset password",
+      "password": "New password",
+      "password_confirm": "Confirm new password",
+      "submit": "Reset password"
+    }
+  }
+}

@@ -1,0 +1,258 @@
+/* ============================================
+   STORY VIEWER - Instagram-style stories
+   ============================================ */
+
+/* Story triggers */
+.stories {
+  padding: 2rem 0;
+}
+
+.stories__heading {
+  margin-bottom: 1.5rem;
+  font-size: 1.6rem;
+}
+
+.stories__list {
+  display: flex;
+  gap: 1.2rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: 0.5rem 0;
+}
+
+.stories__list::-webkit-scrollbar {
+  display: none;
+}
+
+.stories__trigger {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.stories__trigger-image {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid var(--color-foreground);
+  padding: 2px;
+}
+
+.stories__trigger-image img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.stories__trigger-placeholder {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(18, 18, 18, 0.05);
+}
+
+.stories__trigger-title {
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  max-width: 70px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Story viewer modal */
+.story-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.35s ease, visibility 0.35s ease;
+}
+
+.story-viewer.is-active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.story-viewer__backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+}
+
+.story-viewer__container {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  height: 90vh;
+  max-height: 750px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+}
+
+@media screen and (max-width: 749px) {
+  .story-viewer__container {
+    max-width: 100%;
+    height: 100vh;
+    max-height: none;
+    border-radius: 0;
+  }
+}
+
+/* Progress bars */
+.story-viewer__progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 3px;
+  padding: 8px 8px 0;
+  z-index: 3;
+}
+
+.story-viewer__progress-segment {
+  flex: 1;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.story-viewer__progress-fill {
+  width: 0;
+  height: 100%;
+  background: #ffffff;
+  transition: width linear;
+}
+
+.story-viewer__progress-segment.is-complete .story-viewer__progress-fill {
+  width: 100%;
+}
+
+.story-viewer__progress-segment.is-active .story-viewer__progress-fill {
+  /* Width animated via JS */
+}
+
+/* Close button */
+.story-viewer__close {
+  position: absolute;
+  top: 16px;
+  right: 12px;
+  z-index: 4;
+  color: #ffffff;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* Slides */
+.story-viewer__slides {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.story-viewer__slide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.story-viewer__slide.is-active {
+  opacity: 1;
+  visibility: visible;
+}
+
+.story-viewer__media {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Content overlay */
+.story-viewer__content {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 3rem 2rem;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  color: #ffffff;
+  z-index: 2;
+  text-align: center;
+}
+
+.story-viewer__text {
+  font-size: 1.6rem;
+  font-weight: var(--font-body-weight-bold, 700);
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.story-viewer__button {
+  display: inline-flex;
+}
+
+/* Navigation */
+.story-viewer__nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  color: #ffffff;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity var(--duration-short) ease;
+}
+
+.story-viewer__nav:hover {
+  opacity: 1;
+}
+
+.story-viewer__nav--prev {
+  left: 8px;
+}
+
+.story-viewer__nav--next {
+  right: 8px;
+}
+
+@media screen and (min-width: 750px) {
+  .story-viewer__nav {
+    display: none;
+  }
+}

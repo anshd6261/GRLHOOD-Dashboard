@@ -1,0 +1,24 @@
+{%- comment -%}
+  Accepts:
+  - direction: 'left', 'right', 'up', 'down' (default: 'down')
+{%- endcomment -%}
+
+{%- liquid
+  assign direction = direction | default: 'down'
+  case direction
+    when 'left'
+      assign rotation = 'rotate(90 12 12)'
+    when 'right'
+      assign rotation = 'rotate(-90 12 12)'
+    when 'up'
+      assign rotation = 'rotate(180 12 12)'
+    else
+      assign rotation = ''
+  endcase
+-%}
+
+<svg class="icon icon-chevron icon-chevron--{{ direction }}" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
+  <g {% if rotation != '' %}transform="{{ rotation }}"{% endif %}>
+    <path d="M6 9L12 15L18 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

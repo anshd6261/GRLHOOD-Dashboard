@@ -1,0 +1,179 @@
+{{ 'template-cart.css' | asset_url | stylesheet_tag }}
+
+<section class="cart-page" data-section-id="{{ section.id }}">
+  <div class="cart-page__inner page-width">
+    <h1 class="cart-page__title">{{ 'cart.general.title' | t }}</h1>
+
+    {%- if cart.item_count > 0 -%}
+      <form action="{{ routes.cart_url }}" method="post" class="cart-page__form" data-cart-form>
+        <div class="cart-page__layout">
+          <!-- Cart items -->
+          <div class="cart-page__items">
+            <div class="cart-page__header-row">
+              <span class="cart-page__header-product">{{ 'cart.general.product' | t }}</span>
+              <span class="cart-page__header-quantity">{{ 'cart.general.quantity' | t }}</span>
+              <span class="cart-page__header-total">{{ 'cart.general.total' | t }}</span>
+            </div>
+
+            {%- for item in cart.items -%}
+              <div class="cart-page__item" data-cart-item data-line-index="{{ forloop.index }}">
+                <div class="cart-page__item-image">
+                  {%- if item.image -%}
+                    <a href="{{ item.url }}">
+                      <img
+                        src="{{ item.image | image_url: width: 200 }}"
+                        alt="{{ item.image.alt | default: item.title | escape }}"
+                        loading="lazy"
+                        width="100"
+                        height="{{ 100 | divided_by: item.image.aspect_ratio }}"
+                      >
+                    </a>
+                  {%- endif -%}
+                </div>
+
+                <div class="cart-page__item-details">
+                  <a href="{{ item.url }}" class="cart-page__item-title">{{ item.product.title }}</a>
+
+                  {%- unless item.product.has_only_default_variant -%}
+                    <p class="cart-page__item-variant">{{ item.variant.title }}</p>
+                  {%- endunless -%}
+
+                  <div class="cart-page__item-price">
+                    {% render 'price', product: item %}
+                  </div>
+
+                  <!-- Mobile quantity -->
+                  <div class="cart-page__item-quantity cart-page__item-quantity--mobile">
+                    <div class="cart-page__quantity-selector">
+                      <button type="button" class="cart-page__quantity-btn" data-quantity-change="{{ forloop.index }}" data-direction="minus" aria-label="{{ 'cart.general.decrease' | t }}">-</button>
+                      <input
+                        type="number"
+                        name="updates[]"
+                        value="{{ item.quantity }}"
+                        min="0"
+                        class="cart-page__quantity-input"
+                        data-line-quantity="{{ forloop.index }}"
+                        aria-label="{{ 'cart.general.quantity' | t }}"
+                      >
+                      <button type="button" class="cart-page__quantity-btn" data-quantity-change="{{ forloop.index }}" data-direction="plus" aria-label="{{ 'cart.general.increase' | t }}">+</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Desktop quantity -->
+                <div class="cart-page__item-quantity cart-page__item-quantity--desktop">
+                  <div class="cart-page__quantity-selector">
+                    <button type="button" class="cart-page__quantity-btn" data-quantity-change="{{ forloop.index }}" data-direction="minus" aria-label="{{ 'cart.general.decrease' | t }}">-</button>
+                    <input
+                      type="number"
+                      name="updates[]"
+                      value="{{ item.quantity }}"
+                      min="0"
+                      class="cart-page__quantity-input"
+                      data-line-quantity="{{ forloop.index }}"
+                      aria-label="{{ 'cart.general.quantity' | t }}"
+                    >
+                    <button type="button" class="cart-page__quantity-btn" data-quantity-change="{{ forloop.index }}" data-direction="plus" aria-label="{{ 'cart.general.increase' | t }}">+</button>
+                  </div>
+                </div>
+
+                <div class="cart-page__item-total">
+                  <span>{{ settings.currency_prefix }} {{ item.final_line_price | money_without_currency }}</span>
+                </div>
+
+                <button type="button" class="cart-page__item-remove" data-remove-item="{{ forloop.index }}" aria-label="{{ 'cart.general.remove' | t: title: item.title }}">
+                  {% render 'icon-close' %}
+                </button>
+              </div>
+            {%- endfor -%}
+          </div>
+
+          <!-- Cart summary -->
+          <div class="cart-page__summary">
+            <div class="cart-page__summary-inner">
+              {%- if section.settings.show_order_note -%}
+                <div class="cart-page__note">
+                  <label for="CartNote" class="cart-page__note-label">{{ 'cart.general.note' | t }}</label>
+                  <textarea id="CartNote" name="note" class="cart-page__note-input" placeholder="{{ 'cart.general.note_placeholder' | t }}">{{ cart.note }}</textarea>
+                </div>
+              {%- endif -%}
+
+              <div class="cart-page__totals">
+                <div class="cart-page__subtotal">
+                  <span>{{ 'cart.general.estimated_total' | t }}</span>
+                  <span data-cart-total>{{ settings.currency_prefix }} {{ cart.total_price | money_without_currency }}</span>
+                </div>
+                <p class="cart-page__taxes-note">
+                  {{ 'cart.general.taxes_note' | t }}
+                  <a href="{{ shop.shipping_policy.url }}">{{ 'cart.general.shipping_policy' | t }}</a>
+                </p>
+              </div>
+
+              <button type="submit" name="checkout" class="cart-page__checkout btn btn--primary">
+                {{ 'cart.general.checkout' | t }}
+              </button>
+
+              {%- if additional_checkout_buttons and section.settings.show_dynamic_checkout -%}
+                <div class="cart-page__dynamic-checkout">
+                  {{ content_for_additional_checkout_buttons }}
+                </div>
+              {%- endif -%}
+            </div>
+          </div>
+        </div>
+      </form>
+    {%- else -%}
+      <!-- Empty cart -->
+      <div class="cart-page__empty">
+        <p class="cart-page__empty-title">{{ 'cart.general.empty_title' | t }}</p>
+        <p class="cart-page__empty-subtitle">{{ 'cart.general.empty_subtitle' | t }}</p>
+        <a href="{{ routes.all_products_collection_url }}" class="btn btn--primary cart-page__empty-btn">
+          {{ 'cart.general.shop_now' | t }}
+        </a>
+      </div>
+    {%- endif -%}
+  </div>
+</section>
+
+<!-- Product recommendations below cart -->
+{%- if section.settings.show_recommendations -%}
+  <div class="cart-page__recommendations page-width">
+    <h2 class="cart-page__recommendations-heading">{{ 'cart.general.recommendations_heading' | t }}</h2>
+    <div class="cart-page__recommendations-grid">
+      {%- if recommendations.performed and recommendations.products_count > 0 -%}
+        {%- for product in recommendations.products limit: 4 -%}
+          <div class="cart-page__recommendations-item">
+            {% render 'product-card', product: product, columns_desktop: 4, columns_mobile: 2 %}
+          </div>
+        {%- endfor -%}
+      {%- endif -%}
+    </div>
+  </div>
+{%- endif -%}
+
+{% schema %}
+{
+  "name": "Cart page",
+  "class": "cart-page-section",
+  "settings": [
+    {
+      "type": "checkbox",
+      "id": "show_order_note",
+      "label": "Show order note",
+      "default": false
+    },
+    {
+      "type": "checkbox",
+      "id": "show_dynamic_checkout",
+      "label": "Show dynamic checkout buttons",
+      "default": true
+    },
+    {
+      "type": "checkbox",
+      "id": "show_recommendations",
+      "label": "Show product recommendations",
+      "default": true
+    }
+  ]
+}
+{% endschema %}

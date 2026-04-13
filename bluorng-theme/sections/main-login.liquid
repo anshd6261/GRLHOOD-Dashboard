@@ -1,0 +1,42 @@
+<section class="account-page" data-section-id="{{ section.id }}">
+  <div class="account-page__inner page-width">
+    <h1 class="account-page__title">{{ 'customer.login.title' | t }}</h1>
+
+    <div class="account-page__form-wrapper">
+      {%- form 'customer_login', class: 'account-page__form' -%}
+        {%- if form.errors -%}
+          <div class="account-page__errors">
+            {{ form.errors | default_errors }}
+          </div>
+        {%- endif -%}
+
+        <div class="account-page__field">
+          <label for="CustomerEmail">{{ 'customer.login.email' | t }}</label>
+          <input type="email" id="CustomerEmail" name="customer[email]" autocomplete="email" required class="input">
+        </div>
+
+        <div class="account-page__field">
+          <label for="CustomerPassword">{{ 'customer.login.password' | t }}</label>
+          <input type="password" id="CustomerPassword" name="customer[password]" autocomplete="current-password" required class="input">
+        </div>
+
+        <div class="account-page__actions">
+          <button type="submit" class="btn btn--primary account-page__submit">{{ 'customer.login.sign_in' | t }}</button>
+          <a href="{{ routes.account_recover_url }}" class="account-page__link">{{ 'customer.login.forgot_password' | t }}</a>
+        </div>
+      {%- endform -%}
+
+      <div class="account-page__footer">
+        <p>{{ 'customer.login.no_account' | t }} <a href="{{ routes.account_register_url }}">{{ 'customer.login.create_account' | t }}</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Customer login",
+  "class": "account-page-section",
+  "settings": []
+}
+{% endschema %}

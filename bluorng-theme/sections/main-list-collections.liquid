@@ -1,0 +1,49 @@
+<section class="list-collections" data-section-id="{{ section.id }}">
+  <div class="list-collections__inner page-width">
+    <h1 class="list-collections__title">{{ 'collections.general.all_collections' | t }}</h1>
+
+    <div class="list-collections__grid" data-columns-desktop="{{ section.settings.columns }}">
+      {%- for collection in collections -%}
+        {%- unless collection.handle == 'frontpage' -%}
+          <a href="{{ collection.url }}" class="list-collections__card">
+            <div class="list-collections__card-image">
+              {%- if collection.image -%}
+                <img
+                  src="{{ collection.image | image_url: width: 600 }}"
+                  alt="{{ collection.image.alt | default: collection.title | escape }}"
+                  loading="lazy"
+                  width="600"
+                  height="{{ 600 | divided_by: collection.image.aspect_ratio }}"
+                >
+              {%- else -%}
+                {{ 'collection-1' | placeholder_svg_tag: 'list-collections__placeholder' }}
+              {%- endif -%}
+            </div>
+            <div class="list-collections__card-info">
+              <h2 class="list-collections__card-title">{{ collection.title }}</h2>
+              <span class="list-collections__card-count">{{ collection.products_count }} {{ 'collections.general.products' | t }}</span>
+            </div>
+          </a>
+        {%- endunless -%}
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Collections list",
+  "class": "list-collections-section",
+  "settings": [
+    {
+      "type": "range",
+      "id": "columns",
+      "label": "Columns",
+      "min": 2,
+      "max": 4,
+      "step": 1,
+      "default": 3
+    }
+  ]
+}
+{% endschema %}

@@ -1,0 +1,51 @@
+<section class="account-page" data-section-id="{{ section.id }}">
+  <div class="account-page__inner page-width">
+    <h1 class="account-page__title">{{ 'customer.register.title' | t }}</h1>
+
+    <div class="account-page__form-wrapper">
+      {%- form 'create_customer', class: 'account-page__form' -%}
+        {%- if form.errors -%}
+          <div class="account-page__errors">
+            {{ form.errors | default_errors }}
+          </div>
+        {%- endif -%}
+
+        <div class="account-page__field">
+          <label for="RegisterFirstName">{{ 'customer.register.first_name' | t }}</label>
+          <input type="text" id="RegisterFirstName" name="customer[first_name]" autocomplete="given-name" class="input">
+        </div>
+
+        <div class="account-page__field">
+          <label for="RegisterLastName">{{ 'customer.register.last_name' | t }}</label>
+          <input type="text" id="RegisterLastName" name="customer[last_name]" autocomplete="family-name" class="input">
+        </div>
+
+        <div class="account-page__field">
+          <label for="RegisterEmail">{{ 'customer.register.email' | t }}</label>
+          <input type="email" id="RegisterEmail" name="customer[email]" autocomplete="email" required class="input">
+        </div>
+
+        <div class="account-page__field">
+          <label for="RegisterPassword">{{ 'customer.register.password' | t }}</label>
+          <input type="password" id="RegisterPassword" name="customer[password]" autocomplete="new-password" required class="input">
+        </div>
+
+        <div class="account-page__actions">
+          <button type="submit" class="btn btn--primary account-page__submit">{{ 'customer.register.submit' | t }}</button>
+        </div>
+      {%- endform -%}
+
+      <div class="account-page__footer">
+        <p>{{ 'customer.register.has_account' | t }} <a href="{{ routes.account_login_url }}">{{ 'customer.register.sign_in' | t }}</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Customer register",
+  "class": "account-page-section",
+  "settings": []
+}
+{% endschema %}

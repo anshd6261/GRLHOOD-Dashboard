@@ -1,0 +1,65 @@
+{%- liquid
+  assign font_body = settings.font_body
+  assign font_heading = settings.font_heading
+  assign font_body_bold = font_body | font_modify: 'weight', 'bold'
+  assign font_heading_bold = font_heading | font_modify: 'weight', 'bold'
+-%}
+
+{% style %}
+  {{ font_body | font_face: font_display: 'swap' }}
+  {{ font_body_bold | font_face: font_display: 'swap' }}
+  {{ font_heading | font_face: font_display: 'swap' }}
+  {{ font_heading_bold | font_face: font_display: 'swap' }}
+
+  :root {
+    /* Colors */
+    --color-background: {{ settings.color_background }};
+    --color-foreground: {{ settings.color_foreground }};
+    --color-button: {{ settings.color_button }};
+    --color-button-text: {{ settings.color_button_text }};
+    --color-link: {{ settings.color_link }};
+    --color-sale: {{ settings.color_sale }};
+    --color-badge-bg: {{ settings.color_badge_bg }};
+    --color-badge-text: {{ settings.color_badge_text }};
+    --color-border: {{ settings.color_border }};
+    --border-opacity: {{ settings.border_opacity | divided_by: 100.0 }};
+
+    /* Typography */
+    --font-body-family: {{ font_body.family }}, {{ font_body.fallback_families }};
+    --font-body-style: {{ font_body.style }};
+    --font-body-weight: {{ font_body.weight }};
+    --font-body-weight-bold: {{ font_body_bold.weight | default: 700 }};
+    --font-heading-family: {{ font_heading.family }}, {{ font_heading.fallback_families }};
+    --font-heading-style: {{ font_heading.style }};
+    --font-heading-weight: {{ font_heading.weight }};
+    --font-heading-weight-bold: {{ font_heading_bold.weight | default: 700 }};
+    --font-body-scale: {{ settings.body_scale | divided_by: 100.0 }};
+    --font-heading-scale: {{ settings.heading_scale | divided_by: 100.0 }};
+
+    /* Layout */
+    --page-width: {{ settings.page_width }}px;
+    --grid-horizontal-spacing: {{ settings.grid_horizontal_spacing }}px;
+    --grid-vertical-spacing: {{ settings.grid_vertical_spacing }}px;
+    --section-spacing: {{ settings.section_spacing }}px;
+
+    /* Buttons */
+    --buttons-border-radius: {{ settings.buttons_border_radius }}px;
+    --buttons-border-width: {{ settings.buttons_border_width }}px;
+    --variant-pills-radius: {{ settings.variant_pills_radius }}px;
+
+    /* Inputs */
+    --inputs-border-radius: {{ settings.inputs_border_radius }}px;
+    --inputs-border-width: {{ settings.inputs_border_width }}px;
+
+    /* Product cards */
+    --card-corner-radius: {{ settings.card_corner_radius }}px;
+    --card-image-padding: {{ settings.card_image_padding }}px;
+    --card-text-alignment: {{ settings.card_text_alignment }};
+
+    /* Durations */
+    --duration-short: 150ms;
+    --duration-default: 300ms;
+    --duration-long: 500ms;
+    --duration-extended: 800ms;
+  }
+{% endstyle %}

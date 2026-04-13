@@ -1,0 +1,139 @@
+/* ============================================
+   HERO SECTION - Full-width video/image banner
+   ============================================ */
+
+.hero {
+  position: relative;
+  overflow: hidden;
+  background: #000;
+}
+
+.hero__media {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  min-height: 400px;
+}
+
+.hero__video,
+.hero__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hero__video--external {
+  border: none;
+}
+
+.hero__placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(18, 18, 18, 0.05);
+}
+
+.hero__placeholder-svg {
+  width: 40%;
+  opacity: 0.1;
+}
+
+/* Content overlay */
+.hero__content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  padding: 3rem;
+  z-index: 2;
+  color: #ffffff;
+}
+
+@media screen and (min-width: 750px) {
+  .hero__content {
+    padding: 5rem;
+  }
+}
+
+.hero__content--center {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.hero__content--top-left {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+
+.hero__content--top-center {
+  align-items: flex-start;
+  justify-content: center;
+  text-align: center;
+}
+
+.hero__content--top-right {
+  align-items: flex-start;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.hero__content--center-left {
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.hero__content--center-right {
+  align-items: center;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.hero__content--bottom-left {
+  align-items: flex-end;
+  justify-content: flex-start;
+}
+
+.hero__content--bottom-center {
+  align-items: flex-end;
+  justify-content: center;
+  text-align: center;
+}
+
+.hero__content--bottom-right {
+  align-items: flex-end;
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.hero__content-inner {
+  max-width: 600px;
+}
+
+.hero__subheading {
+  font-size: 1.2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  opacity: 0.85;
+  margin-bottom: 0.5rem;
+}
+
+.hero__heading {
+  font-size: calc(3rem * var(--font-heading-scale, 1));
+  color: inherit;
+  margin-bottom: 1.5rem;
+  line-height: 1.1;
+}
+
+@media screen and (min-width: 750px) {
+  .hero__heading {
+    font-size: calc(5rem * var(--font-heading-scale, 1));
+  }
+}
+
+.hero__button {
+  margin-top: 0.5rem;
+}

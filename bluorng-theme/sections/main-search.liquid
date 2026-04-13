@@ -1,0 +1,75 @@
+<section class="search-page" data-section-id="{{ section.id }}">
+  <div class="search-page__inner page-width">
+    <h1 class="search-page__title">{{ 'search.title' | t }}</h1>
+
+    <form action="{{ routes.search_url }}" method="get" class="search-page__form" role="search">
+      <div class="search-page__field">
+        <input
+          type="search"
+          name="q"
+          value="{{ search.terms | escape }}"
+          class="search-page__input input"
+          placeholder="{{ 'search.placeholder' | t }}"
+          aria-label="{{ 'search.title' | t }}"
+        >
+        <input type="hidden" name="type" value="product">
+        <button type="submit" class="search-page__submit btn btn--primary">
+          {{ 'search.submit' | t }}
+        </button>
+      </div>
+    </form>
+
+    {%- if search.performed -%}
+      {%- if search.results_count > 0 -%}
+        <p class="search-page__count">
+          {{ 'search.results_count' | t: count: search.results_count, terms: search.terms }}
+        </p>
+
+        {%- paginate search.results by 24 -%}
+          <div class="search-page__grid" data-columns-desktop="4" data-columns-mobile="2">
+            {%- for item in search.results -%}
+              {%- if item.object_type == 'product' -%}
+                <div class="search-page__grid-item">
+                  {% render 'product-card', product: item, columns_desktop: 4, columns_mobile: 2 %}
+                </div>
+              {%- elsif item.object_type == 'article' -%}
+                <div class="search-page__grid-item search-page__grid-item--article">
+                  <a href="{{ item.url }}" class="search-page__article-card">
+                    {%- if item.image -%}
+                      <img src="{{ item.image | image_url: width: 400 }}" alt="{{ item.title | escape }}" loading="lazy">
+                    {%- endif -%}
+                    <h3>{{ item.title }}</h3>
+                    <p>{{ item.content | strip_html | truncatewords: 20 }}</p>
+                  </a>
+                </div>
+              {%- elsif item.object_type == 'page' -%}
+                <div class="search-page__grid-item search-page__grid-item--page">
+                  <a href="{{ item.url }}" class="search-page__page-card">
+                    <h3>{{ item.title }}</h3>
+                    <p>{{ item.content | strip_html | truncatewords: 20 }}</p>
+                  </a>
+                </div>
+              {%- endif -%}
+            {%- endfor -%}
+          </div>
+
+          {%- if paginate.pages > 1 -%}
+            {% render 'pagination', paginate: paginate %}
+          {%- endif -%}
+        {%- endpaginate -%}
+      {%- else -%}
+        <div class="search-page__empty">
+          <p>{{ 'search.no_results' | t: terms: search.terms }}</p>
+        </div>
+      {%- endif -%}
+    {%- endif -%}
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Search page",
+  "class": "search-page-section",
+  "settings": []
+}
+{% endschema %}

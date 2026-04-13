@@ -1,0 +1,123 @@
+{{ 'section-collection-slider.css' | asset_url | stylesheet_tag }}
+
+<section class="collection-slider" data-section-id="{{ section.id }}" data-auto-scroll="{{ section.settings.auto_scroll }}" data-scroll-interval="{{ section.settings.scroll_interval }}">
+  <div class="collection-slider__inner page-width">
+    {%- if section.settings.heading != blank -%}
+      <div class="collection-slider__header">
+        <h2 class="collection-slider__heading">{{ section.settings.heading }}</h2>
+      </div>
+    {%- endif -%}
+
+    <div class="collection-slider__track-wrapper">
+      <div class="collection-slider__track" data-slider-track>
+        {%- for block in section.blocks -%}
+          <div class="collection-slider__slide" {{ block.shopify_attributes }}>
+            <a href="{{ block.settings.collection.url | default: '#' }}" class="collection-slider__card">
+              <div class="collection-slider__image-wrapper">
+                {%- if block.settings.image != blank -%}
+                  <img
+                    class="collection-slider__image"
+                    src="{{ block.settings.image | image_url: width: 600 }}"
+                    alt="{{ block.settings.image.alt | default: block.settings.title | escape }}"
+                    loading="lazy"
+                    width="600"
+                    height="{{ 600 | divided_by: block.settings.image.aspect_ratio }}"
+                  >
+                {%- elsif block.settings.collection != blank and block.settings.collection.image != blank -%}
+                  <img
+                    class="collection-slider__image"
+                    src="{{ block.settings.collection.image | image_url: width: 600 }}"
+                    alt="{{ block.settings.collection.title | escape }}"
+                    loading="lazy"
+                    width="600"
+                    height="{{ 600 | divided_by: block.settings.collection.image.aspect_ratio }}"
+                  >
+                {%- else -%}
+                  <div class="collection-slider__placeholder">
+                    {{ 'collection-1' | placeholder_svg_tag: 'collection-slider__placeholder-svg' }}
+                  </div>
+                {%- endif -%}
+              </div>
+              <p class="collection-slider__title">
+                {{ block.settings.title | default: block.settings.collection.title | default: 'Collection' }}
+              </p>
+            </a>
+          </div>
+        {%- endfor -%}
+      </div>
+
+      <button class="collection-slider__arrow collection-slider__arrow--prev" aria-label="{{ 'general.slider.previous' | t }}" data-slider-prev>
+        {% render 'icon-chevron', direction: 'left' %}
+      </button>
+      <button class="collection-slider__arrow collection-slider__arrow--next" aria-label="{{ 'general.slider.next' | t }}" data-slider-next>
+        {% render 'icon-chevron', direction: 'right' %}
+      </button>
+    </div>
+  </div>
+</section>
+
+{% schema %}
+{
+  "name": "Collection slider",
+  "class": "collection-slider-section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Collections"
+    },
+    {
+      "type": "checkbox",
+      "id": "auto_scroll",
+      "label": "Auto-scroll",
+      "default": true
+    },
+    {
+      "type": "range",
+      "id": "scroll_interval",
+      "label": "Auto-scroll interval",
+      "min": 3,
+      "max": 15,
+      "step": 1,
+      "default": 8,
+      "unit": "s"
+    }
+  ],
+  "blocks": [
+    {
+      "type": "collection",
+      "name": "Collection",
+      "settings": [
+        {
+          "type": "collection",
+          "id": "collection",
+          "label": "Collection"
+        },
+        {
+          "type": "text",
+          "id": "title",
+          "label": "Title override"
+        },
+        {
+          "type": "image_picker",
+          "id": "image",
+          "label": "Image override"
+        }
+      ]
+    }
+  ],
+  "max_blocks": 12,
+  "presets": [
+    {
+      "name": "Collection slider",
+      "blocks": [
+        { "type": "collection" },
+        { "type": "collection" },
+        { "type": "collection" },
+        { "type": "collection" }
+      ]
+    }
+  ]
+}
+{% endschema %}
