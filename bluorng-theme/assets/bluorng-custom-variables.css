@@ -1,0 +1,254 @@
+/* ============================================
+   BLUORNG THEME 65 - EXACT CUSTOM CSS VARIABLES
+   Fetched from cdn.shopify.com/s/files/1/0514/9494/4962/t/65/assets/base.css
+   THIS IS THE LIVE PRODUCTION THEME
+   ============================================ */
+
+:root {
+  /* === BLUORNG CUSTOM DESIGN TOKENS === */
+  --bg: #efefef;
+  --secondary-bg: #ffffff;
+  --header-scroll-text: #000000;
+  --normal-text: #000000;
+  --normal-header-svg: #717171;
+  --header-scroll-svg: #adadad;
+  --col-bg: #efefef;
+  --secondary-text: #ffffff;
+  --card-price: #000000;
+  --special-text: #000000;
+  --discover-btn: #ffffff;
+  --discover-text: #000000;
+  --search-input: #ececec;
+  --gradient-bg: transparent linear-gradient(180deg, #ffffff, #efefef);
+  --card-bg: #ffffff;
+  --footer-gradient-bg: transparent linear-gradient(180deg, #FFFFFF 0%, #EFEFEF 100%);
+  --pdp-variant: #f7f7f7;
+  --pdp-border: #dbdbdb;
+  --disable-variant-pill: #d9d9d9;
+  --variant-pill-border: #dcdcdc;
+  --variant-pill: #ffffff;
+  --selected-variant-pill: #1c1c1c;
+  --selected-variant-color: #ffffff;
+  --buy-button: #000000;
+  --safe-area-bg: transparent;
+  --color-swatch: #ffffff;
+  --wishlist-login-btn: #a8a8a8;
+  --wishlist-sticky-bg: #cfcfcf;
+  --careers-card-bg: #f6f6f6;
+  --career-card-btn: #000000;
+  --faq-acc: #fafafa;
+  --footer-svg: #2d2d2d;
+  --filter-btn: #e3e3e3;
+  --border: #bdbdbd;
+  --whishlist-btn: #000000;
+  --sizechart-border: #e8e8e8;
+  --selection: rgba(184, 173, 173, .5);
+
+  /* === SHOPIFY STANDARD TOKENS === */
+  --alpha-button-background: 1;
+  --alpha-button-border: 1;
+  --alpha-link: .85;
+  --alpha-badge-border: .1;
+
+  /* === EXACT DURATION VALUES === */
+  --duration-short: .1s;
+  --duration-default: .2s;
+  --duration-announcement-bar: .25s;
+  --duration-medium: .3s;
+  --duration-long: .5s;
+  --duration-extra-long: .6s;
+  --duration-extra-longer: .75s;
+  --duration-extended: 3s;
+
+  /* === EASING === */
+  --ease-out-slow: cubic-bezier(0, 0, .3, 1);
+}
+
+/* === HEADER - Exact from theme 65 base.css === */
+.header {
+  display: grid;
+  grid-template-areas: "left-icons heading icons";
+  grid-template-columns: 1fr 2fr 1fr;
+  align-items: center;
+}
+
+.header__heading {
+  margin: 0;
+  line-height: 0;
+  grid-area: heading;
+  justify-self: center;
+}
+
+.header__heading-link {
+  grid-area: heading;
+  justify-self: center;
+  display: inline-block;
+  padding: .75rem;
+  text-decoration: none;
+  word-break: break-word;
+  line-height: 0;
+}
+
+.header__heading-link .h2 {
+  line-height: 1;
+  color: rgba(var(--color-foreground), .75);
+}
+
+.header__heading-logo {
+  height: auto;
+  max-width: 100%;
+}
+
+.header__icons {
+  display: flex;
+  grid-area: icons;
+  justify-self: end;
+  padding-right: .8rem;
+}
+
+.header__icon {
+  color: rgb(var(--color-foreground));
+  height: 4.4rem;
+  width: 4.4rem;
+  padding: 0;
+}
+
+.header__icon .icon {
+  height: 2rem;
+  width: 2rem;
+  fill: none;
+  vertical-align: middle;
+}
+
+.header__menu {
+  padding: 0 1rem;
+}
+
+.header__menu-item {
+  padding: 1.2rem;
+  text-decoration: none;
+  color: rgba(var(--color-foreground), .75);
+}
+
+.header__submenu {
+  transition: opacity var(--duration-default) ease,
+              transform var(--duration-default) ease;
+}
+
+.header__submenu.list-menu {
+  padding: 1rem 0;
+}
+
+.header__search {
+  display: inline-flex;
+  line-height: 0;
+}
+
+/* === CUSTOM DOCUMENT/POLICY SECTIONS === */
+.cstm_doc-section {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 100%;
+  padding: 7vw 3vw;
+  background-color: #fff;
+  font-family: nits-UIText-Regular;
+}
+
+.cstm_doc-section h1 {
+  font-size: 1vw;
+  font-weight: 600;
+  padding-bottom: 2vw;
+  text-align: center;
+  width: 100%;
+}
+
+.cstm_doc-section h2 {
+  font-size: .75vw;
+  padding-top: 1vw;
+  padding-bottom: 1vw;
+  width: 100%;
+}
+
+.cstm_doc-section h3 {
+  font-size: .75vw;
+  font-weight: 600;
+  padding-top: .2vw;
+  padding-bottom: .5vw;
+  width: 100%;
+}
+
+.cstm_doc-section p {
+  font-size: .7vw;
+  font-weight: 400;
+  color: #111;
+  padding-bottom: .1vw;
+  width: 100%;
+  text-align: justify;
+}
+
+.cstm_doc-section ul {
+  display: flex;
+  flex-direction: column;
+  gap: .2vw;
+  list-style-position: inside;
+  padding-left: 1vw;
+  padding-bottom: .3vw;
+  width: 100%;
+}
+
+.cstm_doc-section li {
+  font-size: .7vw;
+  font-weight: 400;
+  width: 100%;
+}
+
+.cust-new-policy {
+  max-width: 100%;
+  margin: 0;
+  padding: 5vw 1.5vw;
+}
+
+.rte .cust-new-policy h1.cust-policy-head {
+  text-align: center;
+  font-size: 1vw;
+  padding-block: 1vw;
+}
+
+.rte .cust-new-policy h1 {
+  font-size: .8vw;
+  font-weight: 600;
+}
+
+.rte .cust-new-policy * {
+  font-size: .7vw;
+  font-family: nits-UIText-Regular;
+  color: #000;
+  padding-block: .25vw;
+}
+
+.rte .cust-new-policy p {
+  padding-block: .5vw;
+}
+
+.rte .cust-new-policy li {
+  list-style-position: outside;
+}
+
+.rte .cust-new-policy li > ul {
+  list-style: disc;
+}
+
+/* === SIZE GUIDE === */
+.size-cap-guide {
+  font-size: .65vw;
+  line-height: 1;
+  padding-block: 1.5vw;
+  padding-inline: .75vw;
+}
+
+.size-cap-guide strong {
+  font-family: nits-UIText-Regular;
+  padding-block: .35vw;
+  font-size: .7vw;
+}

@@ -104,18 +104,58 @@
     --drawer-shadow-blur-radius: 12px;
     --drawer-shadow-opacity: .12;
 
-    /* Exact duration values from bluorng theme */
+    /* Exact duration values from bluorng live theme (t/65) */
     --duration-short: .1s;
     --duration-default: .2s;
     --duration-announcement-bar: .25s;
     --duration-medium: .3s;
     --duration-long: .5s;
-    --duration-extra-long: .7s;
+    --duration-extra-long: .6s;
+    --duration-extra-longer: .75s;
     --duration-extended: 3s;
 
-    /* Easing */
-    --ease-out-slow: cubic-bezier(0, 0, 0, 1);
+    /* Easing - exact from theme 65 */
+    --ease-out-slow: cubic-bezier(0, 0, .3, 1);
     --animation-fade-in: fadeIn var(--duration-extra-long) var(--ease-out-slow);
+
+    /* === BLUORNG CUSTOM DESIGN TOKENS (from live theme 65) === */
+    --bg: #efefef;
+    --secondary-bg: #ffffff;
+    --header-scroll-text: #000000;
+    --normal-text: #000000;
+    --normal-header-svg: #717171;
+    --header-scroll-svg: #adadad;
+    --col-bg: #efefef;
+    --secondary-text: #ffffff;
+    --card-price: #000000;
+    --special-text: #000000;
+    --discover-btn: #ffffff;
+    --discover-text: #000000;
+    --search-input: #ececec;
+    --gradient-bg: transparent linear-gradient(180deg, #ffffff, #efefef);
+    --card-bg: #ffffff;
+    --footer-gradient-bg: transparent linear-gradient(180deg, #FFFFFF 0%, #EFEFEF 100%);
+    --pdp-variant: #f7f7f7;
+    --pdp-border: #dbdbdb;
+    --disable-variant-pill: #d9d9d9;
+    --variant-pill-border: #dcdcdc;
+    --variant-pill: #ffffff;
+    --selected-variant-pill: #1c1c1c;
+    --selected-variant-color: #ffffff;
+    --buy-button: #000000;
+    --safe-area-bg: transparent;
+    --color-swatch: #ffffff;
+    --wishlist-login-btn: #a8a8a8;
+    --wishlist-sticky-bg: #cfcfcf;
+    --careers-card-bg: #f6f6f6;
+    --career-card-btn: #000000;
+    --faq-acc: #fafafa;
+    --footer-svg: #2d2d2d;
+    --filter-btn: #e3e3e3;
+    --border: #bdbdbd;
+    --whishlist-btn: #000000;
+    --sizechart-border: #e8e8e8;
+    --selection: rgba(184, 173, 173, .5);
   }
 
   @media screen and (max-width: 749px) {
