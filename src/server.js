@@ -482,14 +482,16 @@ app.post('/api/nbe/upload-order', async (req, res) => {
         console.log(`[NBE] Step 2 done: CSV uploaded to storage`);
 
         // Step 3: Finalize — register the uploaded file as a raw order
-        const finalizeRes = await axios.post(`${nbeBase}/raw-order-files/finalize/`, {
+        const finalizePayload = {
             key,
             description: `${getFormattedDate()} Order`,
             order_type: 'Dropship POD',
-            partial_fulfillment: 'no',
-            providing_shipping_label: 'no',
+            partial_fulfillment: false,
+            providing_shipping_label: false,
             is_urgent_order: false,
-        }, { headers: nbeHeaders, timeout: 30000 });
+        };
+        console.log('[NBE] Finalize payload:', JSON.stringify(finalizePayload));
+        const finalizeRes = await axios.post(`${nbeBase}/raw-order-files/finalize/`, finalizePayload, { headers: nbeHeaders, timeout: 30000 });
 
         console.log(`[NBE] Step 3 done: finalized`, finalizeRes.data);
 

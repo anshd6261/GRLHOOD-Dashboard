@@ -616,10 +616,16 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       }
       setApproveResult(r.data);
       setApproveProgress({ done: (r.data.approved || 0) + (r.data.alreadyApproved || 0), total: uniqueIds.length });
-      const msg = r.data.approved > 0 ? `${r.data.approved} approved` : r.data.alreadyApproved > 0 ? `${r.data.alreadyApproved} already approved` : 'Approve complete';
-      setToast({ msg });
+      const okCount = (r.data.approved || 0) + (r.data.alreadyApproved || 0);
+      const failCount = (r.data.failed || 0) + (r.data.notFound || 0);
+      const msg = failCount > 0
+        ? `${okCount}/${uniqueIds.length} approved · ${failCount} issue${failCount>1?'s':''}`
+        : r.data.approved > 0 ? `${r.data.approved} approved`
+        : r.data.alreadyApproved > 0 ? `${r.data.alreadyApproved} already approved`
+        : 'Approve complete';
+      setToast({ msg, err: failCount > 0 });
       // Log action
-      logAction('approve', { approved: r.data.approved, alreadyApproved: r.data.alreadyApproved, orders: uniqueIds.length });
+      logAction('approve', { approved: r.data.approved, alreadyApproved: r.data.alreadyApproved, failed: r.data.failed, notFound: r.data.notFound, orders: uniqueIds.length });
     } catch (e) {
       // If timeout or network error but approve may have partially worked, show warning not error
       const errMsg = e.response?.data?.error || e.message;
@@ -683,6 +689,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
                 {approveResult.approved > 0 && approveResult.alreadyApproved > 0 && ' · '}
                 {approveResult.alreadyApproved > 0 && `${approveResult.alreadyApproved} already approved`}
                 {approveResult.notFound > 0 && <span className="text-amber-400"> · {approveResult.notFound} not in RS</span>}
+                {approveResult.failed > 0 && <span className="text-[#ff1493]"> · {approveResult.failed} failed</span>}
               </span></>
             )}
           </div>
