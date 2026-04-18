@@ -171,39 +171,51 @@ const fetchAllOrders = async () => {
 
     const orderMap = new Map();
     const PAGE_SIZE = 200;
-    let page = 1;
-    let totalFetched = 0;
+    const statusBuckets = [null, 'APPROVED', 'NEW', 'READY_TO_SHIP', 'MANIFESTED', 'IN_TRANSIT'];
+    const seenStatuses = new Set();
+    let totalUniqueOrders = 0;
+    const addedOrderIds = new Set();
+
+    const fetchBucket = async (status) => {
+        let page = 1;
+        let bucketTotal = 0;
+        try {
+            while (true) {
+                const body = { page, limit: PAGE_SIZE };
+                if (status) body.status = status;
+                const res = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, body, { headers: sessionHeaders, timeout: 15000 });
+                const records = res.data?.records || [];
+                for (const r of records) {
+                    if (r.order_status) seenStatuses.add(r.order_status);
+                    const uniqueKey = r.order_id || r.seller_order_id;
+                    if (uniqueKey && !addedOrderIds.has(uniqueKey)) {
+                        addedOrderIds.add(uniqueKey);
+                        totalUniqueOrders++;
+                    }
+                    if (r.seller_order_id) {
+                        const clean = r.seller_order_id.replace('#', '');
+                        orderMap.set(clean, r);
+                        orderMap.set(r.seller_order_id, r);
+                    }
+                    if (r.awb_number) orderMap.set(r.awb_number, r);
+                    if (r.order_id) orderMap.set(r.order_id, r);
+                }
+                bucketTotal += records.length;
+                if (records.length < PAGE_SIZE) break;
+                page++;
+                await new Promise(r => setTimeout(r, 50));
+            }
+            console.log(`[RAPIDSHYP] Bucket status=${status || 'DEFAULT'}: ${bucketTotal} records`);
+        } catch (e) {
+            console.warn(`[RAPIDSHYP] Bucket status=${status || 'DEFAULT'} failed:`, e.response?.status || e.message);
+        }
+    };
 
     try {
-        while (true) {
-            const res = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, {
-                page, limit: PAGE_SIZE
-            }, { headers: sessionHeaders, timeout: 15000 });
-
-            const records = res.data?.records || [];
-            const totalRecords = res.data?.total_records || 0;
-
-            for (const r of records) {
-                if (r.seller_order_id) {
-                    const clean = r.seller_order_id.replace('#', '');
-                    orderMap.set(clean, r);
-                    orderMap.set(r.seller_order_id, r);
-                }
-                if (r.awb_number) {
-                    orderMap.set(r.awb_number, r);
-                }
-                if (r.order_id) {
-                    orderMap.set(r.order_id, r);
-                }
-            }
-
-            totalFetched += records.length;
-            if (records.length < PAGE_SIZE || totalFetched >= totalRecords) break;
-            page++;
-            await new Promise(r => setTimeout(r, 50));
+        for (const status of statusBuckets) {
+            await fetchBucket(status);
         }
-
-        console.log(`[RAPIDSHYP] Order map built: ${orderMap.size} entries from ${totalFetched} orders (${page} pages)`);
+        console.log(`[RAPIDSHYP] Order map built: ${totalUniqueOrders} unique orders, ${orderMap.size} map entries. Statuses seen: ${[...seenStatuses].join(',')}`);
         _orderMapCache = orderMap;
         _orderMapTimestamp = Date.now();
         return orderMap;
