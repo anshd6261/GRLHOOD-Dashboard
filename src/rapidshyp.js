@@ -718,7 +718,8 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
         shipmentMap,
         approved,
         alreadyApproved,
-        failed
+        failed,
+        _debugRawBatchResponse: data  // One-time diagnostic: remove after confirming RS behavior
     };
 };
 
