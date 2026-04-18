@@ -105,18 +105,27 @@ export default function ShipOrdersModal({ orders, onClose, onSuccess }) {
       await sleep(250);
       markComplete(2);
 
-      // Step 3: Assign Courier per-order — pass cached shipmentMap so already-approved orders reuse their shipment_ids
+      // Step 3: Assign Courier — resolve shipment_ids first, then assign per-order
       setCurrentStep(3);
       const shipmentMap = JSON.parse(localStorage.getItem('shipmentMap') || '{}');
-      const allAssignResults = [];
-      for (const orderId of uniqueOrderIds) {
+      const cleanOrderIds = uniqueOrderIds.map(id => id.toString().replace('#', ''));
+      const missingIds = cleanOrderIds.filter(id => !shipmentMap[id]);
+      if (missingIds.length > 0) {
         try {
-          const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, { orderIds: [orderId.toString().replace('#', '')], shipmentMap });
+          const resolveRes = await axios.post(`${API_URL}/rapidshyp/resolve-shipments`, { orderIds: missingIds });
+          Object.assign(shipmentMap, resolveRes.data?.shipmentMap || {});
+          localStorage.setItem('shipmentMap', JSON.stringify(shipmentMap));
+        } catch {}
+      }
+      const allAssignResults = [];
+      for (const cleanId of cleanOrderIds) {
+        try {
+          const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, { orderIds: [cleanId], shipmentMap });
           const results = r.data?.results || [];
           allAssignResults.push(...results);
           results.forEach(rr => { if (rr.shipmentId) shipmentMap[rr.orderId] = rr.shipmentId; });
         } catch (e) {
-          allAssignResults.push({ orderId: orderId.toString().replace('#', ''), success: false, message: e.response?.data?.error || e.message });
+          allAssignResults.push({ orderId: cleanId, success: false, message: e.response?.data?.error || e.message });
         }
       }
       localStorage.setItem('shipmentMap', JSON.stringify(shipmentMap));

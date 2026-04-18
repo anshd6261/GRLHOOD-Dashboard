@@ -867,6 +867,39 @@ app.post('/api/rapidshyp/assign-batch', async (req, res) => {
     }
 });
 
+// Resolve shipment_ids for a list of order IDs via session API (one call, returns map)
+app.post('/api/rapidshyp/resolve-shipments', async (req, res) => {
+    try {
+        const { orderIds } = req.body;
+        if (!orderIds?.length) return res.status(400).json({ error: 'No orderIds' });
+
+        const cleanIds = orderIds.map(id => id.toString().replace('#', ''));
+        console.log(`[API] Resolving shipment_ids for ${cleanIds.length} orders via session API...`);
+
+        const orderMap = await rapidshyp.fetchAllOrders();
+        const shipmentMap = {};
+        let found = 0;
+
+        for (const cleanId of cleanIds) {
+            const record = orderMap.get(cleanId) || orderMap.get(`#${cleanId}`);
+            if (record) {
+                const shipment = record.shipments?.[0] || {};
+                const sid = shipment.shipment_id || record.shipment_id;
+                if (sid) {
+                    shipmentMap[cleanId] = sid;
+                    found++;
+                }
+            }
+        }
+
+        console.log(`[API] Resolved ${found}/${cleanIds.length} shipment_ids`);
+        res.json({ shipmentMap, found, total: cleanIds.length });
+    } catch (e) {
+        console.error('[API] Resolve shipments error:', e.message);
+        res.status(500).json({ error: e.message, shipmentMap: {} });
+    }
+});
+
 // Debug: dump raw session API record fields for an order
 app.get('/api/rapidshyp/debug-order/:orderId', async (req, res) => {
     try {

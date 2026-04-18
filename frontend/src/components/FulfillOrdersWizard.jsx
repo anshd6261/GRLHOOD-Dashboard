@@ -644,12 +644,27 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
 
   useEffect(() => { if ((step === 4 || step === 5) && !approveResult && !approveLoading) handleApprove(); }, [step]);
 
-  // ═══ SHIP: Per-order assign for reliability (no batching) ═══
+  // ═══ SHIP: Resolve all shipment_ids first, then assign AWB per-order ═══
   const handleShip = async () => {
     setShipLoading(true);
     const sm = { ...JSON.parse(localStorage.getItem('shipmentMap') || '{}'), ...(approveResult?.shipmentMap || {}) };
-    const allResults = [];
 
+    // Step 1: Resolve any missing shipment_ids via session API (one bulk call)
+    const missingIds = uniqueIds.filter(id => !sm[id]);
+    if (missingIds.length > 0) {
+      setShipProgress({ done: 0, total: uniqueIds.length, status: `Resolving ${missingIds.length} shipment IDs...` });
+      try {
+        const resolveRes = await axios.post(`${API_URL}/rapidshyp/resolve-shipments`, { orderIds: missingIds });
+        Object.assign(sm, resolveRes.data?.shipmentMap || {});
+        localStorage.setItem('shipmentMap', JSON.stringify(sm));
+        console.log(`[SHIP] Resolved ${resolveRes.data?.found || 0}/${missingIds.length} shipment IDs from session API`);
+      } catch (e) {
+        console.warn('[SHIP] Resolve failed, continuing with what we have:', e.message);
+      }
+    }
+
+    // Step 2: Assign AWB per-order
+    const allResults = [];
     setShipProgress({ done: 0, total: uniqueIds.length, status: 'Assigning AWBs...' });
 
     for (let i = 0; i < uniqueIds.length; i++) {
