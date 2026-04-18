@@ -22,16 +22,16 @@ const path = require('path');
 const SENSE_URL = 'https://sense.shiprocket.in/v3/rto/predict';
 const API_KEY = (process.env.SHIPROCKET_SENSE_API_KEY || '').trim();
 const API_SECRET = (process.env.SHIPROCKET_SENSE_API_SECRET || '').trim();
-const CONCURRENCY = 2;
+const CONCURRENCY = 3;
 const PER_REQUEST_TIMEOUT = 60000;
 const CACHE_FILE = '/tmp/rto_cache.json';
 const REPO_CACHE_FILE = path.join(__dirname, '..', 'data', 'rto_cache.json');
 
 // --- In-memory cache ---
 const rtoCache = new Map();
-// Permanent set of order IDs that have EVER been sent to Sense API.
-// Once an order is in this set, it will NEVER be re-checked — even if the
-// result was 'unknown' or an error.  This prevents double-billing.
+// Set of order IDs with SUCCESSFUL Sense API results (risk !== 'unknown').
+// Orders in this set are never re-checked — prevents double-billing.
+// Failed/unknown orders are NOT added, so they get retried on next sync.
 const checkedOrderIds = new Set();
 const CHECKED_IDS_FILE = '/tmp/rto_checked_ids.json';
 let cacheLoaded = false;
@@ -54,10 +54,9 @@ function loadCache() {
                 const risk = v.risk || (v.aiRiskLevel ? v.aiRiskLevel.toLowerCase() : null);
                 if (risk && risk !== 'unknown') {
                     rtoCache.set(k, v);
+                    checkedOrderIds.add(k); // Only mark successful results as checked
                     loaded++;
                 }
-                // Every cached entry = already checked, never re-call
-                checkedOrderIds.add(k);
             }
             console.log(`[SENSE] Loaded ${loaded} cached RTO results from /tmp.`);
         }
@@ -75,9 +74,9 @@ function loadCache() {
                     const risk = v.risk || (v.aiRiskLevel ? v.aiRiskLevel.toLowerCase() : null);
                     if (risk && risk !== 'unknown') {
                         rtoCache.set(k, v);
+                        checkedOrderIds.add(k); // Only mark successful results as checked
                         repoLoaded++;
                     }
-                    checkedOrderIds.add(k);
                 }
                 if (repoLoaded > 0) {
                     console.log(`[SENSE] Loaded ${repoLoaded} cached RTO results from repo backup.`);
@@ -89,12 +88,19 @@ function loadCache() {
         }
     }
 
-    // Load checked-order-IDs set (prevents double-billing)
+    // Load checked-order-IDs set — only keep IDs that have a successful cached result
     try {
         if (fs.existsSync(CHECKED_IDS_FILE)) {
             const ids = JSON.parse(fs.readFileSync(CHECKED_IDS_FILE, 'utf8'));
-            for (const id of ids) checkedOrderIds.add(id);
-            console.log(`[SENSE] Loaded ${checkedOrderIds.size} checked order IDs from /tmp.`);
+            let restored = 0;
+            for (const id of ids) {
+                const cached = rtoCache.get(id);
+                if (cached && cached.risk && cached.risk !== 'unknown') {
+                    checkedOrderIds.add(id);
+                    restored++;
+                }
+            }
+            console.log(`[SENSE] Restored ${restored} checked order IDs (${ids.length - restored} unknown/failed IDs cleared for retry).`);
         }
     } catch (e) {
         console.warn('[SENSE] Checked IDs load failed (non-fatal):', e.message);
@@ -127,15 +133,16 @@ function saveCache() {
 
 // --- Payment detection ---
 function detectPayment(order) {
+    const tags = (order.tags || []).map(t => t.toLowerCase());
+    if (tags.includes('prepaid')) return 'Prepaid';
+    if (tags.includes('cod')) return 'Cash on Delivery';
+
     const gateways = (order.paymentGatewayNames || []).join(' ').toLowerCase();
-    if (gateways.includes('cash on delivery') || gateways.includes('manual') || gateways.includes('cod')) {
-        return 'Cash on Delivery';
-    }
     if (gateways.includes('razorpay') || gateways.includes('paytm') || gateways.includes('stripe') ||
         gateways.includes('paypal') || gateways.includes('phonepe') || gateways.includes('upi')) {
         return 'Prepaid';
     }
-    if ((order.displayFinancialStatus || '') === 'PENDING') return 'Cash on Delivery';
+    if ((order.displayFinancialStatus || '') === 'PAID') return 'Prepaid';
     return 'Cash on Delivery';
 }
 
@@ -372,11 +379,14 @@ async function batchPredictRisk(shopifyOrders) {
 
     if (pendingOrders.length > 0) {
         const tasks = pendingOrders.map(({ order, orderId }) => async () => {
-            // Mark as checked BEFORE the call — even if it fails, never retry
-            checkedOrderIds.add(orderId);
             const result = await predictSingleOrder(order, authHeader);
             results[orderId] = result;
-            rtoCache.set(orderId, result); // Cache ALL results, even unknown
+            // Only mark as checked + cache if we got a REAL result (not unknown/failed)
+            // This allows failed orders to be retried on next sync without double-billing
+            if (result.risk && result.risk !== 'unknown') {
+                checkedOrderIds.add(orderId);
+                rtoCache.set(orderId, result);
+            }
         });
 
         try {
@@ -473,16 +483,19 @@ function exportCache() {
 /**
  * Mark order IDs as already checked — prevents double-billing.
  * Called from frontend warm endpoint with IDs from localStorage.
+ * Only marks IDs that have a successful cached result (risk !== 'unknown').
  */
 function markChecked(ids) {
     loadCache();
     let added = 0;
     for (const id of ids) {
-        const normalized = id.startsWith('#') ? id : `#${id}`;
-        if (!checkedOrderIds.has(normalized)) {
-            checkedOrderIds.add(normalized);
-            checkedOrderIds.add(id); // Keep both forms
-            added++;
+        const cached = rtoCache.get(id);
+        // Only mark as checked if we have a real result — allows retries for failed orders
+        if (cached && cached.risk && cached.risk !== 'unknown') {
+            if (!checkedOrderIds.has(id)) {
+                checkedOrderIds.add(id);
+                added++;
+            }
         }
     }
     if (added > 0) {

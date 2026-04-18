@@ -485,13 +485,16 @@ app.post('/api/nbe/upload-order', async (req, res) => {
         console.log(`[NBE] Step 2 done: CSV uploaded to storage`);
 
         // Step 3: Finalize — register the uploaded file as a raw order
-        const finalizeRes = await axios.post(`${nbeBase}/raw-order-files/finalize/`, {
+        const finalizePayload = {
             key,
             description: `${getFormattedDate()} Order`,
-            order_type: 'Bulkship POD',
-            partial_fulfillment: 'yes',
+            order_type: 'Dropship POD',
+            partial_fulfillment: 'no',
+            providing_shipping_label: 'yes',
             is_urgent_order: false,
-        }, { headers: nbeHeaders, timeout: 30000 });
+        };
+        console.log('[NBE] Finalize payload:', JSON.stringify(finalizePayload));
+        const finalizeRes = await axios.post(`${nbeBase}/raw-order-files/finalize/`, finalizePayload, { headers: nbeHeaders, timeout: 30000 });
 
         console.log(`[NBE] Step 3 done: finalized`, finalizeRes.data);
 
@@ -769,25 +772,98 @@ app.get('/api/proxy-pdf', async (req, res) => {
 // ==========================================
 
 // Bulk Approve Orders (before AWB assignment)
-app.post('/api/rapidshyp/bulk-approve', async (req, res) => {
+// Debug: Test approve with raw response capture
+app.post('/api/rapidshyp/debug-approve', async (req, res) => {
     try {
-        const { orderIds, orderIdMap } = req.body;
-        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
-            return res.status(400).json({ error: 'Missing or invalid orderIds array' });
-        }
+        const { marketplaceIds } = req.body; // Array of marketplace IDs to test
+        if (!marketplaceIds?.length) return res.status(400).json({ error: 'Send { marketplaceIds: ["123",...] }' });
+        const axios = require('axios');
+        const apiKey = (process.env.RAPIDSHYP_API_KEY || '').trim();
+        const headers = { 'Content-Type': 'application/json', 'rapidshyp-token': apiKey };
+        const r = await axios.post('https://api.rapidshyp.com/rapidshyp/apis/v1/approve_orders', {
+            order_id: marketplaceIds.slice(0, 5), // Max 5 for debug
+            store_name: 'GRLHOOD'
+        }, { headers, timeout: 30000 });
+        res.json({ status: r.status, data: r.data });
+    } catch (e) {
+        res.json({ error: e.message, status: e.response?.status, data: e.response?.data });
+    }
+});
 
-        console.log(`[API] Bulk approving ${orderIds.length} orders (${Object.keys(orderIdMap || {}).length} marketplace IDs)...`);
-        if (orderIdMap) {
-            const sample = Object.entries(orderIdMap).slice(0, 3);
-            console.log(`[API] orderIdMap sample:`, JSON.stringify(sample));
-        } else {
-            console.log(`[API] WARNING: orderIdMap is empty/missing!`);
+// Debug: Check RapidShyp session status for orders
+app.get('/api/rapidshyp/debug-session', async (req, res) => {
+    try {
+        const sessionHeaders = rapidshyp.getSessionHeaders();
+        if (!sessionHeaders) return res.json({ error: 'No JWT configured' });
+        const axios = require('axios');
+        const allOrders = [];
+        for (let page = 1; page <= 3; page++) {
+            const r = await axios.post('https://api.rapidshyp.com/session/orders/get_orders',
+                { page, limit: 200 }, { headers: sessionHeaders, timeout: 10000 });
+            const records = r.data?.records || [];
+            allOrders.push(...records);
+            if (records.length < 200) break;
         }
-        const result = await rapidshyp.bulkApproveOrders(orderIds, orderIdMap || {});
+        const statusCounts = {};
+        for (const r of allOrders) {
+            const st = r.order_status || 'UNKNOWN';
+            statusCounts[st] = (statusCounts[st] || 0) + 1;
+        }
+        const sample = allOrders.slice(0, 5).map(r => ({
+            seller_order_id: r.seller_order_id,
+            market_place_order_id: r.market_place_order_id,
+            order_status: r.order_status,
+            awb_number: r.awb_number
+        }));
+        res.json({ total: allOrders.length, statusCounts, sample });
+    } catch (e) {
+        res.status(500).json({ error: e.message, status: e.response?.status });
+    }
+});
+
+// Approve a batch of up to 50 orders — frontend calls this in a loop for realtime progress
+app.post('/api/rapidshyp/approve-batch', async (req, res) => {
+    try {
+        const { orderIds } = req.body;
+        if (!orderIds?.length) return res.status(400).json({ error: 'No orderIds' });
+
+        const cleanIds = orderIds.map(id => id.toString().replace('#', ''));
+        console.log(`[API] Approve batch: ${cleanIds.length} orders, sample: ${cleanIds.slice(0, 3)}`);
+        const result = await rapidshyp.approveBatch(cleanIds);
         res.json(result);
     } catch (e) {
-        console.error('[API] Bulk Approve Error:', e);
-        res.status(500).json({ success: false, error: e.message });
+        console.error('[API] Approve Batch Error:', e.response?.data || e.message);
+        res.status(500).json({ error: e.response?.data?.remarks || e.message });
+    }
+});
+
+// Assign AWB for a batch of orders — frontend calls this in a loop
+app.post('/api/rapidshyp/assign-batch', async (req, res) => {
+    try {
+        const { orderIds, shipmentMap } = req.body;
+        if (!orderIds?.length) return res.status(400).json({ error: 'No orderIds' });
+
+        const cleanIds = orderIds.map(id => id.toString().replace('#', ''));
+        console.log(`[API] Assign batch: ${cleanIds.length} orders`);
+        const result = await rapidshyp.assignBatch(cleanIds, shipmentMap || {});
+
+        // Auto-schedule pickup for assigned orders
+        const assigned = (result.results || []).filter(r => r.success && r.awb && r.shipmentId);
+        if (assigned.length > 0) {
+            try {
+                const pickupResult = await rapidshyp.bulkSchedulePickup(
+                    assigned.map(r => ({ shipmentId: r.shipmentId, awb: r.awb }))
+                );
+                result.pickup = pickupResult;
+            } catch (pe) {
+                console.warn('[API] Pickup scheduling failed (non-blocking):', pe.message);
+            }
+        }
+
+        res.json(result);
+    } catch (e) {
+        console.error('[API] Assign Batch Error:', e.response?.data || e.message);
+        res.status(500).json({ error: e.response?.data?.remarks || e.message });
     }
 });
 

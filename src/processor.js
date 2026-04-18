@@ -101,19 +101,24 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
             }
         }
 
-        // Determine payment method
-        const gateways = (order.paymentGatewayNames || []).join(' ').toLowerCase();
+        // Determine payment method — Shopify tags are the source of truth
+        const tags = (order.tags || []).map(t => t.toLowerCase());
         let payment = 'Cash on Delivery';
 
-        // Check gateway names first (most reliable)
-        if (gateways.includes('cash on delivery') || gateways.includes('manual') || gateways.includes('cod')) {
-            payment = 'Cash on Delivery';
-        } else if (gateways.includes('razorpay') || gateways.includes('paytm') ||
-                   gateways.includes('stripe') || gateways.includes('paypal') ||
-                   gateways.includes('phonepe') || gateways.includes('upi')) {
+        if (tags.includes('prepaid')) {
             payment = 'Prepaid';
-        } else if (order.displayFinancialStatus === 'PENDING') {
+        } else if (tags.includes('cod')) {
             payment = 'Cash on Delivery';
+        } else {
+            // Fallback to gateway detection if no tags
+            const gateways = (order.paymentGatewayNames || []).join(' ').toLowerCase();
+            if (gateways.includes('razorpay') || gateways.includes('paytm') ||
+                gateways.includes('stripe') || gateways.includes('paypal') ||
+                gateways.includes('phonepe') || gateways.includes('upi')) {
+                payment = 'Prepaid';
+            } else if (order.displayFinancialStatus === 'PAID') {
+                payment = 'Prepaid';
+            }
         }
 
         // --- Shiprocket Sense RTO Risk ---
@@ -275,6 +280,7 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
                     price: price,
                     payment: payment,
                     fulfillmentStatus: order.displayFulfillmentStatus || 'UNFULFILLED',
+                    tags: order.tags || [],
                     createdAt: order.createdAt,
                     // Shiprocket Sense RTO Risk Data
                     // model_probability is confidence in the prediction — invert for low risk so higher % = higher risk

@@ -432,8 +432,8 @@ function App() {
             const updatedCheckedIds = [...checkedSet];
             for (const [orderId, rto] of Object.entries(rtoResults)) {
               updatedCache[orderId] = { aiRiskLevel: rto.aiRiskLevel, aiRiskScore: rto.aiRiskScore, aiRiskReasons: rto.aiRiskReasons };
-              // Mark as checked permanently — never re-check
-              if (!checkedSet.has(orderId)) {
+              // Only mark as checked if we got a real result — allows retries for failed/unknown
+              if (rto.aiRiskLevel && rto.aiRiskLevel !== 'Unknown' && !checkedSet.has(orderId)) {
                 updatedCheckedIds.push(orderId);
                 checkedSet.add(orderId);
               }
@@ -449,12 +449,7 @@ function App() {
           }
         } catch (rtoErr) {
           console.warn('RTO enrichment failed (non-blocking):', rtoErr.message);
-          // Even on failure, mark these as checked to prevent re-billing
-          const updatedCheckedIds = [...checkedSet];
-          for (const o of uniqueUnchecked) {
-            if (!checkedSet.has(o.orderId)) updatedCheckedIds.push(o.orderId);
-          }
-          try { localStorage.setItem('rto_checked_ids', JSON.stringify(updatedCheckedIds)); } catch {}
+          // Do NOT mark as checked on failure — allow retry on next sync
         }
       } else {
         console.log('[RTO] No new orders to check — all already checked or cached');
@@ -500,8 +495,10 @@ function App() {
       const res = await axios.post(`${API_URL}/orders/${row.id}/cancel`, { orderName: row.orderId });
       if (res.data.success) {
         setToast({ message: `Order ${row.orderId} Cancelled Successfully`, type: 'success' });
+        const removedCount = data.orders.filter(o => o.orderId === row.orderId).length;
         const newOrders = data.orders.filter(o => o.orderId !== row.orderId);
-        setData({ ...data, orders: newOrders });
+        const uniqueNewIds = new Set(newOrders.map(o => o.orderId));
+        setData({ ...data, orders: newOrders, stats: { ...data.stats, totalOrders: uniqueNewIds.size, totalItems: newOrders.length } });
         setSelectedOrders(prev => { const next = new Set(prev); next.delete(row.orderId); return next; });
       }
     } catch (e) { 
@@ -940,10 +937,15 @@ function App() {
                                       </span>
                                     )}
                                     {group.items[0].awb && (
-                                      <span className="text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider bg-[rgba(227,207,216,0.12)] border border-[rgba(227,207,216,0.25)] text-[#e3cfd8] glow-text">
-                                        Label Generated
-                                      </span>
+                                      <a href={`https://www.delhivery.com/track/package/${group.items[0].awb}`} target="_blank" rel="noopener noreferrer"
+                                        onClick={e => e.stopPropagation()}
+                                        className="text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider bg-[rgba(227,207,216,0.12)] border border-[rgba(227,207,216,0.25)] text-[#e3cfd8] glow-text hover:bg-[rgba(227,207,216,0.2)] transition-colors cursor-pointer">
+                                        AWB {group.items[0].awb} ↗
+                                      </a>
                                     )}
+                                    {(group.items[0].tags || []).filter(t => !['unfulfilled','fulfilled'].includes(t.toLowerCase())).map(t => (
+                                      <span key={t} className="text-[8px] uppercase font-bold px-2 py-0.5 rounded-full tracking-wider bg-[rgba(99,102,241,0.06)] border border-[rgba(99,102,241,0.12)] text-indigo-300">{t}</span>
+                                    ))}
                                     {(() => { const age = (Date.now() - new Date(group.createdAt).getTime()) / (1000*60*60*24); return age > 15 ? (
                                       <span className="text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider bg-[rgba(255,100,0,0.12)] border border-[rgba(255,100,0,0.25)] text-orange-400 animate-pulse">
                                         Late Delivery Risk

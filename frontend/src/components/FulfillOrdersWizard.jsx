@@ -59,7 +59,7 @@ const RiskReasonPills = React.memo(function RiskReasonPills({ reasons }) {
   );
 });
 
-const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, cancellingId, hideActions, hidePrice, showDate, showRiskDetail, onVerify, isVerified }) {
+const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, cancellingId, hideActions, hidePrice, showDate, showRiskDetail, onVerify, isVerified, onPortal, showFulfillment }) {
   const [open, setOpen] = useState(false);
   const phone = group.shippingDetails?.phone || '';
   const cleanPhone = phone.replace(/\D/g, '').slice(-10);
@@ -75,6 +75,14 @@ const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, c
               <span className="text-sm font-bold text-white">#{group.orderId}</span>
               <span className="text-[10px] text-[rgba(245,245,245,0.3)]">{group.items.length} unit{group.items.length > 1 ? 's' : ''}</span>
               {group.aiRiskLevel && <RiskBadge level={group.aiRiskLevel} />}
+              {group.payment && (group.payment === 'Prepaid'
+                ? <span className="text-[8px] uppercase font-black px-1.5 py-0.5 rounded-full tracking-wider bg-[rgba(52,211,153,0.1)] border border-[rgba(52,211,153,0.2)] text-emerald-400">PREPAID</span>
+                : <span className="text-[8px] uppercase font-black px-1.5 py-0.5 rounded-full tracking-wider bg-[rgba(251,191,36,0.1)] border border-[rgba(251,191,36,0.2)] text-amber-400">COD</span>
+              )}
+              {onPortal && <span className="text-[8px] uppercase font-bold px-1.5 py-0.5 rounded-full tracking-wider bg-[rgba(251,191,36,0.1)] border border-[rgba(251,191,36,0.2)] text-amber-400">On Portal</span>}
+              {showFulfillment && group.fulfillmentStatus && group.fulfillmentStatus !== 'UNFULFILLED' && (
+                <span className={`text-[8px] uppercase font-bold px-1.5 py-0.5 rounded-full tracking-wider ${group.fulfillmentStatus === 'FULFILLED' ? 'bg-[rgba(52,211,153,0.08)] border border-[rgba(52,211,153,0.15)] text-emerald-400' : 'bg-[rgba(99,102,241,0.08)] border border-[rgba(99,102,241,0.15)] text-indigo-300'}`}>{group.fulfillmentStatus}</span>
+              )}
               {shopifyLink && <a href={shopifyLink} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[rgba(245,245,245,0.2)] hover:text-[#e3cfd8]"><ExternalLink size={10} /></a>}
             </div>
             <div className="text-[11px] text-[rgba(245,245,245,0.35)] truncate">
@@ -148,14 +156,31 @@ const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, c
             ))}
           </div>
           {group.awb && (
-            <div className="text-[11px] flex items-center gap-1.5">
-              <span className="text-[rgba(245,245,245,0.3)]">AWB:</span>
-              <a href={group.awb.startsWith('http') ? group.awb : `https://www.google.com/search?q=${group.awb}+tracking`} target="_blank"
-                className="text-[#e3cfd8] font-mono hover:underline">{group.awb.startsWith('http') ? group.awb.match(/\d{10,}/)?.[0] || 'Label' : group.awb}</a>
+            <div className="flex items-center gap-2 pt-1">
+              <a href={`https://www.delhivery.com/track/package/${group.awb}`} target="_blank" rel="noopener noreferrer"
+                className="flex-1 flex items-center gap-2 glass-btn px-3 py-1.5 rounded-lg text-[11px] text-[#e3cfd8] hover:bg-[rgba(227,207,216,0.08)]">
+                <Package size={12} /> <span className="font-mono">{group.awb}</span>
+                <ExternalLink size={10} className="ml-auto opacity-40" />
+              </a>
             </div>
           )}
         </div>
       )}
+    </div>
+  );
+});
+
+// Mini display showing other orders from same customer
+const OtherOrdersList = React.memo(function OtherOrdersList({ others }) {
+  if (!others?.length) return null;
+  return (
+    <div className="ml-2 mt-1 flex items-center gap-1.5 flex-wrap">
+      <span className="text-[9px] text-[rgba(245,245,245,0.25)]">Also ordered:</span>
+      {others.map(o => (
+        <span key={o.orderId} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[rgba(99,102,241,0.06)] border border-[rgba(99,102,241,0.12)] text-indigo-300">
+          #{o.orderId} · {o.items.length}u
+        </span>
+      ))}
     </div>
   );
 });
@@ -197,6 +222,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const [verifiedIds, setVerifiedIds] = useState(new Set());
   const [approveProgress, setApproveProgress] = useState(null); // { done, total }
   const [shipProgress, setShipProgress] = useState(null);
+  const [nbeUploadedIds] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('nbe_uploaded_ids') || '[]')); } catch { return new Set(); } });
   const [labelProgress, setLabelProgress] = useState(null);
 
   // ═══ Action History Logger ═══
@@ -278,7 +304,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const grouped = useMemo(() => {
     const m = {};
     workingOrders.forEach(o => {
-      if (!m[o.orderId]) m[o.orderId] = { orderId: o.orderId, shopifyId: o.id, customerName: o.customerName, shippingDetails: o.shippingDetails, aiRiskScore: o.aiRiskScore, aiRiskLevel: o.aiRiskLevel, aiRiskReasons: o.aiRiskReasons || [], items: [], createdAt: o.createdAt, awb: o.awb, rsOrderId: o.rsOrderId, customerOrdersCount: o.customerOrdersCount, payment: o.payment };
+      if (!m[o.orderId]) m[o.orderId] = { orderId: o.orderId, shopifyId: o.id, customerName: o.customerName, shippingDetails: o.shippingDetails, aiRiskScore: o.aiRiskScore, aiRiskLevel: o.aiRiskLevel, aiRiskReasons: o.aiRiskReasons || [], items: [], createdAt: o.createdAt, awb: o.awb, rsOrderId: o.rsOrderId, customerOrdersCount: o.customerOrdersCount, payment: o.payment, fulfillmentStatus: o.fulfillmentStatus || 'UNFULFILLED' };
       m[o.orderId].items.push(o);
     });
     return Object.values(m);
@@ -288,7 +314,27 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const highRisk = useMemo(() => grouped.filter(g => g.aiRiskLevel === 'High'), [grouped]);
   const missingUnits = useMemo(() => workingOrders.map((o, i) => ({ ...o, _idx: i })).filter(o => !o.model?.trim() || o.model.toLowerCase() === 'unknown model'), [workingOrders]);
 
-  // Repeat customers: group by customer name, show those with >1 orders (exclude if first order delivered)
+  // Group all orders by customer phone (for showing "other orders by this customer" across all steps)
+  const ordersByPhone = useMemo(() => {
+    const map = {};
+    grouped.forEach(g => {
+      const ph = (g.shippingDetails?.phone || '').replace(/\D/g, '').slice(-10);
+      if (ph && ph.length >= 10) {
+        if (!map[ph]) map[ph] = [];
+        map[ph].push(g);
+      }
+    });
+    return map;
+  }, [grouped]);
+
+  const getOtherOrders = useCallback((group) => {
+    const ph = (group.shippingDetails?.phone || '').replace(/\D/g, '').slice(-10);
+    if (!ph || ph.length < 10) return [];
+    return (ordersByPhone[ph] || []).filter(g => g.orderId !== group.orderId);
+  }, [ordersByPhone]);
+
+  // Repeat customers: group by customer name, show those with >1 orders
+  // Skip flagging if ALL orders from this customer are Prepaid
   const repeatCustomers = useMemo(() => {
     const byCustomer = {};
     grouped.forEach(g => {
@@ -297,7 +343,13 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       byCustomer[name].push(g);
     });
     return Object.entries(byCustomer)
-      .filter(([, ords]) => ords.length > 1 || (ords[0]?.customerOrdersCount || 1) > 1)
+      .filter(([, ords]) => {
+        const isRepeat = ords.length > 1 || (ords[0]?.customerOrdersCount || 1) > 1;
+        if (!isRepeat) return false;
+        // Don't flag repeat if all orders from this customer are prepaid
+        const allPrepaid = ords.every(o => o.payment === 'Prepaid');
+        return !allPrepaid;
+      })
       .map(([name, ords]) => ({ name, orders: ords, totalOrders: ords[0]?.customerOrdersCount || ords.length }));
   }, [grouped]);
 
@@ -320,7 +372,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
               </div>
               <span className="text-[10px] font-bold text-amber-400 bg-[rgba(251,191,36,0.1)] px-2.5 py-0.5 rounded-full border border-amber-400/20">REPEAT</span>
             </div>
-            {custOrders.map(g => <OrderDetailCard key={g.orderId} group={g} onCancel={handleCancel} cancellingId={cancellingId} showDate hidePrice={isSupplier} showRiskDetail onVerify={handleVerify} isVerified={verifiedIds.has(g.orderId)} />)}
+            {custOrders.map(g => <OrderDetailCard key={g.orderId} group={g} onCancel={handleCancel} cancellingId={cancellingId} showDate showFulfillment hidePrice={isSupplier} showRiskDetail onVerify={handleVerify} isVerified={verifiedIds.has(g.orderId)} onPortal={nbeUploadedIds.has(g.orderId)} />)}
           </div>
         ))
       )}
@@ -367,7 +419,10 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           {sortedCodOrders.map(g => (
             <div key={g.orderId} className="flex items-start gap-2">
               <div className={`text-lg font-black pt-2.5 w-12 text-center shrink-0 ${g.aiRiskLevel === 'High' ? 'text-[#ff1493]' : g.aiRiskLevel === 'Low' ? 'text-emerald-400' : 'text-[#e3cfd8]'}`}>{g.aiRiskScore || 0}%</div>
-              <div className="flex-1"><OrderDetailCard group={g} onCancel={handleCancel} cancellingId={cancellingId} hidePrice={isSupplier} showRiskDetail onVerify={handleVerify} isVerified={verifiedIds.has(g.orderId)} /></div>
+              <div className="flex-1">
+                <OrderDetailCard group={g} onCancel={handleCancel} cancellingId={cancellingId} hidePrice={isSupplier} showRiskDetail onVerify={handleVerify} isVerified={verifiedIds.has(g.orderId)} onPortal={nbeUploadedIds.has(g.orderId)} />
+                <OtherOrdersList others={getOtherOrders(g)} />
+              </div>
             </div>
           ))}
         </div>
@@ -401,6 +456,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           </div>
           {missingByOrder.map(orderGroup => {
             const ph = (orderGroup.shippingDetails?.phone || '').replace(/\D/g, '').slice(-10);
+            const matchedGroup = grouped.find(g => g.orderId === orderGroup.orderId);
             return (
               <div key={orderGroup.orderId} className="glass-card-sm p-3 space-y-2.5">
                 <div className="flex items-center justify-between">
@@ -428,6 +484,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
                     </div>
                   </div>
                 ))}
+                {matchedGroup && <OtherOrdersList others={getOtherOrders(matchedGroup)} />}
               </div>
             );
           })}
@@ -483,12 +540,24 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       setDlStatus('dbx');
       const [dbxRes, nbeRes] = await Promise.allSettled([
         axios.post(`${API_URL}/dropbox/upload`, { orders: workingOrders }).catch(e => { console.warn('Dropbox upload failed:', e.message); return { data: { success: false, error: e.message } }; }),
-        axios.post(`${API_URL}/nbe/upload-order`, { rows: workingOrders }, { timeout: 120000 }).catch(e => { console.warn('NBE upload failed:', e.message); return { data: { success: false, error: e.message } }; })
+        axios.post(`${API_URL}/nbe/upload-order`, { rows: workingOrders }, { timeout: 120000 }).catch(e => {
+          const payload = e.response?.data || { success: false, error: e.message };
+          console.warn('NBE upload failed:', payload);
+          return { data: { ...payload, success: false } };
+        })
       ]);
       const nbeOk = nbeRes.status === 'fulfilled' && nbeRes.value?.data?.success;
       const nbeErr = !nbeOk && (nbeRes.value?.data?.error || nbeRes.reason?.message || '');
       setDlStatus('done');
       if (nbeErr) console.error('[NBE] Upload error details:', nbeRes.value?.data);
+      // Track orders uploaded to NBE Portal
+      if (nbeOk) {
+        try {
+          const nbeUploaded = JSON.parse(localStorage.getItem('nbe_uploaded_ids') || '[]');
+          uniqueIds.forEach(id => { if (!nbeUploaded.includes(id)) nbeUploaded.push(id); });
+          localStorage.setItem('nbe_uploaded_ids', JSON.stringify(nbeUploaded));
+        } catch {}
+      }
       setToast({ msg: nbeOk ? 'CSVs downloaded, backed up & NBE order created' : `CSVs downloaded & backed up${nbeErr ? ` (NBE: ${nbeErr})` : ''}` });
       logAction('download_csv', { orders: uniqueIds.length, units: workingOrders.length, nbeOk, dropboxOk: dbxRes.status === 'fulfilled' });
     } catch (e) { setDlStatus('err'); setToast({ msg: `Download failed: ${e.message}`, err: true }); }
@@ -524,95 +593,152 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   };
   useEffect(() => { if ((step === 4 || step === 5) && walletBalance === null) fetchWallet(); }, [step]);
 
-  // ═══ Auto-approve unapproved orders in RapidShyp before shipping ═══
+  // ═══ APPROVE: Frontend drives batches of 50 for realtime progress ═══
   const handleApprove = async () => {
     if (approveResult || approveLoading) return;
     setApproveLoading(true);
-    setApproveProgress({ done: 0, total: uniqueIds.length });
-    try {
-      const orderIdMap = {};
-      workingOrders.forEach(o => { if (o.orderId && o.id) orderIdMap[o.orderId] = o.id; });
-      const r = await axios.post(`${API_URL}/rapidshyp/bulk-approve`, { orderIds: uniqueIds, orderIdMap }, { timeout: 120000 });
-      // Merge new shipment_ids with any previously saved ones (persist across sessions)
-      const savedMap = JSON.parse(localStorage.getItem('shipmentMap') || '{}');
-      const mergedMap = { ...savedMap, ...(r.data.shipmentMap || {}) };
-      r.data.shipmentMap = mergedMap;
-      localStorage.setItem('shipmentMap', JSON.stringify(mergedMap));
-      // Treat partial errors as success — don't show yellow if orders were approved
-      if (r.data.errors?.length && !r.data.error) {
-        r.data.partialErrors = r.data.errors;
-        delete r.data.errors;
+
+    const BATCH = 50;
+    let totalApproved = 0;
+    let totalAlready = 0;
+    const allFailed = [];
+    const allShipmentMap = JSON.parse(localStorage.getItem('shipmentMap') || '{}');
+    const batchLog = [];
+
+    setApproveProgress({ done: 0, total: uniqueIds.length, status: 'Approving...' });
+
+    for (let i = 0; i < uniqueIds.length; i += BATCH) {
+      const batch = uniqueIds.slice(i, i + BATCH);
+      const batchNum = Math.floor(i / BATCH) + 1;
+      setApproveProgress({ done: i, total: uniqueIds.length, status: `Batch ${batchNum} · ${batch.length} orders` });
+
+      try {
+        const r = await axios.post(`${API_URL}/rapidshyp/approve-batch`, { orderIds: batch });
+        const d = r.data;
+        totalApproved += d.success_count || 0;
+        totalAlready += d.alreadyApproved_count || 0;
+        if (d.failed?.length) allFailed.push(...d.failed);
+        Object.assign(allShipmentMap, d.shipmentMap || {});
+        batchLog.push({ batch: batchNum, approved: d.success_count||0, already: d.alreadyApproved_count||0, failed: d.failure_count||0, remark: d.remark });
+      } catch (e) {
+        const msg = e.response?.data?.error || e.message;
+        batch.forEach(id => allFailed.push({ orderId: id, reason: `Batch error: ${msg}` }));
+        batchLog.push({ batch: batchNum, error: msg });
       }
-      setApproveResult(r.data);
-      setApproveProgress({ done: (r.data.approved || 0) + (r.data.alreadyApproved || 0), total: uniqueIds.length });
-      const msg = r.data.approved > 0 ? `${r.data.approved} approved` : r.data.alreadyApproved > 0 ? `${r.data.alreadyApproved} already approved` : 'Approve complete';
-      setToast({ msg });
-      // Log action
-      logAction('approve', { approved: r.data.approved, alreadyApproved: r.data.alreadyApproved, orders: uniqueIds.length });
-    } catch (e) {
-      // If timeout or network error but approve may have partially worked, show warning not error
-      const errMsg = e.response?.data?.error || e.message;
-      const isTimeout = e.code === 'ECONNABORTED' || errMsg.includes('timeout');
-      if (isTimeout) {
-        setApproveResult({ success: true, approved: 0, alreadyApproved: 0, notFound: 0, shipmentMap: {}, warning: 'Request timed out — orders may still be processing. Proceed to Ship.' });
-      } else {
-        setApproveResult({ success: false, error: errMsg });
-      }
-      setToast({ msg: isTimeout ? 'Approve timed out — try shipping anyway' : `Approve failed: ${errMsg}`, err: !isTimeout });
-    } finally {
-      setApproveLoading(false);
+
+      setApproveProgress({ done: Math.min(i + BATCH, uniqueIds.length), total: uniqueIds.length, status: `${totalApproved} approved · ${totalAlready} already · ${allFailed.length} failed` });
     }
+
+    localStorage.setItem('shipmentMap', JSON.stringify(allShipmentMap));
+    const result = { success: true, approved: totalApproved, alreadyApproved: totalAlready, failed: allFailed, shipmentMap: allShipmentMap, batchLog };
+    setApproveResult(result);
+    setApproveProgress({ done: uniqueIds.length, total: uniqueIds.length, status: 'Done' });
+    setToast({ msg: `${totalApproved + totalAlready}/${uniqueIds.length} approved${allFailed.length ? ` · ${allFailed.length} failed` : ''}`, err: allFailed.length > 0 });
+    logAction('approve', { approved: totalApproved, alreadyApproved: totalAlready, failed: allFailed.length, orders: uniqueIds.length });
+    setApproveLoading(false);
   };
 
-  // Pre-approve when entering DOWNLOAD step (step 4) so it's ready by SHIP step
-  // Also trigger on SHIP step (step 5) as fallback
   useEffect(() => { if ((step === 4 || step === 5) && !approveResult && !approveLoading) handleApprove(); }, [step]);
 
+  // ═══ SHIP: Frontend drives batches of 10 for realtime progress ═══
   const handleShip = async () => {
     setShipLoading(true);
-    try {
-      // Merge approve result with persisted shipment map from localStorage
-      const savedMap = JSON.parse(localStorage.getItem('shipmentMap') || '{}');
-      const sm = { ...savedMap, ...(approveResult?.shipmentMap || {}) };
-      console.log('[SHIP] shipmentMap keys:', Object.keys(sm).length, 'sample:', Object.entries(sm).slice(0, 3));
-      const r = await axios.post(`${API_URL}/rapidshyp/bulk-assign`, { orderNames: uniqueIds, shipmentMap: sm });
-      setShipResults(r.data);
-      const shipped = r.data?.results?.filter(x=>x.success).length || 0;
-      setShipProgress({ done: shipped, total: uniqueIds.length });
-      setToast({ msg: `${shipped}/${uniqueIds.length} shipped` });
-      logAction('ship_orders', { shipped, total: uniqueIds.length });
-    } catch (e) { setToast({ msg: `Ship failed: ${e.response?.data?.error||e.message}`, err: true }); }
-    finally { setShipLoading(false); }
+    const sm = { ...(approveResult?.shipmentMap || {}) };
+    const BATCH = 10;
+    const allResults = [];
+
+    setShipProgress({ done: 0, total: uniqueIds.length, status: 'Assigning AWBs...' });
+
+    for (let i = 0; i < uniqueIds.length; i += BATCH) {
+      const batch = uniqueIds.slice(i, i + BATCH);
+      setShipProgress({ done: i, total: uniqueIds.length, status: `Shipping ${i+1}–${Math.min(i+BATCH, uniqueIds.length)}` });
+
+      try {
+        const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, { orderIds: batch, shipmentMap: sm });
+        const results = r.data?.results || [];
+        allResults.push(...results);
+        // Capture any new shipment IDs for next batches
+        results.forEach(rr => { if (rr.shipmentId) sm[rr.orderId] = rr.shipmentId; });
+      } catch (e) {
+        batch.forEach(id => allResults.push({ orderId: id, success: false, message: e.response?.data?.error || e.message }));
+      }
+
+      const shipped = allResults.filter(r => r.success).length;
+      setShipProgress({ done: Math.min(i + BATCH, uniqueIds.length), total: uniqueIds.length, status: `${shipped} assigned` });
+    }
+
+    const shipData = { success: true, results: allResults };
+    setShipResults(shipData);
+    const shipped = allResults.filter(r => r.success).length;
+    setShipProgress({ done: uniqueIds.length, total: uniqueIds.length, status: 'Done' });
+    setToast({ msg: `${shipped}/${uniqueIds.length} shipped` });
+    logAction('ship_orders', { shipped, total: uniqueIds.length });
+    setShipLoading(false);
   };
 
   const estCost = uniqueIds.length * 85;
   const rechargeNeeded = walletBalance !== null ? Math.max(0, estCost - walletBalance + 500) : estCost;
   const rechargeMsg = encodeURIComponent(`Hey, we need a wallet recharge for RapidShyp.\n\nToday's Order: ${uniqueIds.length} orders\nEstimated Shipping: Rs${estCost}\nCurrent Balance: Rs${walletBalance !== null ? walletBalance : 'N/A'}\nPlease recharge: Rs${rechargeNeeded}\n\nThanks`);
 
+  // ═══ Progress Bar Component ═══
+  const ProgressBar = ({ progress, color = '#e3cfd8' }) => {
+    if (!progress) return null;
+    const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
+    return (
+      <div className="space-y-2">
+        <div className="w-full bg-[rgba(255,255,255,0.06)] rounded-full h-2 overflow-hidden">
+          <motion.div className="h-2 rounded-full" initial={{ width: 0 }} animate={{ width: `${pct}%` }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+            style={{ background: `linear-gradient(90deg, ${color}80, ${color})` }} />
+        </div>
+        <div className="flex justify-between text-[10px]">
+          <span className="text-[rgba(245,245,245,0.4)]">{progress.status || ''}</span>
+          <span className="font-bold text-white">{progress.done}/{progress.total}</span>
+        </div>
+      </div>
+    );
+  };
+
   const renderShip = () => (
     <div className="space-y-3">
-      {/* Auto-approve status */}
+      {/* Approve progress / result */}
       <div className="glass-card-sm p-3">
         {approveLoading ? (
-          <div className="flex items-center gap-2 text-[11px] text-[rgba(245,245,245,0.5)]">
-            <RefreshCw size={11} className="animate-spin text-[#e3cfd8]" />
-            <span>Approving orders... {approveProgress ? `${approveProgress.done}/${approveProgress.total}` : ''}</span>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-[11px] text-[rgba(245,245,245,0.5)]">
+              <RefreshCw size={11} className="animate-spin text-[#e3cfd8]" />
+              <span className="font-bold">Approving orders</span>
+            </div>
+            <ProgressBar progress={approveProgress} color="#e3cfd8" />
           </div>
         ) : approveResult ? (
-          <div className="flex items-center gap-2 text-[11px]">
-            {approveResult.error ? (
-              <><AlertTriangle size={11} className="text-amber-400" /><span className="text-amber-400">Approve: {approveResult.error}</span>
-                <button onClick={() => { setApproveResult(null); setApproveLoading(false); }} className="text-[9px] text-[#e3cfd8] underline ml-1">Retry</button></>
-            ) : approveResult.warning ? (
-              <><AlertTriangle size={11} className="text-amber-400" /><span className="text-amber-400/80">{approveResult.warning}</span></>
-            ) : (
-              <><CheckCircle size={11} className="text-emerald-400" />
-              <span className="text-[rgba(245,245,245,0.5)]">
-                {approveResult.approved > 0 && <span className="text-emerald-400 font-bold">{approveResult.approved} approved</span>}
-                {approveResult.approved > 0 && approveResult.alreadyApproved > 0 && ' · '}
-                {approveResult.alreadyApproved > 0 && `${approveResult.alreadyApproved} already approved`}
-                {approveResult.notFound > 0 && ` · ${approveResult.notFound} not in RS`}
-              </span></>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 text-[11px]">
+              {approveResult.error ? (
+                <><AlertTriangle size={11} className="text-amber-400" /><span className="text-amber-400">{approveResult.error}</span>
+                  <button onClick={() => { setApproveResult(null); setApproveLoading(false); }} className="text-[9px] text-[#e3cfd8] underline ml-1">Retry</button></>
+              ) : (
+                <><CheckCircle size={11} className={approveResult.failed?.length ? 'text-amber-400' : 'text-emerald-400'} />
+                <span className="text-[rgba(245,245,245,0.5)]">
+                  {approveResult.approved > 0 && <span className="text-emerald-400 font-bold">{approveResult.approved} approved</span>}
+                  {approveResult.approved > 0 && approveResult.alreadyApproved > 0 && ' · '}
+                  {approveResult.alreadyApproved > 0 && <span className="text-[rgba(245,245,245,0.6)]">{approveResult.alreadyApproved} already approved</span>}
+                  {approveResult.failed?.length > 0 && (
+                    <>{(approveResult.approved + approveResult.alreadyApproved) > 0 && ' · '}<span className="text-[#ff1493] font-bold">{approveResult.failed.length} failed</span></>
+                  )}
+                </span>
+                {approveResult.failed?.length > 0 && (
+                  <button onClick={() => { setApproveResult(null); setApproveLoading(false); }} className="text-[9px] text-[#e3cfd8] underline ml-1">Retry</button>
+                )}</>
+              )}
+            </div>
+            {approveResult.failed?.length > 0 && (
+              <div className="max-h-24 overflow-y-auto text-[10px] font-mono text-[rgba(245,245,245,0.45)] bg-[rgba(255,20,147,0.04)] border border-[rgba(255,20,147,0.1)] rounded-lg p-2 space-y-0.5">
+                {approveResult.failed.slice(0, 20).map(f => (
+                  <div key={f.orderId}><span className="text-[#ff1493]">#{f.orderId}</span> · {f.reason}</div>
+                ))}
+                {approveResult.failed.length > 20 && <div className="text-[rgba(245,245,245,0.3)]">...and {approveResult.failed.length - 20} more</div>}
+              </div>
             )}
           </div>
         ) : null}
@@ -638,11 +764,21 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           </a>
         )}
       </div>
+
+      {/* Ship progress */}
+      {shipLoading && (
+        <div className="glass-card-sm p-4 space-y-2">
+          <div className="flex items-center gap-2 text-[11px] text-[rgba(245,245,245,0.5)]">
+            <RefreshCw size={11} className="animate-spin text-emerald-400" />
+            <span className="font-bold">Assigning AWBs</span>
+          </div>
+          <ProgressBar progress={shipProgress} color="#34d399" />
+        </div>
+      )}
+
       {shipResults ? (
         <div className="glass-card-sm p-3 space-y-2">
-          <div className="flex items-center gap-2"><CheckCircle size={13} className="text-emerald-400" /><span className="text-xs font-bold text-emerald-400">{shipResults.results?.filter(r=>r.success).length}/{shipResults.results?.length} assigned</span>
-            {shipResults.pickup && <span className="text-[10px] text-[rgba(245,245,245,0.4)]">· {shipResults.pickup.scheduled || 0} pickups scheduled</span>}
-          </div>
+          <div className="flex items-center gap-2"><CheckCircle size={13} className="text-emerald-400" /><span className="text-xs font-bold text-emerald-400">{shipResults.results?.filter(r=>r.success).length}/{shipResults.results?.length} assigned</span></div>
           <div className="max-h-40 overflow-y-auto space-y-1">
             {shipResults.results?.map((r,i) => (
               <div key={i} className={`flex items-center justify-between text-[10px] px-2 py-1 rounded-lg ${r.success?'bg-[rgba(52,211,153,0.05)]':'bg-[rgba(255,20,147,0.05)]'}`}>
@@ -652,9 +788,9 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
             ))}
           </div>
         </div>
-      ) : (
-        <button onClick={handleShip} disabled={shipLoading || approveLoading} className="glass-btn-accent w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2">
-          {shipLoading ? <><RefreshCw size={13} className="animate-spin" /> Assigning...</> : <><Truck size={13} /> Confirm & Ship All</>}
+      ) : !shipLoading && (
+        <button onClick={handleShip} disabled={approveLoading} className="glass-btn-accent w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2">
+          <Truck size={13} /> Confirm & Ship All
         </button>
       )}
     </div>
@@ -663,6 +799,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   // ═══ STEP 6: Labels ═══
   const handleLabels = async () => {
     setLabelLoading(true);
+    setLabelProgress({ done: 0, total: 3, status: 'Collecting shipment IDs...' });
     try {
       const successResults = shipResults?.results?.filter(r => r.success) || [];
       const shipmentIds = successResults.map(r => r.shipmentId).filter(Boolean);
@@ -674,13 +811,16 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
         if (orderAwbs.length > 0) {
           awbs.push(...orderAwbs);
         } else {
+          setLabelProgress({ done: 1, total: 3, status: `Resolving ${uniqueIds.length} orders...` });
           const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-by-orders`, { orderIds: uniqueIds });
+          setLabelProgress({ done: 2, total: 3, status: 'Downloading PDF...' });
           setLabelResult(r.data);
           const url = r.data?.label_pdf_url || r.data?.labelUrl;
           if (url) {
             const batchName = `${getOrdinalDate()} - Labels.pdf`;
             try { const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(batchName)}`; const pr = await fetch(proxyUrl); if (!pr.ok) throw new Error('fail'); const bl = new Blob([await pr.arrayBuffer()], { type: 'application/pdf' }); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = batchName; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(bu), 1000); } catch { window.open(url, '_blank'); }
           }
+          setLabelProgress({ done: 3, total: 3, status: 'Done' });
           setToast({ msg: 'Labels generated' });
           setLabelLoading(false);
           return;
@@ -688,13 +828,16 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       }
 
       if (!shipmentIds.length && !awbs.length) { setToast({ msg: 'No shipped orders for labels', err: true }); setLabelLoading(false); return; }
+      setLabelProgress({ done: 1, total: 3, status: `Generating ${shipmentIds.length || awbs.length} labels...` });
       const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-dropbox`, { orderIds: shipmentIds, awbs, orders: workingOrders });
+      setLabelProgress({ done: 2, total: 3, status: 'Downloading PDF...' });
       setLabelResult(r.data);
       const url = r.data?.label_pdf_url || r.data?.labelUrl;
       if (url) {
         const labelFileName = `${getOrdinalDate()} - Labels.pdf`;
         try { const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(labelFileName)}`; const pr = await fetch(proxyUrl); if (!pr.ok) throw new Error('fail'); const bl = new Blob([await pr.arrayBuffer()], { type: 'application/pdf' }); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = labelFileName; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(bu), 1000); } catch { window.open(url, '_blank'); }
       }
+      setLabelProgress({ done: 3, total: 3, status: 'Done' });
       setToast({ msg: 'Labels generated & downloading' });
       logAction('generate_labels', { orders: uniqueIds.length, hasUrl: !!url });
     } catch (e) { setToast({ msg: `Labels failed: ${e.response?.data?.error||e.message}`, err: true }); }
@@ -708,7 +851,10 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
     <div className="space-y-3">
       <div className="glass-card-sm p-6 text-center space-y-3">
         {labelLoading ? (
-          <div><RefreshCw size={28} className="mx-auto text-[#e3cfd8] animate-spin" /><p className="text-xs text-[rgba(245,245,245,0.4)] mt-2">generating...</p></div>
+          <div className="space-y-3">
+            <RefreshCw size={28} className="mx-auto text-[#e3cfd8] animate-spin" />
+            <ProgressBar progress={labelProgress} color="#e3cfd8" />
+          </div>
         ) : labelResult ? (
           <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="space-y-2">
             <CheckCircle size={40} className="mx-auto text-emerald-400" />
