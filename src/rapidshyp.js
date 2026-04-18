@@ -655,6 +655,7 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
     // Per-order approval — RS approve_orders is all-or-nothing on batch, so per-order is the reliable path.
     console.log(`[RAPIDSHYP] Approving ${mpIds.length} orders per-order...`);
     let lastRemark = '';
+    let debugSamples = 0;
     for (const mpId of mpIds) {
         const cleanId = mpToClean[mpId] || mpId;
         try {
@@ -664,23 +665,18 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
             }, { headers, timeout: 15000 });
             const d = r.data || {};
             lastRemark = d.remark || lastRemark;
+            // Log first 3 responses to diagnose response structure
+            if (debugSamples < 3) {
+                console.log(`[RAPIDSHYP][DEBUG] Per-order #${cleanId}: ${JSON.stringify(d).slice(0, 500)}`);
+                debugSamples++;
+            }
             if (d.order_list?.length > 0) {
                 processOrderList(d.order_list);
+            } else if (d.success_count >= 1 || (d.status || '').toUpperCase() === 'SUCCESS') {
+                // RS accepted but returned no order_list — mark approved, resolve shipment_id below
+                approved.push({ orderId: cleanId });
             } else if ((d.remark || '').toLowerCase().includes('already')) {
-                // Already approved — pull shipment_id from track_order
-                try {
-                    const tr = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, { orderId: `#${cleanId}` }, { headers, timeout: 8000 });
-                    const shipmentId = tr.data?.records?.[0]?.shipment_details?.[0]?.shipment_id;
-                    if (shipmentId) {
-                        shipmentMap[cleanId] = shipmentId;
-                        _shipmentCache.set(cleanId, shipmentId);
-                        alreadyApproved.push({ orderId: cleanId, shipmentId });
-                    } else {
-                        alreadyApproved.push({ orderId: cleanId, reason: 'Already approved' });
-                    }
-                } catch {
-                    alreadyApproved.push({ orderId: cleanId, reason: 'Already approved' });
-                }
+                alreadyApproved.push({ orderId: cleanId });
             } else {
                 failed.push({ orderId: cleanId, reason: d.remark || 'Rejected by RapidShyp' });
             }
@@ -689,23 +685,24 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
         }
     }
 
-    // Recovery sweep: ensure every approved/alreadyApproved entry has a shipment_id cached.
-    // RS sometimes returns an approval without shipment_id, or track_order failed earlier.
+    // Recovery sweep: resolve shipment_ids for any approved/alreadyApproved entries missing them.
+    // Uses resolveOrder() which tries: session map → GET /shipment_details → POST /track_order.
     const needsRecovery = [...approved, ...alreadyApproved].filter(o => !o.shipmentId);
     if (needsRecovery.length > 0) {
-        console.log(`[RAPIDSHYP] Recovering shipment_ids for ${needsRecovery.length} approved orders via track_order...`);
+        console.log(`[RAPIDSHYP] Recovering shipment_ids for ${needsRecovery.length}/${approved.length + alreadyApproved.length} orders...`);
+        const orderMap = new Map();
         for (const entry of needsRecovery) {
             try {
-                const tr = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, { orderId: `#${entry.orderId}` }, { headers, timeout: 8000 });
-                const shipmentId = tr.data?.records?.[0]?.shipment_details?.[0]?.shipment_id;
-                if (shipmentId) {
-                    shipmentMap[entry.orderId] = shipmentId;
-                    _shipmentCache.set(entry.orderId, shipmentId);
-                    entry.shipmentId = shipmentId;
+                const resolved = await resolveOrder(entry.orderId, orderMap);
+                if (resolved?.shipment_id) {
+                    shipmentMap[entry.orderId] = resolved.shipment_id;
+                    _shipmentCache.set(entry.orderId, resolved.shipment_id);
+                    entry.shipmentId = resolved.shipment_id;
                     delete entry.reason;
                 }
-            } catch { /* leave entry without shipmentId — will be retried in assignBatch */ }
+            } catch { /* will be retried in assignBatch */ }
         }
+        console.log(`[RAPIDSHYP] Recovery found ${needsRecovery.filter(o => o.shipmentId).length}/${needsRecovery.length} shipment_ids`);
     }
 
     console.log(`[RAPIDSHYP] Approve complete: ${approved.length} approved, ${alreadyApproved.length} already, ${failed.length} failed. ShipmentMap size: ${Object.keys(shipmentMap).length}/${mpIds.length}`);
@@ -733,21 +730,19 @@ const assignBatch = async (cleanIds, shipmentMapFromApprove = {}) => {
     for (const cleanId of cleanIds) {
         let shipmentId = shipmentMapFromApprove[cleanId] || _shipmentCache.get(cleanId) || null;
 
-        // Resolve shipment_id via track_order if not in map
+        // Resolve shipment_id via resolveOrder (tries session map → shipment_details → track_order)
         if (!shipmentId) {
             try {
-                const res = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, {
-                    orderId: `#${cleanId}`
-                }, { headers });
-                const shipment = res.data?.records?.[0]?.shipment_details?.[0];
-                if (shipment?.shipment_id) {
-                    shipmentId = shipment.shipment_id;
-                    if (shipment.awb) {
-                        results.push({ orderId: cleanId, success: true, awb: shipment.awb, shipmentId, message: 'Already assigned' });
+                const resolved = await resolveOrder(cleanId, new Map());
+                if (resolved?.shipment_id) {
+                    shipmentId = resolved.shipment_id;
+                    _shipmentCache.set(cleanId, shipmentId);
+                    if (resolved.awb_number) {
+                        results.push({ orderId: cleanId, success: true, awb: resolved.awb_number, shipmentId, message: 'Already assigned' });
                         continue;
                     }
                 }
-            } catch (e) { /* no tracking data */ }
+            } catch { /* no tracking data */ }
         }
 
         if (!shipmentId) {

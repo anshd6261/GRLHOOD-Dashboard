@@ -647,7 +647,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   // ═══ SHIP: Frontend drives batches of 10 for realtime progress ═══
   const handleShip = async () => {
     setShipLoading(true);
-    const sm = { ...(approveResult?.shipmentMap || {}) };
+    const sm = { ...JSON.parse(localStorage.getItem('shipmentMap') || '{}'), ...(approveResult?.shipmentMap || {}) };
     const BATCH = 10;
     const allResults = [];
 
