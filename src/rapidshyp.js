@@ -632,18 +632,21 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
                 || ol.shipment_id || null;
             const remark = String(ol.remarks || ol.remark || ol.message || ol.reason || '').toLowerCase();
 
+            const isAlready = remark.includes('already') || remark.includes('duplicate');
+            const isError = remark.includes('fail') || remark.includes('error') || remark.includes('invalid') || remark.includes('reject');
+
             if (shipmentId) {
                 shipmentMap[cleanId] = shipmentId;
                 _shipmentCache.set(cleanId, shipmentId);
-                if (remark.includes('already') || remark.includes('duplicate')) {
-                    alreadyApproved.push({ orderId: cleanId, shipmentId });
-                } else {
-                    approved.push({ orderId: cleanId, shipmentId });
-                }
-            } else if (remark.includes('already') || remark.includes('duplicate')) {
+                if (isAlready) alreadyApproved.push({ orderId: cleanId, shipmentId });
+                else approved.push({ orderId: cleanId, shipmentId });
+            } else if (isAlready) {
                 alreadyApproved.push({ orderId: cleanId, reason: ol.remarks || ol.remark || 'Already approved' });
-            } else {
+            } else if (isError) {
                 failed.push({ orderId: cleanId, reason: ol.remarks || ol.remark || ol.message || ol.reason || 'Unknown error' });
+            } else {
+                // In order_list, no shipment_id, no clear error — treat as approved pending shipment_id recovery
+                approved.push({ orderId: cleanId });
             }
         }
         return seen;
@@ -710,6 +713,27 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
         }
     }
 
+    // Recovery sweep: ensure every approved/alreadyApproved entry has a shipment_id cached.
+    // RS sometimes returns an approval without shipment_id, or track_order failed earlier.
+    const needsRecovery = [...approved, ...alreadyApproved].filter(o => !o.shipmentId);
+    if (needsRecovery.length > 0) {
+        console.log(`[RAPIDSHYP] Recovering shipment_ids for ${needsRecovery.length} approved orders via track_order...`);
+        for (const entry of needsRecovery) {
+            try {
+                const tr = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, { orderId: `#${entry.orderId}` }, { headers, timeout: 8000 });
+                const shipmentId = tr.data?.records?.[0]?.shipment_details?.[0]?.shipment_id;
+                if (shipmentId) {
+                    shipmentMap[entry.orderId] = shipmentId;
+                    _shipmentCache.set(entry.orderId, shipmentId);
+                    entry.shipmentId = shipmentId;
+                    delete entry.reason;
+                }
+            } catch { /* leave entry without shipmentId — will be retried in assignBatch */ }
+        }
+    }
+
+    console.log(`[RAPIDSHYP] Approve complete: ${approved.length} approved, ${alreadyApproved.length} already, ${failed.length} failed. ShipmentMap size: ${Object.keys(shipmentMap).length}/${mpIds.length}`);
+
     return {
         success_count: approved.length,
         alreadyApproved_count: alreadyApproved.length,
@@ -718,8 +742,7 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
         shipmentMap,
         approved,
         alreadyApproved,
-        failed,
-        _debugRawBatchResponse: data  // One-time diagnostic: remove after confirming RS behavior
+        failed
     };
 };
 
