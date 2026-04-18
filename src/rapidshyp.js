@@ -569,55 +569,32 @@ const bulkAssignAWB = async (orderNames, approveShipmentMap = {}) => {
 };
 
 /**
- * Approve a single batch of up to 50 orders.
- * RapidShyp approve_orders needs RS internal order_id, NOT Shopify order names.
- * So we first look up each cleanId in the session order map to get RS order_id.
+ * Approve a batch of up to 50 orders.
+ * RapidShyp expects 4-digit Shopify order IDs (no #) as order_id array + store_name.
  */
 const approveBatch = async (cleanIds) => {
     const headers = getPublicHeaders();
-
-    // Look up RapidShyp internal order_ids via session API
-    const orderMap = await fetchAllOrders();
-    const rsOrderIds = [];
-    const rsToClean = {};  // RS order_id → cleanId
-    const notFound = [];
-
-    for (const cleanId of cleanIds) {
-        const id = String(cleanId).replace('#', '');
-        const record = orderMap.get(id) || orderMap.get(`#${id}`);
-        if (record?.order_id) {
-            const rsId = String(record.order_id);
-            rsOrderIds.push(rsId);
-            rsToClean[rsId] = id;
-        } else {
-            notFound.push(id);
-        }
-    }
-
-    console.log(`[RAPIDSHYP] Approve batch: ${rsOrderIds.length} RS order_ids resolved, ${notFound.length} not found in RS. Sample RS IDs: ${rsOrderIds.slice(0, 3).join(', ')}`);
-
-    const approved = [];
-    const alreadyApproved = [];
-    const failed = notFound.map(id => ({ orderId: id, reason: 'Not found in RapidShyp' }));
-    const shipmentMap = {};
-
-    if (rsOrderIds.length === 0) {
-        return { success_count: 0, alreadyApproved_count: 0, failure_count: failed.length, remark: 'No RS order IDs found', shipmentMap, approved, alreadyApproved, failed };
-    }
+    const orderIds = cleanIds.map(id => String(id).replace('#', ''));
+    console.log(`[RAPIDSHYP] Approve batch: ${orderIds.length} orders, sample: ${orderIds.slice(0, 3).join(', ')}`);
 
     const res = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
-        order_id: rsOrderIds,
+        order_id: orderIds,
         store_name: 'GRLHOOD'
     }, { headers });
 
     const data = res.data || {};
     console.log(`[RAPIDSHYP] Approve response:`, JSON.stringify(data).slice(0, 3000));
+
+    const approved = [];
+    const alreadyApproved = [];
+    const failed = [];
+    const shipmentMap = {};
     const seen = new Set();
 
     for (const ol of (data.order_list || [])) {
-        const rsId = String(ol.order_id || '');
-        const cleanId = rsToClean[rsId] || rsId;
-        seen.add(rsId);
+        const cleanId = String(ol.order_id || ol.seller_order_id || '').replace('#', '');
+        if (!cleanId) continue;
+        seen.add(cleanId);
 
         const shipmentId = (ol.shipment || []).find(s => s.shipment_id)?.shipment_id
             || ol.shipment_id || null;
@@ -638,26 +615,10 @@ const approveBatch = async (cleanIds) => {
         }
     }
 
-    // RS IDs we sent but weren't in order_list
-    for (const rsId of rsOrderIds) {
-        if (!seen.has(rsId)) {
-            const cleanId = rsToClean[rsId] || rsId;
-            // Try track_order to see if already approved
-            try {
-                const tr = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, {
-                    orderId: `#${cleanId}`
-                }, { headers, timeout: 8000 });
-                const shipmentId = tr.data?.records?.[0]?.shipment_details?.[0]?.shipment_id;
-                if (shipmentId) {
-                    shipmentMap[cleanId] = shipmentId;
-                    _shipmentCache.set(cleanId, shipmentId);
-                    alreadyApproved.push({ orderId: cleanId, shipmentId });
-                } else {
-                    failed.push({ orderId: cleanId, reason: 'Not in approve response' });
-                }
-            } catch {
-                failed.push({ orderId: cleanId, reason: 'Not in approve response' });
-            }
+    // Any input ID not acknowledged by RS — mark as failed with the top-level remark
+    for (const id of orderIds) {
+        if (!seen.has(id)) {
+            failed.push({ orderId: id, reason: data.remark || 'Not in approve response' });
         }
     }
 
