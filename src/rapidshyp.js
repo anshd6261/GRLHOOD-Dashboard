@@ -575,10 +575,11 @@ const bulkAssignAWB = async (orderNames, approveShipmentMap = {}) => {
 const approveBatch = async (cleanIds) => {
     const headers = getPublicHeaders();
     const orderIds = cleanIds.map(id => String(id).replace('#', ''));
-    console.log(`[RAPIDSHYP] Approve batch: ${orderIds.length} orders, sample: ${orderIds.slice(0, 3).join(', ')}`);
+    const orderIdStr = orderIds.join(',');
+    console.log(`[RAPIDSHYP] Approve batch: ${orderIds.length} orders, order_id: "${orderIdStr.slice(0, 100)}${orderIdStr.length > 100 ? '...' : ''}"`);
 
     const res = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
-        order_id: orderIds,
+        order_id: orderIdStr,
         store_name: 'GRLHOOD'
     }, { headers });
 
