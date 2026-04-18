@@ -570,33 +570,54 @@ const bulkAssignAWB = async (orderNames, approveShipmentMap = {}) => {
 
 /**
  * Approve a single batch of up to 50 orders.
- * Sends `#${cleanId}` format to RapidShyp (seller_order_id is the Shopify order NAME, not numeric ID).
- * Frontend drives the loop for realtime progress.
+ * RapidShyp approve_orders needs RS internal order_id, NOT Shopify order names.
+ * So we first look up each cleanId in the session order map to get RS order_id.
  */
 const approveBatch = async (cleanIds) => {
     const headers = getPublicHeaders();
-    const sellerOrderIds = cleanIds.map(id => `#${String(id).replace('#', '')}`);
-    console.log(`[RAPIDSHYP] Approve batch: ${sellerOrderIds.length} orders, sample: ${sellerOrderIds.slice(0, 3).join(', ')}`);
+
+    // Look up RapidShyp internal order_ids via session API
+    const orderMap = await fetchAllOrders();
+    const rsOrderIds = [];
+    const rsToClean = {};  // RS order_id → cleanId
+    const notFound = [];
+
+    for (const cleanId of cleanIds) {
+        const id = String(cleanId).replace('#', '');
+        const record = orderMap.get(id) || orderMap.get(`#${id}`);
+        if (record?.order_id) {
+            const rsId = String(record.order_id);
+            rsOrderIds.push(rsId);
+            rsToClean[rsId] = id;
+        } else {
+            notFound.push(id);
+        }
+    }
+
+    console.log(`[RAPIDSHYP] Approve batch: ${rsOrderIds.length} RS order_ids resolved, ${notFound.length} not found in RS. Sample RS IDs: ${rsOrderIds.slice(0, 3).join(', ')}`);
+
+    const approved = [];
+    const alreadyApproved = [];
+    const failed = notFound.map(id => ({ orderId: id, reason: 'Not found in RapidShyp' }));
+    const shipmentMap = {};
+
+    if (rsOrderIds.length === 0) {
+        return { success_count: 0, alreadyApproved_count: 0, failure_count: failed.length, remark: 'No RS order IDs found', shipmentMap, approved, alreadyApproved, failed };
+    }
 
     const res = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
-        order_id: sellerOrderIds,
+        order_id: rsOrderIds,
         store_name: 'GRLHOOD'
     }, { headers });
 
     const data = res.data || {};
     console.log(`[RAPIDSHYP] Approve response:`, JSON.stringify(data).slice(0, 3000));
-    const shipmentMap = {};
-    const approved = [];
-    const alreadyApproved = [];
-    const failed = [];
     const seen = new Set();
 
-    const cleanFromResponse = (raw) => String(raw || '').replace('#', '');
-
     for (const ol of (data.order_list || [])) {
-        const cleanId = cleanFromResponse(ol.seller_order_id || ol.order_id);
-        if (!cleanId) continue;
-        seen.add(cleanId);
+        const rsId = String(ol.order_id || '');
+        const cleanId = rsToClean[rsId] || rsId;
+        seen.add(rsId);
 
         const shipmentId = (ol.shipment || []).find(s => s.shipment_id)?.shipment_id
             || ol.shipment_id || null;
@@ -617,26 +638,25 @@ const approveBatch = async (cleanIds) => {
         }
     }
 
-    // Any input ID not in order_list → try to resolve via track_order (may already be approved)
-    const missing = cleanIds.map(id => String(id).replace('#', '')).filter(id => !seen.has(id));
-    if (missing.length > 0) {
-        console.log(`[RAPIDSHYP] ${missing.length} orders not in approve response — checking via track_order`);
-        for (const cleanId of missing) {
+    // RS IDs we sent but weren't in order_list
+    for (const rsId of rsOrderIds) {
+        if (!seen.has(rsId)) {
+            const cleanId = rsToClean[rsId] || rsId;
+            // Try track_order to see if already approved
             try {
                 const tr = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, {
                     orderId: `#${cleanId}`
                 }, { headers, timeout: 8000 });
-                const rec = tr.data?.records?.[0];
-                const shipmentId = rec?.shipment_details?.[0]?.shipment_id;
+                const shipmentId = tr.data?.records?.[0]?.shipment_details?.[0]?.shipment_id;
                 if (shipmentId) {
                     shipmentMap[cleanId] = shipmentId;
                     _shipmentCache.set(cleanId, shipmentId);
                     alreadyApproved.push({ orderId: cleanId, shipmentId });
                 } else {
-                    failed.push({ orderId: cleanId, reason: 'Not found in RapidShyp' });
+                    failed.push({ orderId: cleanId, reason: 'Not in approve response' });
                 }
-            } catch (e) {
-                failed.push({ orderId: cleanId, reason: `Lookup failed: ${e.response?.data?.remarks || e.message}` });
+            } catch {
+                failed.push({ orderId: cleanId, reason: 'Not in approve response' });
             }
         }
     }

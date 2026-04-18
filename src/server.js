@@ -486,8 +486,8 @@ app.post('/api/nbe/upload-order', async (req, res) => {
             key,
             description: `${getFormattedDate()} Order`,
             order_type: 'Dropship POD',
-            partial_fulfillment: false,
-            providing_shipping_label: false,
+            partial_fulfillment: 'no',
+            providing_shipping_label: 'no',
             is_urgent_order: false,
         };
         console.log('[NBE] Finalize payload:', JSON.stringify(finalizePayload));
