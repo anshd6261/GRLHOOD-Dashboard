@@ -620,45 +620,90 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
         return { success_count: 0, alreadyApproved_count: 0, failure_count: failed.length, remark: 'No orders found in RapidShyp', shipmentMap, approved, alreadyApproved, failed };
     }
 
+    const processOrderList = (orderList) => {
+        const seen = new Set();
+        for (const ol of (orderList || [])) {
+            const rawId = String(ol.order_id || '');
+            const cleanId = mpToClean[rawId] || String(ol.seller_order_id || rawId).replace('#', '');
+            if (!cleanId) continue;
+            seen.add(rawId);
+
+            const shipmentId = (ol.shipment || []).find(s => s.shipment_id)?.shipment_id
+                || ol.shipment_id || null;
+            const remark = String(ol.remarks || ol.remark || ol.message || ol.reason || '').toLowerCase();
+
+            if (shipmentId) {
+                shipmentMap[cleanId] = shipmentId;
+                _shipmentCache.set(cleanId, shipmentId);
+                if (remark.includes('already') || remark.includes('duplicate')) {
+                    alreadyApproved.push({ orderId: cleanId, shipmentId });
+                } else {
+                    approved.push({ orderId: cleanId, shipmentId });
+                }
+            } else if (remark.includes('already') || remark.includes('duplicate')) {
+                alreadyApproved.push({ orderId: cleanId, reason: ol.remarks || ol.remark || 'Already approved' });
+            } else {
+                failed.push({ orderId: cleanId, reason: ol.remarks || ol.remark || ol.message || ol.reason || 'Unknown error' });
+            }
+        }
+        return seen;
+    };
+
+    // Try batch first
     const res = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
         order_id: mpIds,
         store_name: 'GRLHOOD'
     }, { headers });
 
     const data = res.data || {};
-    console.log(`[RAPIDSHYP] Approve response:`, JSON.stringify(data).slice(0, 3000));
-    const seen = new Set();
+    console.log(`[RAPIDSHYP] Approve batch response: status=${data.status}, success=${data.success_count}, failure=${data.failure_count}, remark="${data.remark || ''}"`);
 
-    for (const ol of (data.order_list || [])) {
-        const rawId = String(ol.order_id || '');
-        const cleanId = mpToClean[rawId] || String(ol.seller_order_id || rawId).replace('#', '');
-        if (!cleanId) continue;
-        seen.add(rawId);
+    // If batch rejected entirely (success_count=0 AND empty order_list), fall back to per-order
+    const batchRejected = (data.status === 'FAILED' || data.success_count === 0) && !(data.order_list?.length > 0);
 
-        const shipmentId = (ol.shipment || []).find(s => s.shipment_id)?.shipment_id
-            || ol.shipment_id || null;
-        const remark = String(ol.remarks || ol.remark || ol.message || ol.reason || '').toLowerCase();
-
-        if (shipmentId) {
-            shipmentMap[cleanId] = shipmentId;
-            _shipmentCache.set(cleanId, shipmentId);
-            if (remark.includes('already') || remark.includes('duplicate')) {
-                alreadyApproved.push({ orderId: cleanId, shipmentId });
-            } else {
-                approved.push({ orderId: cleanId, shipmentId });
-            }
-        } else if (remark.includes('already') || remark.includes('duplicate')) {
-            alreadyApproved.push({ orderId: cleanId, reason: ol.remarks || ol.remark || 'Already approved' });
-        } else {
-            failed.push({ orderId: cleanId, reason: ol.remarks || ol.remark || ol.message || ol.reason || 'Unknown error' });
-        }
-    }
-
-    // Any marketplace ID not acknowledged by RS
-    for (const mpId of mpIds) {
-        if (!seen.has(mpId)) {
+    if (batchRejected) {
+        console.log(`[RAPIDSHYP] Batch rejected ("${data.remark}"). Falling back to per-order approval for ${mpIds.length} orders...`);
+        // Approve one at a time — isolates already-approved & invalid orders
+        for (const mpId of mpIds) {
             const cleanId = mpToClean[mpId] || mpId;
-            failed.push({ orderId: cleanId, reason: data.remark || 'Not in approve response' });
+            try {
+                const r = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
+                    order_id: [mpId],
+                    store_name: 'GRLHOOD'
+                }, { headers, timeout: 15000 });
+                const d = r.data || {};
+                if (d.order_list?.length > 0) {
+                    processOrderList(d.order_list);
+                } else if ((d.remark || '').toLowerCase().includes('already')) {
+                    // Order already approved — try to get shipment_id from track_order
+                    try {
+                        const tr = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, { orderId: `#${cleanId}` }, { headers, timeout: 8000 });
+                        const shipmentId = tr.data?.records?.[0]?.shipment_details?.[0]?.shipment_id;
+                        if (shipmentId) {
+                            shipmentMap[cleanId] = shipmentId;
+                            _shipmentCache.set(cleanId, shipmentId);
+                            alreadyApproved.push({ orderId: cleanId, shipmentId });
+                        } else {
+                            alreadyApproved.push({ orderId: cleanId, reason: 'Already approved' });
+                        }
+                    } catch {
+                        alreadyApproved.push({ orderId: cleanId, reason: 'Already approved' });
+                    }
+                } else {
+                    failed.push({ orderId: cleanId, reason: d.remark || 'Rejected by RapidShyp' });
+                }
+            } catch (e) {
+                failed.push({ orderId: cleanId, reason: e.response?.data?.remark || e.message });
+            }
+        }
+    } else {
+        // Batch accepted — process order_list normally
+        const seen = processOrderList(data.order_list);
+        for (const mpId of mpIds) {
+            if (!seen.has(mpId)) {
+                const cleanId = mpToClean[mpId] || mpId;
+                failed.push({ orderId: cleanId, reason: data.remark || 'Not in approve response' });
+            }
         }
     }
 
