@@ -730,50 +730,20 @@ const assignBatch = async (cleanIds, shipmentMapFromApprove = {}) => {
     const headers = getPublicHeaders();
     const results = [];
 
-    const missingIds = cleanIds.filter(id => !shipmentMapFromApprove[id] && !_shipmentCache.get(id));
-    let sessionMap = new Map();
-    if (missingIds.length > 3) {
-        try {
-            sessionMap = await fetchAllOrders();
-            const foundInSession = missingIds.filter(id => sessionMap.get(id) || sessionMap.get(`#${id}`));
-            console.log(`[RAPIDSHYP] assignBatch: ${missingIds.length} missing. Session found ${foundInSession.length}/${missingIds.length}`);
-        } catch (e) {
-            console.warn(`[RAPIDSHYP] assignBatch: session fetch failed:`, e.message);
-        }
-    } else if (missingIds.length > 0) {
-        console.log(`[RAPIDSHYP] assignBatch: ${missingIds.length} missing — using track_order (skipping session API)`);
-    }
-
     for (const cleanId of cleanIds) {
-        let shipmentId = shipmentMapFromApprove[cleanId] || _shipmentCache.get(cleanId) || null;
-
-        // Resolve shipment_id via track_order if not in map
-        if (!shipmentId) {
-            try {
-                const res = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, {
-                    orderId: `#${cleanId}`
-                }, { headers });
-                const shipment = res.data?.records?.[0]?.shipment_details?.[0];
-                if (shipment?.shipment_id) {
-                    shipmentId = shipment.shipment_id;
-                    if (shipment.awb) {
-                        results.push({ orderId: cleanId, success: true, awb: shipment.awb, shipmentId, message: 'Already assigned' });
-                        continue;
-                    }
-                }
-            } catch (e) { /* no tracking data */ }
-        }
+        const shipmentId = shipmentMapFromApprove[cleanId] || _shipmentCache.get(cleanId) || null;
 
         if (!shipmentId) {
-            results.push({ orderId: cleanId, success: false, message: 'No shipment_id — may not be approved' });
+            results.push({ orderId: cleanId, success: false, message: `No shipment_id for #${cleanId}` });
             continue;
         }
 
         try {
             const res = await rsApi.post(`${PUBLIC_API_BASE}/assign_awb`, {
                 shipment_id: shipmentId
-            }, { headers });
+            }, { headers, timeout: 15000 });
             const data = res.data;
+            console.log(`[RAPIDSHYP] AWB assigned #${cleanId}: shipment=${shipmentId} awb=${data.awb}`);
             results.push({
                 orderId: cleanId, success: true,
                 awb: data.awb || '', shipmentId: data.shipment_id || shipmentId,
@@ -781,6 +751,7 @@ const assignBatch = async (cleanIds, shipmentMapFromApprove = {}) => {
             });
         } catch (e) {
             const msg = e.response?.data?.remarks || e.response?.data?.message || e.message;
+            console.error(`[RAPIDSHYP] AWB failed #${cleanId} (shipment=${shipmentId}):`, msg);
             results.push({ orderId: cleanId, success: false, shipmentId, message: typeof msg === 'string' ? msg : JSON.stringify(msg) });
         }
     }
