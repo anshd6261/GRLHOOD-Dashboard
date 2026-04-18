@@ -657,6 +657,9 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
 
     const data = res.data || {};
     console.log(`[RAPIDSHYP] Approve batch response: status=${data.status}, success=${data.success_count}, failure=${data.failure_count}, remark="${data.remark || ''}"`);
+    console.log(`[RAPIDSHYP][DEBUG] Raw response keys: ${Object.keys(data).join(', ')}`);
+    console.log(`[RAPIDSHYP][DEBUG] order_list length: ${data.order_list?.length || 0}`);
+    console.log(`[RAPIDSHYP][DEBUG] Full response: ${JSON.stringify(data).slice(0, 4000)}`);
 
     // If batch rejected entirely (success_count=0 AND empty order_list), fall back to per-order
     const batchRejected = (data.status === 'FAILED' || data.success_count === 0) && !(data.order_list?.length > 0);
