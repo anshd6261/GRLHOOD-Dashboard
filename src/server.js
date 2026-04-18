@@ -818,25 +818,55 @@ app.get('/api/rapidshyp/debug-session', async (req, res) => {
     }
 });
 
-app.post('/api/rapidshyp/bulk-approve', async (req, res) => {
+// Approve a batch of up to 50 orders — frontend calls this in a loop for realtime progress
+app.post('/api/rapidshyp/approve-batch', async (req, res) => {
     try {
         const { orderIds, orderIdMap } = req.body;
-        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
-            return res.status(400).json({ error: 'Missing or invalid orderIds array' });
-        }
+        if (!orderIds?.length) return res.status(400).json({ error: 'No orderIds' });
 
-        console.log(`[API] Bulk approving ${orderIds.length} orders (${Object.keys(orderIdMap || {}).length} marketplace IDs)...`);
-        if (orderIdMap) {
-            const sample = Object.entries(orderIdMap).slice(0, 3);
-            console.log(`[API] orderIdMap sample:`, JSON.stringify(sample));
-        } else {
-            console.log(`[API] WARNING: orderIdMap is empty/missing!`);
-        }
-        const result = await rapidshyp.bulkApproveOrders(orderIds, orderIdMap || {});
+        const cleanIds = orderIds.map(id => id.toString().replace('#', ''));
+        const marketplaceIds = cleanIds.map(id => (orderIdMap || {})[id] ? String(orderIdMap[id]) : id);
+
+        // Reverse map: marketplaceId → cleanId
+        const mpToClean = {};
+        cleanIds.forEach((c, i) => { mpToClean[marketplaceIds[i]] = c; });
+
+        console.log(`[API] Approve batch: ${cleanIds.length} orders, mpIds sample: ${marketplaceIds.slice(0, 3)}`);
+        const result = await rapidshyp.approveBatch(marketplaceIds, mpToClean);
         res.json(result);
     } catch (e) {
-        console.error('[API] Bulk Approve Error:', e);
-        res.status(500).json({ success: false, error: e.message });
+        console.error('[API] Approve Batch Error:', e.response?.data || e.message);
+        res.status(500).json({ error: e.response?.data?.remarks || e.message });
+    }
+});
+
+// Assign AWB for a batch of orders — frontend calls this in a loop
+app.post('/api/rapidshyp/assign-batch', async (req, res) => {
+    try {
+        const { orderIds, shipmentMap } = req.body;
+        if (!orderIds?.length) return res.status(400).json({ error: 'No orderIds' });
+
+        const cleanIds = orderIds.map(id => id.toString().replace('#', ''));
+        console.log(`[API] Assign batch: ${cleanIds.length} orders`);
+        const result = await rapidshyp.assignBatch(cleanIds, shipmentMap || {});
+
+        // Auto-schedule pickup for assigned orders
+        const assigned = (result.results || []).filter(r => r.success && r.awb && r.shipmentId);
+        if (assigned.length > 0) {
+            try {
+                const pickupResult = await rapidshyp.bulkSchedulePickup(
+                    assigned.map(r => ({ shipmentId: r.shipmentId, awb: r.awb }))
+                );
+                result.pickup = pickupResult;
+            } catch (pe) {
+                console.warn('[API] Pickup scheduling failed (non-blocking):', pe.message);
+            }
+        }
+
+        res.json(result);
+    } catch (e) {
+        console.error('[API] Assign Batch Error:', e.response?.data || e.message);
+        res.status(500).json({ error: e.response?.data?.remarks || e.message });
     }
 });
 

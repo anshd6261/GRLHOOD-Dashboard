@@ -595,101 +595,134 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   };
   useEffect(() => { if ((step === 4 || step === 5) && walletBalance === null) fetchWallet(); }, [step]);
 
-  // ═══ Auto-approve unapproved orders in RapidShyp before shipping ═══
+  // ═══ APPROVE: Frontend drives batches of 50 for realtime progress ═══
   const handleApprove = async () => {
     if (approveResult || approveLoading) return;
     setApproveLoading(true);
-    setApproveProgress({ done: 0, total: uniqueIds.length });
-    try {
-      const orderIdMap = {};
-      workingOrders.forEach(o => { if (o.orderId && o.id) orderIdMap[o.orderId] = o.id; });
-      const r = await axios.post(`${API_URL}/rapidshyp/bulk-approve`, { orderIds: uniqueIds, orderIdMap }, { timeout: 120000 });
-      // Merge new shipment_ids with any previously saved ones (persist across sessions)
-      const savedMap = JSON.parse(localStorage.getItem('shipmentMap') || '{}');
-      const mergedMap = { ...savedMap, ...(r.data.shipmentMap || {}) };
-      r.data.shipmentMap = mergedMap;
-      localStorage.setItem('shipmentMap', JSON.stringify(mergedMap));
-      // Treat partial errors as success — don't show yellow if orders were approved
-      if (r.data.errors?.length && !r.data.error) {
-        r.data.partialErrors = r.data.errors;
-        delete r.data.errors;
+
+    const orderIdMap = {};
+    workingOrders.forEach(o => { if (o.orderId && o.id) orderIdMap[o.orderId] = o.id; });
+
+    const BATCH = 50;
+    let totalApproved = 0;
+    let totalAlready = 0;
+    const allShipmentMap = JSON.parse(localStorage.getItem('shipmentMap') || '{}');
+    const batchLog = [];
+
+    setApproveProgress({ done: 0, total: uniqueIds.length, status: 'Approving...' });
+
+    for (let i = 0; i < uniqueIds.length; i += BATCH) {
+      const batch = uniqueIds.slice(i, i + BATCH);
+      const batchNum = Math.floor(i / BATCH) + 1;
+      setApproveProgress({ done: i, total: uniqueIds.length, status: `Batch ${batchNum} · ${batch.length} orders` });
+
+      try {
+        const r = await axios.post(`${API_URL}/rapidshyp/approve-batch`, { orderIds: batch, orderIdMap });
+        const d = r.data;
+        totalApproved += d.success_count || 0;
+        totalAlready += d.failure_count || 0;
+        Object.assign(allShipmentMap, d.shipmentMap || {});
+        batchLog.push({ batch: batchNum, ok: (d.success_count||0) + (d.failure_count||0), remark: d.remark });
+      } catch (e) {
+        batchLog.push({ batch: batchNum, error: e.response?.data?.error || e.message });
       }
-      setApproveResult(r.data);
-      setApproveProgress({ done: (r.data.approved || 0) + (r.data.alreadyApproved || 0), total: uniqueIds.length });
-      const okCount = (r.data.approved || 0) + (r.data.alreadyApproved || 0);
-      const failCount = (r.data.failed || 0) + (r.data.notFound || 0);
-      const msg = failCount > 0
-        ? `${okCount}/${uniqueIds.length} approved · ${failCount} issue${failCount>1?'s':''}`
-        : r.data.approved > 0 ? `${r.data.approved} approved`
-        : r.data.alreadyApproved > 0 ? `${r.data.alreadyApproved} already approved`
-        : 'Approve complete';
-      setToast({ msg, err: failCount > 0 });
-      // Log action
-      logAction('approve', { approved: r.data.approved, alreadyApproved: r.data.alreadyApproved, failed: r.data.failed, notFound: r.data.notFound, orders: uniqueIds.length });
-    } catch (e) {
-      // If timeout or network error but approve may have partially worked, show warning not error
-      const errMsg = e.response?.data?.error || e.message;
-      const isTimeout = e.code === 'ECONNABORTED' || errMsg.includes('timeout');
-      if (isTimeout) {
-        setApproveResult({ success: true, approved: 0, alreadyApproved: 0, notFound: 0, shipmentMap: {}, warning: 'Request timed out — orders may still be processing. Proceed to Ship.' });
-      } else {
-        setApproveResult({ success: false, error: errMsg });
-      }
-      setToast({ msg: isTimeout ? 'Approve timed out — try shipping anyway' : `Approve failed: ${errMsg}`, err: !isTimeout });
-    } finally {
-      setApproveLoading(false);
+
+      setApproveProgress({ done: Math.min(i + BATCH, uniqueIds.length), total: uniqueIds.length, status: `${totalApproved} approved · ${totalAlready} already` });
     }
+
+    localStorage.setItem('shipmentMap', JSON.stringify(allShipmentMap));
+    const result = { success: true, approved: totalApproved, alreadyApproved: totalAlready, shipmentMap: allShipmentMap, batchLog };
+    setApproveResult(result);
+    setApproveProgress({ done: uniqueIds.length, total: uniqueIds.length, status: 'Done' });
+    setToast({ msg: `${totalApproved + totalAlready}/${uniqueIds.length} approved` });
+    logAction('approve', { approved: totalApproved, alreadyApproved: totalAlready, orders: uniqueIds.length });
+    setApproveLoading(false);
   };
 
-  // Pre-approve when entering DOWNLOAD step (step 4) so it's ready by SHIP step
-  // Also trigger on SHIP step (step 5) as fallback
   useEffect(() => { if ((step === 4 || step === 5) && !approveResult && !approveLoading) handleApprove(); }, [step]);
 
+  // ═══ SHIP: Frontend drives batches of 10 for realtime progress ═══
   const handleShip = async () => {
     setShipLoading(true);
-    try {
-      // Merge approve result with persisted shipment map from localStorage
-      const savedMap = JSON.parse(localStorage.getItem('shipmentMap') || '{}');
-      const sm = { ...savedMap, ...(approveResult?.shipmentMap || {}) };
-      console.log('[SHIP] shipmentMap keys:', Object.keys(sm).length, 'sample:', Object.entries(sm).slice(0, 3));
-      const r = await axios.post(`${API_URL}/rapidshyp/bulk-assign`, { orderNames: uniqueIds, shipmentMap: sm });
-      setShipResults(r.data);
-      const shipped = r.data?.results?.filter(x=>x.success).length || 0;
-      setShipProgress({ done: shipped, total: uniqueIds.length });
-      setToast({ msg: `${shipped}/${uniqueIds.length} shipped` });
-      logAction('ship_orders', { shipped, total: uniqueIds.length });
-    } catch (e) { setToast({ msg: `Ship failed: ${e.response?.data?.error||e.message}`, err: true }); }
-    finally { setShipLoading(false); }
+    const sm = { ...(approveResult?.shipmentMap || {}) };
+    const BATCH = 10;
+    const allResults = [];
+
+    setShipProgress({ done: 0, total: uniqueIds.length, status: 'Assigning AWBs...' });
+
+    for (let i = 0; i < uniqueIds.length; i += BATCH) {
+      const batch = uniqueIds.slice(i, i + BATCH);
+      setShipProgress({ done: i, total: uniqueIds.length, status: `Shipping ${i+1}–${Math.min(i+BATCH, uniqueIds.length)}` });
+
+      try {
+        const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, { orderIds: batch, shipmentMap: sm });
+        const results = r.data?.results || [];
+        allResults.push(...results);
+        // Capture any new shipment IDs for next batches
+        results.forEach(rr => { if (rr.shipmentId) sm[rr.orderId] = rr.shipmentId; });
+      } catch (e) {
+        batch.forEach(id => allResults.push({ orderId: id, success: false, message: e.response?.data?.error || e.message }));
+      }
+
+      const shipped = allResults.filter(r => r.success).length;
+      setShipProgress({ done: Math.min(i + BATCH, uniqueIds.length), total: uniqueIds.length, status: `${shipped} assigned` });
+    }
+
+    const shipData = { success: true, results: allResults };
+    setShipResults(shipData);
+    const shipped = allResults.filter(r => r.success).length;
+    setShipProgress({ done: uniqueIds.length, total: uniqueIds.length, status: 'Done' });
+    setToast({ msg: `${shipped}/${uniqueIds.length} shipped` });
+    logAction('ship_orders', { shipped, total: uniqueIds.length });
+    setShipLoading(false);
   };
 
   const estCost = uniqueIds.length * 85;
   const rechargeNeeded = walletBalance !== null ? Math.max(0, estCost - walletBalance + 500) : estCost;
   const rechargeMsg = encodeURIComponent(`Hey, we need a wallet recharge for RapidShyp.\n\nToday's Order: ${uniqueIds.length} orders\nEstimated Shipping: Rs${estCost}\nCurrent Balance: Rs${walletBalance !== null ? walletBalance : 'N/A'}\nPlease recharge: Rs${rechargeNeeded}\n\nThanks`);
 
+  // ═══ Progress Bar Component ═══
+  const ProgressBar = ({ progress, color = '#e3cfd8' }) => {
+    if (!progress) return null;
+    const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
+    return (
+      <div className="space-y-2">
+        <div className="w-full bg-[rgba(255,255,255,0.06)] rounded-full h-2 overflow-hidden">
+          <motion.div className="h-2 rounded-full" initial={{ width: 0 }} animate={{ width: `${pct}%` }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+            style={{ background: `linear-gradient(90deg, ${color}80, ${color})` }} />
+        </div>
+        <div className="flex justify-between text-[10px]">
+          <span className="text-[rgba(245,245,245,0.4)]">{progress.status || ''}</span>
+          <span className="font-bold text-white">{progress.done}/{progress.total}</span>
+        </div>
+      </div>
+    );
+  };
+
   const renderShip = () => (
     <div className="space-y-3">
-      {/* Auto-approve status */}
+      {/* Approve progress / result */}
       <div className="glass-card-sm p-3">
         {approveLoading ? (
-          <div className="flex items-center gap-2 text-[11px] text-[rgba(245,245,245,0.5)]">
-            <RefreshCw size={11} className="animate-spin text-[#e3cfd8]" />
-            <span>Approving orders... {approveProgress ? `${approveProgress.done}/${approveProgress.total}` : ''}</span>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-[11px] text-[rgba(245,245,245,0.5)]">
+              <RefreshCw size={11} className="animate-spin text-[#e3cfd8]" />
+              <span className="font-bold">Approving orders</span>
+            </div>
+            <ProgressBar progress={approveProgress} color="#e3cfd8" />
           </div>
         ) : approveResult ? (
           <div className="flex items-center gap-2 text-[11px]">
             {approveResult.error ? (
-              <><AlertTriangle size={11} className="text-amber-400" /><span className="text-amber-400">Approve: {approveResult.error}</span>
+              <><AlertTriangle size={11} className="text-amber-400" /><span className="text-amber-400">{approveResult.error}</span>
                 <button onClick={() => { setApproveResult(null); setApproveLoading(false); }} className="text-[9px] text-[#e3cfd8] underline ml-1">Retry</button></>
-            ) : approveResult.warning ? (
-              <><AlertTriangle size={11} className="text-amber-400" /><span className="text-amber-400/80">{approveResult.warning}</span></>
             ) : (
               <><CheckCircle size={11} className="text-emerald-400" />
               <span className="text-[rgba(245,245,245,0.5)]">
                 {approveResult.approved > 0 && <span className="text-emerald-400 font-bold">{approveResult.approved} approved</span>}
                 {approveResult.approved > 0 && approveResult.alreadyApproved > 0 && ' · '}
                 {approveResult.alreadyApproved > 0 && `${approveResult.alreadyApproved} already approved`}
-                {approveResult.notFound > 0 && <span className="text-amber-400"> · {approveResult.notFound} not in RS</span>}
-                {approveResult.failed > 0 && <span className="text-[#ff1493]"> · {approveResult.failed} failed</span>}
               </span></>
             )}
           </div>
@@ -716,11 +749,21 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           </a>
         )}
       </div>
+
+      {/* Ship progress */}
+      {shipLoading && (
+        <div className="glass-card-sm p-4 space-y-2">
+          <div className="flex items-center gap-2 text-[11px] text-[rgba(245,245,245,0.5)]">
+            <RefreshCw size={11} className="animate-spin text-emerald-400" />
+            <span className="font-bold">Assigning AWBs</span>
+          </div>
+          <ProgressBar progress={shipProgress} color="#34d399" />
+        </div>
+      )}
+
       {shipResults ? (
         <div className="glass-card-sm p-3 space-y-2">
-          <div className="flex items-center gap-2"><CheckCircle size={13} className="text-emerald-400" /><span className="text-xs font-bold text-emerald-400">{shipResults.results?.filter(r=>r.success).length}/{shipResults.results?.length} assigned</span>
-            {shipResults.pickup && <span className="text-[10px] text-[rgba(245,245,245,0.4)]">· {shipResults.pickup.scheduled || 0} pickups scheduled</span>}
-          </div>
+          <div className="flex items-center gap-2"><CheckCircle size={13} className="text-emerald-400" /><span className="text-xs font-bold text-emerald-400">{shipResults.results?.filter(r=>r.success).length}/{shipResults.results?.length} assigned</span></div>
           <div className="max-h-40 overflow-y-auto space-y-1">
             {shipResults.results?.map((r,i) => (
               <div key={i} className={`flex items-center justify-between text-[10px] px-2 py-1 rounded-lg ${r.success?'bg-[rgba(52,211,153,0.05)]':'bg-[rgba(255,20,147,0.05)]'}`}>
@@ -730,9 +773,9 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
             ))}
           </div>
         </div>
-      ) : (
-        <button onClick={handleShip} disabled={shipLoading || approveLoading} className="glass-btn-accent w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2">
-          {shipLoading ? <><RefreshCw size={13} className="animate-spin" /> Assigning...</> : <><Truck size={13} /> Confirm & Ship All</>}
+      ) : !shipLoading && (
+        <button onClick={handleShip} disabled={approveLoading} className="glass-btn-accent w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2">
+          <Truck size={13} /> Confirm & Ship All
         </button>
       )}
     </div>
@@ -741,6 +784,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   // ═══ STEP 6: Labels ═══
   const handleLabels = async () => {
     setLabelLoading(true);
+    setLabelProgress({ done: 0, total: 3, status: 'Collecting shipment IDs...' });
     try {
       const successResults = shipResults?.results?.filter(r => r.success) || [];
       const shipmentIds = successResults.map(r => r.shipmentId).filter(Boolean);
@@ -752,13 +796,16 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
         if (orderAwbs.length > 0) {
           awbs.push(...orderAwbs);
         } else {
+          setLabelProgress({ done: 1, total: 3, status: `Resolving ${uniqueIds.length} orders...` });
           const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-by-orders`, { orderIds: uniqueIds });
+          setLabelProgress({ done: 2, total: 3, status: 'Downloading PDF...' });
           setLabelResult(r.data);
           const url = r.data?.label_pdf_url || r.data?.labelUrl;
           if (url) {
             const batchName = `${getOrdinalDate()} - Labels.pdf`;
             try { const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(batchName)}`; const pr = await fetch(proxyUrl); if (!pr.ok) throw new Error('fail'); const bl = new Blob([await pr.arrayBuffer()], { type: 'application/pdf' }); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = batchName; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(bu), 1000); } catch { window.open(url, '_blank'); }
           }
+          setLabelProgress({ done: 3, total: 3, status: 'Done' });
           setToast({ msg: 'Labels generated' });
           setLabelLoading(false);
           return;
@@ -766,13 +813,16 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       }
 
       if (!shipmentIds.length && !awbs.length) { setToast({ msg: 'No shipped orders for labels', err: true }); setLabelLoading(false); return; }
+      setLabelProgress({ done: 1, total: 3, status: `Generating ${shipmentIds.length || awbs.length} labels...` });
       const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-dropbox`, { orderIds: shipmentIds, awbs, orders: workingOrders });
+      setLabelProgress({ done: 2, total: 3, status: 'Downloading PDF...' });
       setLabelResult(r.data);
       const url = r.data?.label_pdf_url || r.data?.labelUrl;
       if (url) {
         const labelFileName = `${getOrdinalDate()} - Labels.pdf`;
         try { const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(labelFileName)}`; const pr = await fetch(proxyUrl); if (!pr.ok) throw new Error('fail'); const bl = new Blob([await pr.arrayBuffer()], { type: 'application/pdf' }); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = labelFileName; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(bu), 1000); } catch { window.open(url, '_blank'); }
       }
+      setLabelProgress({ done: 3, total: 3, status: 'Done' });
       setToast({ msg: 'Labels generated & downloading' });
       logAction('generate_labels', { orders: uniqueIds.length, hasUrl: !!url });
     } catch (e) { setToast({ msg: `Labels failed: ${e.response?.data?.error||e.message}`, err: true }); }
@@ -786,7 +836,10 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
     <div className="space-y-3">
       <div className="glass-card-sm p-6 text-center space-y-3">
         {labelLoading ? (
-          <div><RefreshCw size={28} className="mx-auto text-[#e3cfd8] animate-spin" /><p className="text-xs text-[rgba(245,245,245,0.4)] mt-2">generating...</p></div>
+          <div className="space-y-3">
+            <RefreshCw size={28} className="mx-auto text-[#e3cfd8] animate-spin" />
+            <ProgressBar progress={labelProgress} color="#e3cfd8" />
+          </div>
         ) : labelResult ? (
           <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} className="space-y-2">
             <CheckCircle size={40} className="mx-auto text-emerald-400" />

@@ -14,7 +14,7 @@ require('dotenv').config();
 const PUBLIC_API_BASE = 'https://api.rapidshyp.com/rapidshyp/apis/v1';
 const SESSION_API_BASE = 'https://api.rapidshyp.com/session';
 
-const rsApi = axios.create({ timeout: 30000 });
+const rsApi = axios.create({ timeout: 120000 });
 
 rsApi.interceptors.response.use(
     (response) => response,
@@ -569,241 +569,91 @@ const bulkAssignAWB = async (orderNames, approveShipmentMap = {}) => {
 };
 
 /**
- * Bulk approve orders in RapidShyp.
- * 1. Fetches session data to check order_status (APPROVAL_PENDING vs already approved)
- * 2. Sends ONLY pending orders to approve API (avoids "already approved" failure)
- * 3. Captures shipment_id from approve response for AWB assignment
- * 4. Retries transient errors and falls back to per-order approval for ambiguous batch failures
+ * Approve a single batch of up to 50 orders.
+ * No session lookup, no classification — just send to RapidShyp and return the result.
+ * Frontend drives the loop for realtime progress.
  */
-const bulkApproveOrders = async (shopifyOrderIds, orderIdMap = {}) => {
+const approveBatch = async (marketplaceIds, cleanIdMap) => {
     const headers = getPublicHeaders();
-    const cleanIds = shopifyOrderIds.map(id => id.toString().replace('#', ''));
+    console.log(`[RAPIDSHYP] Approve batch: ${marketplaceIds.length} orders`);
 
-    console.log(`[RAPIDSHYP] Bulk approve: ${cleanIds.length} orders, ${Object.keys(orderIdMap).length} marketplace IDs from frontend`);
+    const res = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
+        order_id: marketplaceIds,
+        store_name: 'GRLHOOD'
+    }, { headers });
 
-    // Step 1: Fetch session data to check which orders need approval
-    const sessionHeaders = getSessionHeaders();
-    const sessionMap = new Map(); // cleanId → { order_status, market_place_order_id }
+    const data = res.data || {};
+    const shipmentMap = {};
 
-    if (sessionHeaders) {
-        try {
-            // Paginate up to 25 pages (5000 orders) to catch older orders
-            for (let page = 1; page <= 25; page++) {
-                const res = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, {
-                    page, limit: 200
-                }, { headers: sessionHeaders, timeout: 10000 });
-                const records = res.data?.records || [];
-                for (const r of records) {
-                    if (r.seller_order_id) {
-                        const clean = r.seller_order_id.replace('#', '');
-                        sessionMap.set(clean, {
-                            order_status: r.order_status,
-                            market_place_order_id: String(r.market_place_order_id || ''),
-                            awb_number: r.awb_number || ''
-                        });
-                    }
-                }
-                if (records.length < 200) break;
-            }
-            console.log(`[RAPIDSHYP] Session: ${sessionMap.size} orders fetched`);
-        } catch (e) {
-            console.warn(`[RAPIDSHYP] Session fetch failed:`, e.message);
-        }
-    }
-
-    // Step 2: Classify orders
-    const pendingApproval = [];
-    let alreadyApproved = 0;
-    let notFound = 0;
-    const perOrderStatus = {}; // cleanId → 'approved' | 'already_approved' | 'not_found' | 'failed'
-
-    for (const cleanId of cleanIds) {
-        const session = sessionMap.get(cleanId);
-        const marketplaceId = orderIdMap[cleanId]
-            ? String(orderIdMap[cleanId])
-            : (session?.market_place_order_id || null);
-
-        if (!marketplaceId) {
-            notFound++;
-            perOrderStatus[cleanId] = 'not_found';
-            console.warn(`[RAPIDSHYP] No marketplace ID for #${cleanId}`);
-            continue;
-        }
-
-        const status = (session?.order_status || '').toUpperCase();
-        if (status === 'APPROVAL_PENDING' || status === 'NEW' || !status) {
-            pendingApproval.push({ cleanId, marketplaceId });
-        } else {
-            alreadyApproved++;
-            perOrderStatus[cleanId] = 'already_approved';
-            if (alreadyApproved <= 5) console.log(`[RAPIDSHYP] #${cleanId} already ${status}, mpId=${marketplaceId}`);
-        }
-    }
-
-    console.log(`[RAPIDSHYP] ${pendingApproval.length} pending, ${alreadyApproved} already approved, ${notFound} not found`);
-
-    if (pendingApproval.length === 0) {
-        return { success: alreadyApproved > 0, approved: 0, alreadyApproved, notFound, failed: 0,
-            shipmentMap: {}, perOrderStatus,
-            message: `0 to approve, ${alreadyApproved} already approved` };
-    }
-
-    // Helper: call approve_orders API with one batch, retry on transient errors
-    const callApproveApi = async (marketplaceIds, attempt = 1) => {
-        try {
-            const res = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
-                order_id: marketplaceIds,
-                store_name: 'GRLHOOD'
-            }, { headers, timeout: 30000 });
-            return { ok: true, data: res.data || {} };
-        } catch (e) {
-            const status = e.response?.status;
-            const transient = !status || status >= 500 || status === 429 || e.code === 'ECONNABORTED' || e.code === 'ETIMEDOUT';
-            if (transient && attempt < 3) {
-                const delay = Math.pow(2, attempt) * 1000;
-                console.warn(`[RAPIDSHYP] Approve batch error (attempt ${attempt}, status=${status || e.code}), retry in ${delay}ms`);
-                await new Promise(r => setTimeout(r, delay));
-                return callApproveApi(marketplaceIds, attempt + 1);
-            }
-            return { ok: false, error: e.response?.data || e.message, status };
-        }
-    };
-
-    // Step 3: Approve pending orders in batches of 50 (API limit)
-    const APPROVE_BATCH = 50;
-    let approvedCount = 0;
-    let failedCount = 0;
-    const orderShipmentMap = {};
-    const errors = [];
-
-    for (let i = 0; i < pendingApproval.length; i += APPROVE_BATCH) {
-        const batch = pendingApproval.slice(i, i + APPROVE_BATCH);
-        const batchIds = batch.map(o => o.marketplaceId);
-        const batchNum = Math.floor(i / APPROVE_BATCH) + 1;
-
-        console.log(`[RAPIDSHYP] Approving batch ${batchNum}: ${batch.length} orders...`);
-        const result = await callApproveApi(batchIds);
-
-        if (!result.ok) {
-            // Batch completely failed — fall back to per-order approval
-            console.warn(`[RAPIDSHYP] Batch ${batchNum} failed (${result.status}): ${JSON.stringify(result.error).slice(0, 200)} — falling back to per-order`);
-            for (const o of batch) {
-                const single = await callApproveApi([o.marketplaceId]);
-                if (single.ok) {
-                    const d = single.data;
-                    const sc = d.success_count || 0;
-                    const fc = d.failure_count || 0;
-                    const remark = (d.remark || d.remarks || '').toLowerCase();
-                    if (sc > 0) {
-                        approvedCount++;
-                        perOrderStatus[o.cleanId] = 'approved';
-                        for (const ol of (d.order_list || [])) {
-                            for (const s of (ol.shipment || [])) {
-                                if (s.shipment_id) orderShipmentMap[o.cleanId] = s.shipment_id;
-                            }
-                        }
-                    } else if (fc > 0 && remark.includes('already approved')) {
-                        alreadyApproved++;
-                        perOrderStatus[o.cleanId] = 'already_approved';
-                    } else {
-                        failedCount++;
-                        perOrderStatus[o.cleanId] = 'failed';
-                        errors.push({ orderId: o.cleanId, error: d.remark || 'unknown' });
-                    }
-                } else {
-                    failedCount++;
-                    perOrderStatus[o.cleanId] = 'failed';
-                    errors.push({ orderId: o.cleanId, error: typeof single.error === 'string' ? single.error : JSON.stringify(single.error).slice(0, 200) });
-                }
-            }
-            continue;
-        }
-
-        const data = result.data;
-        const successCount = data.success_count || 0;
-        const failCount = data.failure_count || 0;
-        const remark = (data.remark || data.remarks || '').toLowerCase();
-        console.log(`[RAPIDSHYP] Batch ${batchNum}: success=${successCount}, fail=${failCount}, remark="${data.remark || ''}", order_list=${(data.order_list||[]).length}`);
-
-        approvedCount += successCount;
-
-        // Mark all batch orders as approved by default — will refine via order_list
-        for (const o of batch) perOrderStatus[o.cleanId] = 'approved';
-
-        // Extract shipment_id mapping from newly approved orders
-        for (const ol of (data.order_list || [])) {
-            const match = batch.find(b => b.marketplaceId === String(ol.order_id));
-            if (!match) continue;
-            for (const s of (ol.shipment || [])) {
-                if (s.shipment_id) orderShipmentMap[match.cleanId] = s.shipment_id;
-            }
-        }
-
-        // Handle failures
-        if (failCount > 0) {
-            if (remark.includes('already approved') || remark.includes('already_approved')) {
-                // Whole batch was already-approved — count all as alreadyApproved
-                alreadyApproved += failCount;
-                // Reclassify: orders in this batch that didn't get a shipment_id are the failures
-                if (successCount === 0) {
-                    for (const o of batch) perOrderStatus[o.cleanId] = 'already_approved';
-                }
-                console.log(`[RAPIDSHYP] Batch ${batchNum}: ${failCount} already approved`);
-            } else {
-                // Ambiguous failure — retry each failed order individually to get real status
-                console.warn(`[RAPIDSHYP] Batch ${batchNum}: ${failCount} failed with remark "${data.remark}" — retrying individually`);
-                // Identify which orders in batch didn't appear in success order_list
-                const approvedInBatch = new Set((data.order_list || []).map(ol => String(ol.order_id)));
-                const failedInBatch = batch.filter(o => !approvedInBatch.has(o.marketplaceId));
-
-                for (const o of failedInBatch) {
-                    const single = await callApproveApi([o.marketplaceId]);
-                    if (single.ok) {
-                        const d = single.data;
-                        const sRemark = (d.remark || d.remarks || '').toLowerCase();
-                        if ((d.success_count || 0) > 0) {
-                            approvedCount++;
-                            perOrderStatus[o.cleanId] = 'approved';
-                            for (const ol of (d.order_list || [])) {
-                                for (const s of (ol.shipment || [])) {
-                                    if (s.shipment_id) orderShipmentMap[o.cleanId] = s.shipment_id;
-                                }
-                            }
-                        } else if (sRemark.includes('already approved')) {
-                            alreadyApproved++;
-                            perOrderStatus[o.cleanId] = 'already_approved';
-                        } else {
-                            failedCount++;
-                            perOrderStatus[o.cleanId] = 'failed';
-                            errors.push({ orderId: o.cleanId, error: d.remark || 'unknown' });
-                        }
-                    } else {
-                        failedCount++;
-                        perOrderStatus[o.cleanId] = 'failed';
-                        errors.push({ orderId: o.cleanId, error: typeof single.error === 'string' ? single.error : JSON.stringify(single.error).slice(0, 200) });
-                    }
-                }
+    for (const ol of (data.order_list || [])) {
+        const cleanId = cleanIdMap[String(ol.order_id)];
+        if (!cleanId) continue;
+        for (const s of (ol.shipment || [])) {
+            if (s.shipment_id) {
+                shipmentMap[cleanId] = s.shipment_id;
+                _shipmentCache.set(cleanId, s.shipment_id);
             }
         }
     }
-
-    // Cache shipment_ids so assign AWB can use them even without fresh approve
-    for (const [id, shipId] of Object.entries(orderShipmentMap)) {
-        _shipmentCache.set(id, shipId);
-    }
-    console.log(`[RAPIDSHYP] Approve done: ${approvedCount} new, ${alreadyApproved} already approved, ${notFound} not found, ${failedCount} failed, ${Object.keys(orderShipmentMap).length} shipment IDs`);
 
     return {
-        success: approvedCount > 0 || alreadyApproved > 0,
-        approved: approvedCount,
-        alreadyApproved,
-        notFound,
-        failed: failedCount,
-        shipmentMap: orderShipmentMap,
-        perOrderStatus,
-        errors: errors.length > 0 ? errors.slice(0, 20) : undefined,
-        message: `${approvedCount} approved, ${alreadyApproved} already approved${failedCount > 0 ? `, ${failedCount} failed` : ''}`
+        success_count: data.success_count || 0,
+        failure_count: data.failure_count || 0,
+        remark: data.remark || '',
+        shipmentMap
     };
+};
+
+/**
+ * Assign AWB for a single batch of orders.
+ * Resolves shipment_ids, assigns AWBs, schedules pickup.
+ */
+const assignBatch = async (cleanIds, shipmentMapFromApprove = {}) => {
+    const headers = getPublicHeaders();
+    const results = [];
+
+    for (const cleanId of cleanIds) {
+        let shipmentId = shipmentMapFromApprove[cleanId] || _shipmentCache.get(cleanId) || null;
+
+        // Resolve shipment_id via track_order if not in map
+        if (!shipmentId) {
+            try {
+                const res = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, {
+                    orderId: `#${cleanId}`
+                }, { headers });
+                const shipment = res.data?.records?.[0]?.shipment_details?.[0];
+                if (shipment?.shipment_id) {
+                    shipmentId = shipment.shipment_id;
+                    if (shipment.awb) {
+                        results.push({ orderId: cleanId, success: true, awb: shipment.awb, shipmentId, message: 'Already assigned' });
+                        continue;
+                    }
+                }
+            } catch (e) { /* no tracking data */ }
+        }
+
+        if (!shipmentId) {
+            results.push({ orderId: cleanId, success: false, message: 'No shipment_id — may not be approved' });
+            continue;
+        }
+
+        try {
+            const res = await rsApi.post(`${PUBLIC_API_BASE}/assign_awb`, {
+                shipment_id: shipmentId
+            }, { headers });
+            const data = res.data;
+            results.push({
+                orderId: cleanId, success: true,
+                awb: data.awb || '', shipmentId: data.shipment_id || shipmentId,
+                courier: data.courier_name || ''
+            });
+        } catch (e) {
+            const msg = e.response?.data?.remarks || e.response?.data?.message || e.message;
+            results.push({ orderId: cleanId, success: false, shipmentId, message: typeof msg === 'string' ? msg : JSON.stringify(msg) });
+        }
+    }
+
+    return { results };
 };
 
 /**
@@ -972,7 +822,8 @@ module.exports = {
     getSessionHeaders,
     fetchAllOrders,
     fetchOrdersWithRTO,
-    bulkApproveOrders,
+    approveBatch,
+    assignBatch,
     cancelOrder,
     trackOrder,
     getOrderInfo,
