@@ -224,6 +224,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const [shipProgress, setShipProgress] = useState(null);
   const [nbeUploadedIds] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('nbe_uploaded_ids') || '[]')); } catch { return new Set(); } });
   const [labelProgress, setLabelProgress] = useState(null);
+  const [rechargeOpen, setRechargeOpen] = useState(false);
 
   // ═══ Action History Logger ═══
   const logAction = useCallback((action, details = {}) => {
@@ -600,6 +601,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
     const BATCH = 50;
     let totalApproved = 0;
     let totalAlready = 0;
+    const allFailed = [];
     const allShipmentMap = JSON.parse(localStorage.getItem('shipmentMap') || '{}');
     const batchLog = [];
 
@@ -614,22 +616,25 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
         const r = await axios.post(`${API_URL}/rapidshyp/approve-batch`, { orderIds: batch, orderIdMap });
         const d = r.data;
         totalApproved += d.success_count || 0;
-        totalAlready += d.failure_count || 0;
+        totalAlready += d.alreadyApproved_count || 0;
+        if (d.failed?.length) allFailed.push(...d.failed);
         Object.assign(allShipmentMap, d.shipmentMap || {});
-        batchLog.push({ batch: batchNum, ok: (d.success_count||0) + (d.failure_count||0), remark: d.remark });
+        batchLog.push({ batch: batchNum, approved: d.success_count||0, already: d.alreadyApproved_count||0, failed: d.failure_count||0, remark: d.remark });
       } catch (e) {
-        batchLog.push({ batch: batchNum, error: e.response?.data?.error || e.message });
+        const msg = e.response?.data?.error || e.message;
+        batch.forEach(id => allFailed.push({ orderId: id, reason: `Batch error: ${msg}` }));
+        batchLog.push({ batch: batchNum, error: msg });
       }
 
-      setApproveProgress({ done: Math.min(i + BATCH, uniqueIds.length), total: uniqueIds.length, status: `${totalApproved} approved · ${totalAlready} already` });
+      setApproveProgress({ done: Math.min(i + BATCH, uniqueIds.length), total: uniqueIds.length, status: `${totalApproved} approved · ${totalAlready} already · ${allFailed.length} failed` });
     }
 
     localStorage.setItem('shipmentMap', JSON.stringify(allShipmentMap));
-    const result = { success: true, approved: totalApproved, alreadyApproved: totalAlready, shipmentMap: allShipmentMap, batchLog };
+    const result = { success: true, approved: totalApproved, alreadyApproved: totalAlready, failed: allFailed, shipmentMap: allShipmentMap, batchLog };
     setApproveResult(result);
     setApproveProgress({ done: uniqueIds.length, total: uniqueIds.length, status: 'Done' });
-    setToast({ msg: `${totalApproved + totalAlready}/${uniqueIds.length} approved` });
-    logAction('approve', { approved: totalApproved, alreadyApproved: totalAlready, orders: uniqueIds.length });
+    setToast({ msg: `${totalApproved + totalAlready}/${uniqueIds.length} approved${allFailed.length ? ` · ${allFailed.length} failed` : ''}`, err: allFailed.length > 0 });
+    logAction('approve', { approved: totalApproved, alreadyApproved: totalAlready, failed: allFailed.length, orders: uniqueIds.length });
     setApproveLoading(false);
   };
 
@@ -707,17 +712,33 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
             <ProgressBar progress={approveProgress} color="#e3cfd8" />
           </div>
         ) : approveResult ? (
-          <div className="flex items-center gap-2 text-[11px]">
-            {approveResult.error ? (
-              <><AlertTriangle size={11} className="text-amber-400" /><span className="text-amber-400">{approveResult.error}</span>
-                <button onClick={() => { setApproveResult(null); setApproveLoading(false); }} className="text-[9px] text-[#e3cfd8] underline ml-1">Retry</button></>
-            ) : (
-              <><CheckCircle size={11} className="text-emerald-400" />
-              <span className="text-[rgba(245,245,245,0.5)]">
-                {approveResult.approved > 0 && <span className="text-emerald-400 font-bold">{approveResult.approved} approved</span>}
-                {approveResult.approved > 0 && approveResult.alreadyApproved > 0 && ' · '}
-                {approveResult.alreadyApproved > 0 && `${approveResult.alreadyApproved} already approved`}
-              </span></>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 text-[11px]">
+              {approveResult.error ? (
+                <><AlertTriangle size={11} className="text-amber-400" /><span className="text-amber-400">{approveResult.error}</span>
+                  <button onClick={() => { setApproveResult(null); setApproveLoading(false); }} className="text-[9px] text-[#e3cfd8] underline ml-1">Retry</button></>
+              ) : (
+                <><CheckCircle size={11} className={approveResult.failed?.length ? 'text-amber-400' : 'text-emerald-400'} />
+                <span className="text-[rgba(245,245,245,0.5)]">
+                  {approveResult.approved > 0 && <span className="text-emerald-400 font-bold">{approveResult.approved} approved</span>}
+                  {approveResult.approved > 0 && approveResult.alreadyApproved > 0 && ' · '}
+                  {approveResult.alreadyApproved > 0 && <span className="text-[rgba(245,245,245,0.6)]">{approveResult.alreadyApproved} already approved</span>}
+                  {approveResult.failed?.length > 0 && (
+                    <>{(approveResult.approved + approveResult.alreadyApproved) > 0 && ' · '}<span className="text-[#ff1493] font-bold">{approveResult.failed.length} failed</span></>
+                  )}
+                </span>
+                {approveResult.failed?.length > 0 && (
+                  <button onClick={() => { setApproveResult(null); setApproveLoading(false); }} className="text-[9px] text-[#e3cfd8] underline ml-1">Retry</button>
+                )}</>
+              )}
+            </div>
+            {approveResult.failed?.length > 0 && (
+              <div className="max-h-24 overflow-y-auto text-[10px] font-mono text-[rgba(245,245,245,0.45)] bg-[rgba(255,20,147,0.04)] border border-[rgba(255,20,147,0.1)] rounded-lg p-2 space-y-0.5">
+                {approveResult.failed.slice(0, 20).map(f => (
+                  <div key={f.orderId}><span className="text-[#ff1493]">#{f.orderId}</span> · {f.reason}</div>
+                ))}
+                {approveResult.failed.length > 20 && <div className="text-[rgba(245,245,245,0.3)]">...and {approveResult.failed.length - 20} more</div>}
+              </div>
             )}
           </div>
         ) : null}
@@ -737,10 +758,16 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           </span>
         </div>
         {walletBalance !== null && walletBalance < estCost && (
-          <a href={`https://wa.me/?text=${rechargeMsg}`} target="_blank" rel="noopener noreferrer"
-            className="glass-btn w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 text-amber-400 border-amber-400/20">
-            <MessageSquare size={12} /> Ask to Recharge (Rs{rechargeNeeded} needed)
-          </a>
+          <div className="space-y-2">
+            <button onClick={() => setRechargeOpen(true)}
+              className="glass-btn w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 text-[#e3cfd8] border-[rgba(227,207,216,0.3)]">
+              <ExternalLink size={12} /> Recharge RapidShyp (Rs{rechargeNeeded} needed)
+            </button>
+            <a href={`https://wa.me/?text=${rechargeMsg}`} target="_blank" rel="noopener noreferrer"
+              className="block text-center text-[10px] text-[rgba(245,245,245,0.4)] hover:text-amber-400 underline">
+              or ask team on WhatsApp
+            </a>
+          </div>
         )}
       </div>
 
@@ -966,6 +993,39 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
             </button>
           </div>
         )}
+
+        {/* Recharge Modal — iframes RapidShyp dashboard */}
+        <AnimatePresence>
+          {rechargeOpen && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 z-20 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+              onClick={() => setRechargeOpen(false)}>
+              <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
+                onClick={e => e.stopPropagation()}
+                className="glass-card w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-[rgba(255,255,255,0.05)]">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-white">RapidShyp Recharge</span>
+                    <span className="text-[10px] text-[rgba(245,245,245,0.4)]">Rs{rechargeNeeded} needed</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <a href="https://app.rapidshyp.com/" target="_blank" rel="noopener noreferrer"
+                      className="glass-btn px-2.5 py-1 rounded-lg text-[10px] font-bold text-[#e3cfd8] flex items-center gap-1">
+                      <ExternalLink size={10} /> Open in new tab
+                    </a>
+                    <button onClick={() => { setRechargeOpen(false); fetchWallet(); }} className="glass-btn p-1.5 rounded-lg"><X size={12} className="text-white" /></button>
+                  </div>
+                </div>
+                <iframe src="https://app.rapidshyp.com/" title="RapidShyp"
+                  className="flex-1 w-full bg-white"
+                  sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation-by-user-activation" />
+                <div className="px-4 py-2 border-t border-[rgba(255,255,255,0.05)] text-[10px] text-[rgba(245,245,245,0.4)]">
+                  If the page is blank, RapidShyp may block embedding — use "Open in new tab". Close this modal to refresh the wallet balance.
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Toast */}
         <AnimatePresence>

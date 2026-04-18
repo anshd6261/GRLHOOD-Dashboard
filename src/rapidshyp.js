@@ -583,24 +583,53 @@ const approveBatch = async (marketplaceIds, cleanIdMap) => {
     }, { headers });
 
     const data = res.data || {};
+    console.log(`[RAPIDSHYP] Approve response:`, JSON.stringify(data).slice(0, 2000));
     const shipmentMap = {};
+    const approved = [];        // newly approved with shipment_id in response
+    const alreadyApproved = []; // orders RS says are already approved
+    const failed = [];          // { orderId, reason }
+    const seen = new Set();
 
     for (const ol of (data.order_list || [])) {
-        const cleanId = cleanIdMap[String(ol.order_id)];
+        const cleanId = cleanIdMap[String(ol.order_id)] || String(ol.order_id).replace('#', '');
         if (!cleanId) continue;
-        for (const s of (ol.shipment || [])) {
-            if (s.shipment_id) {
-                shipmentMap[cleanId] = s.shipment_id;
-                _shipmentCache.set(cleanId, s.shipment_id);
+        seen.add(cleanId);
+
+        const shipmentId = (ol.shipment || []).find(s => s.shipment_id)?.shipment_id;
+        const remark = String(ol.remarks || ol.remark || ol.message || '').toLowerCase();
+
+        if (shipmentId) {
+            shipmentMap[cleanId] = shipmentId;
+            _shipmentCache.set(cleanId, shipmentId);
+            if (remark.includes('already') || remark.includes('duplicate')) {
+                alreadyApproved.push({ orderId: cleanId, shipmentId });
+            } else {
+                approved.push({ orderId: cleanId, shipmentId });
             }
+        } else if (remark.includes('already') || remark.includes('duplicate')) {
+            alreadyApproved.push({ orderId: cleanId, reason: ol.remarks || ol.remark || 'Already approved' });
+        } else {
+            failed.push({ orderId: cleanId, reason: ol.remarks || ol.remark || ol.message || 'Unknown error' });
+        }
+    }
+
+    // Any input ID not in order_list → mark as failed (RS didn't acknowledge it)
+    for (const mp of marketplaceIds) {
+        const cleanId = cleanIdMap[String(mp)] || String(mp).replace('#', '');
+        if (!seen.has(cleanId)) {
+            failed.push({ orderId: cleanId, reason: 'Not in RapidShyp response' });
         }
     }
 
     return {
-        success_count: data.success_count || 0,
-        failure_count: data.failure_count || 0,
+        success_count: approved.length,
+        alreadyApproved_count: alreadyApproved.length,
+        failure_count: failed.length,
         remark: data.remark || '',
-        shipmentMap
+        shipmentMap,
+        approved,
+        alreadyApproved,
+        failed
     };
 };
 
