@@ -577,6 +577,19 @@ const approveBatch = async (cleanIds) => {
     const orderIds = cleanIds.map(id => String(id).replace('#', ''));
     console.log(`[RAPIDSHYP] Approve batch: ${orderIds.length} orders, sample: ${orderIds.slice(0, 3).join(', ')}`);
 
+    // Look up the first order's actual store_name from RS session API (one-time debug)
+    try {
+        const orderMap = await fetchAllOrders();
+        const sample = orderMap.get(orderIds[0]) || orderMap.get(`#${orderIds[0]}`);
+        if (sample) {
+            console.log(`[RAPIDSHYP] Sample RS record for ${orderIds[0]}: store_name="${sample.store_name}", order_id="${sample.order_id}", seller_order_id="${sample.seller_order_id}", channel_order_id="${sample.channel_order_id}", market_place_order_id="${sample.market_place_order_id}"`);
+        } else {
+            console.log(`[RAPIDSHYP] Order ${orderIds[0]} NOT FOUND in session API — might not be synced yet`);
+        }
+    } catch (e) {
+        console.warn(`[RAPIDSHYP] Debug lookup failed:`, e.message);
+    }
+
     const res = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
         order_id: orderIds,
         store_name: 'GRLHOOD'
