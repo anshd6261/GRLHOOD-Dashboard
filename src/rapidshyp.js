@@ -685,24 +685,23 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
         }
     }
 
-    // Recovery sweep: resolve shipment_ids for any approved/alreadyApproved entries missing them.
-    // Uses resolveOrder() which tries: session map → GET /shipment_details → POST /track_order.
+    // Recovery sweep: populate shipment_ids for any entry missing one.
+    // Uses session API get_orders (the only reliable source of shipment_id for approved orders).
     const needsRecovery = [...approved, ...alreadyApproved].filter(o => !o.shipmentId);
     if (needsRecovery.length > 0) {
         console.log(`[RAPIDSHYP] Recovering shipment_ids for ${needsRecovery.length}/${approved.length + alreadyApproved.length} orders...`);
-        const orderMap = new Map();
+        const sessionMap = await fetchAllOrders();
         for (const entry of needsRecovery) {
-            try {
-                const resolved = await resolveOrder(entry.orderId, orderMap);
-                if (resolved?.shipment_id) {
-                    shipmentMap[entry.orderId] = resolved.shipment_id;
-                    _shipmentCache.set(entry.orderId, resolved.shipment_id);
-                    entry.shipmentId = resolved.shipment_id;
-                    delete entry.reason;
-                }
-            } catch { /* will be retried in assignBatch */ }
+            const record = sessionMap.get(entry.orderId) || sessionMap.get(`#${entry.orderId}`);
+            const sid = record?.shipments?.[0]?.shipment_id || record?.shipment_id;
+            if (sid) {
+                shipmentMap[entry.orderId] = sid;
+                _shipmentCache.set(entry.orderId, sid);
+                entry.shipmentId = sid;
+                delete entry.reason;
+            }
         }
-        console.log(`[RAPIDSHYP] Recovery found ${needsRecovery.filter(o => o.shipmentId).length}/${needsRecovery.length} shipment_ids`);
+        console.log(`[RAPIDSHYP] Recovery found ${needsRecovery.filter(o => o.shipmentId).length}/${needsRecovery.length} shipment_ids via session API`);
     }
 
     console.log(`[RAPIDSHYP] Approve complete: ${approved.length} approved, ${alreadyApproved.length} already, ${failed.length} failed. ShipmentMap size: ${Object.keys(shipmentMap).length}/${mpIds.length}`);
@@ -727,22 +726,54 @@ const assignBatch = async (cleanIds, shipmentMapFromApprove = {}) => {
     const headers = getPublicHeaders();
     const results = [];
 
+    // Pre-fetch session order map ONCE — contains shipment_ids for every approved order in RS.
+    // This is the only reliable way to resolve shipment_ids for approved-but-not-assigned orders.
+    const missingIds = cleanIds.filter(id => !shipmentMapFromApprove[id] && !_shipmentCache.get(id));
+    let sessionMap = new Map();
+    if (missingIds.length > 0) {
+        try {
+            sessionMap = await fetchAllOrders();
+            console.log(`[RAPIDSHYP] assignBatch: session map has ${sessionMap.size} records for ${missingIds.length} missing IDs`);
+        } catch (e) {
+            console.warn(`[RAPIDSHYP] assignBatch: session fetch failed:`, e.message);
+        }
+    }
+
     for (const cleanId of cleanIds) {
         let shipmentId = shipmentMapFromApprove[cleanId] || _shipmentCache.get(cleanId) || null;
+        let awbFromSession = null;
+        let courierFromSession = '';
 
-        // Resolve shipment_id via resolveOrder (tries session map → shipment_details → track_order)
+        // Try session map (has shipment_id + AWB for already-approved orders)
+        if (!shipmentId) {
+            const record = sessionMap.get(cleanId) || sessionMap.get(`#${cleanId}`);
+            if (record) {
+                const shipment = record.shipments?.[0] || {};
+                shipmentId = shipment.shipment_id || record.shipment_id || null;
+                awbFromSession = shipment.awb || record.awb_number || null;
+                courierFromSession = shipment.courier_name || '';
+                if (shipmentId) _shipmentCache.set(cleanId, shipmentId);
+            }
+        }
+
+        // Last resort: track_order (only works if order has tracking data)
         if (!shipmentId) {
             try {
-                const resolved = await resolveOrder(cleanId, new Map());
-                if (resolved?.shipment_id) {
-                    shipmentId = resolved.shipment_id;
+                const res = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, {
+                    orderId: `#${cleanId}`
+                }, { headers, timeout: 8000 });
+                const shipment = res.data?.records?.[0]?.shipment_details?.[0];
+                if (shipment?.shipment_id) {
+                    shipmentId = shipment.shipment_id;
+                    awbFromSession = shipment.awb || null;
                     _shipmentCache.set(cleanId, shipmentId);
-                    if (resolved.awb_number) {
-                        results.push({ orderId: cleanId, success: true, awb: resolved.awb_number, shipmentId, message: 'Already assigned' });
-                        continue;
-                    }
                 }
             } catch { /* no tracking data */ }
+        }
+
+        if (awbFromSession && shipmentId) {
+            results.push({ orderId: cleanId, success: true, awb: awbFromSession, shipmentId, courier: courierFromSession, message: 'Already assigned' });
+            continue;
         }
 
         if (!shipmentId) {
