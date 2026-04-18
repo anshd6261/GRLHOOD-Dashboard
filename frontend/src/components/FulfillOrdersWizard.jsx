@@ -644,23 +644,23 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
 
   useEffect(() => { if ((step === 4 || step === 5) && !approveResult && !approveLoading) handleApprove(); }, [step]);
 
-  // ═══ SHIP: Resolve all shipment_ids first, then assign AWB per-order ═══
+  // ═══ SHIP: Resolve ALL shipment_ids from session API, then assign AWB per-order ═══
   const handleShip = async () => {
     setShipLoading(true);
-    const sm = { ...JSON.parse(localStorage.getItem('shipmentMap') || '{}'), ...(approveResult?.shipmentMap || {}) };
 
-    // Step 1: Resolve any missing shipment_ids via session API (one bulk call)
-    const missingIds = uniqueIds.filter(id => !sm[id]);
-    if (missingIds.length > 0) {
-      setShipProgress({ done: 0, total: uniqueIds.length, status: `Resolving ${missingIds.length} shipment IDs...` });
-      try {
-        const resolveRes = await axios.post(`${API_URL}/rapidshyp/resolve-shipments`, { orderIds: missingIds });
-        Object.assign(sm, resolveRes.data?.shipmentMap || {});
-        localStorage.setItem('shipmentMap', JSON.stringify(sm));
-        console.log(`[SHIP] Resolved ${resolveRes.data?.found || 0}/${missingIds.length} shipment IDs from session API`);
-      } catch (e) {
-        console.warn('[SHIP] Resolve failed, continuing with what we have:', e.message);
-      }
+    // Step 1: Resolve ALL shipment_ids fresh from session API (ignore stale localStorage)
+    const sm = { ...(approveResult?.shipmentMap || {}) };
+    setShipProgress({ done: 0, total: uniqueIds.length, status: `Resolving shipment IDs for ${uniqueIds.length} orders...` });
+    try {
+      const resolveRes = await axios.post(`${API_URL}/rapidshyp/resolve-shipments`, { orderIds: uniqueIds });
+      Object.assign(sm, resolveRes.data?.shipmentMap || {});
+      localStorage.setItem('shipmentMap', JSON.stringify(sm));
+      const found = resolveRes.data?.found || 0;
+      const notInMap = resolveRes.data?.notInMap || 0;
+      const noSid = resolveRes.data?.inMapNoShipment || 0;
+      console.log(`[SHIP] Resolved ${found}/${uniqueIds.length} shipment IDs (${notInMap} not in RS, ${noSid} no shipment_id)`);
+    } catch (e) {
+      console.warn('[SHIP] Resolve failed:', e.message);
     }
 
     // Step 2: Assign AWB per-order

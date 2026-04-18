@@ -155,12 +155,21 @@ const ORDER_MAP_TTL = 2 * 60 * 1000; // 2 minutes
 // Cache of shipment_ids from approve responses — survives across approve → assign calls
 const _shipmentCache = new Map(); // cleanId → shipment_id
 
-/**
- * Fetch ALL orders from session API via pagination and build a lookup map.
- * The session search param is broken (returns all orders regardless of search term),
- * so we paginate everything and build our own Map<seller_order_id, record>.
- * Cached for 2 minutes to avoid re-fetching during bulk operations.
- */
+const extractShipmentId = (record) => {
+    if (!record) return null;
+    const arr = record.shipments || record.shipment;
+    if (Array.isArray(arr) && arr.length > 0) {
+        const sid = arr[0].shipment_id || arr[0].id;
+        if (sid) return String(sid);
+    }
+    if (typeof arr === 'object' && !Array.isArray(arr) && arr?.shipment_id) {
+        return String(arr.shipment_id);
+    }
+    if (record.shipment_id) return String(record.shipment_id);
+    if (record.shipmentId) return String(record.shipmentId);
+    return null;
+};
+
 const fetchAllOrders = async () => {
     if (_orderMapCache && (Date.now() - _orderMapTimestamp < ORDER_MAP_TTL)) {
         return _orderMapCache;
@@ -171,39 +180,54 @@ const fetchAllOrders = async () => {
 
     const orderMap = new Map();
     const PAGE_SIZE = 200;
-    let page = 1;
-    let totalFetched = 0;
+    const addedIds = new Set();
+    let loggedSample = false;
 
-    try {
+    const fetchBucket = async (status) => {
+        let page = 1;
+        let bucketCount = 0;
         while (true) {
-            const res = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, {
-                page, limit: PAGE_SIZE
-            }, { headers: sessionHeaders, timeout: 15000 });
-
+            const body = { page, limit: PAGE_SIZE };
+            if (status) body.status = status;
+            const res = await rsApi.post(`${SESSION_API_BASE}/orders/get_orders`, body, { headers: sessionHeaders, timeout: 15000 });
             const records = res.data?.records || [];
-            const totalRecords = res.data?.total_records || 0;
-
             for (const r of records) {
+                if (!loggedSample) {
+                    console.log(`[RAPIDSHYP] Sample record keys: ${Object.keys(r).join(',')}`);
+                    const shipFields = Object.entries(r).filter(([k]) => k.toLowerCase().includes('ship'));
+                    console.log(`[RAPIDSHYP] Ship-related fields: ${JSON.stringify(Object.fromEntries(shipFields)).slice(0, 500)}`);
+                    loggedSample = true;
+                }
+                const uniqueKey = r.order_id || r.seller_order_id;
+                if (uniqueKey && addedIds.has(String(uniqueKey))) continue;
+                if (uniqueKey) addedIds.add(String(uniqueKey));
                 if (r.seller_order_id) {
                     const clean = r.seller_order_id.replace('#', '');
                     orderMap.set(clean, r);
                     orderMap.set(r.seller_order_id, r);
                 }
-                if (r.awb_number) {
-                    orderMap.set(r.awb_number, r);
-                }
-                if (r.order_id) {
-                    orderMap.set(r.order_id, r);
-                }
+                if (r.awb_number) orderMap.set(r.awb_number, r);
+                if (r.order_id) orderMap.set(String(r.order_id), r);
             }
-
-            totalFetched += records.length;
-            if (records.length < PAGE_SIZE || totalFetched >= totalRecords) break;
+            bucketCount += records.length;
+            if (records.length < PAGE_SIZE) break;
             page++;
             await new Promise(r => setTimeout(r, 50));
         }
+        return bucketCount;
+    };
 
-        console.log(`[RAPIDSHYP] Order map built: ${orderMap.size} entries from ${totalFetched} orders (${page} pages)`);
+    try {
+        const buckets = [null, 'APPROVED', 'NEW', 'READY_TO_SHIP', 'MANIFESTED', 'IN_TRANSIT'];
+        for (const status of buckets) {
+            try {
+                const count = await fetchBucket(status);
+                if (count > 0) console.log(`[RAPIDSHYP] Bucket ${status || 'DEFAULT'}: ${count} records`);
+            } catch (e) {
+                console.warn(`[RAPIDSHYP] Bucket ${status || 'DEFAULT'} failed: ${e.message}`);
+            }
+        }
+        console.log(`[RAPIDSHYP] Order map: ${addedIds.size} unique orders, ${orderMap.size} map entries`);
         _orderMapCache = orderMap;
         _orderMapTimestamp = Date.now();
         return orderMap;
@@ -455,14 +479,13 @@ const bulkAssignAWB = async (orderNames, approveShipmentMap = {}) => {
                         if (r.seller_order_id) {
                             const clean = r.seller_order_id.replace('#', '');
                             if (needed.has(clean)) {
-                                // Get shipment_id from the order's shipment array
-                                const shipment = r.shipments?.[0] || {};
-                                const shipmentId = shipment.shipment_id || r.shipment_id;
+                                const shipmentId = extractShipmentId(r);
                                 if (shipmentId) {
+                                    const s = (r.shipments || r.shipment || [])?.[0] || {};
                                     sessionShipmentMap.set(clean, {
                                         shipmentId,
-                                        awb: shipment.awb || r.awb_number || null,
-                                        courier: shipment.courier_name || ''
+                                        awb: s.awb || r.awb_number || null,
+                                        courier: s.courier_name || ''
                                     });
                                 }
                             }
@@ -628,8 +651,7 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
             if (!cleanId) continue;
             seen.add(rawId);
 
-            const shipmentId = (ol.shipment || []).find(s => s.shipment_id)?.shipment_id
-                || ol.shipment_id || null;
+            const shipmentId = extractShipmentId(ol);
             const remark = String(ol.remarks || ol.remark || ol.message || ol.reason || '').toLowerCase();
 
             const isAlready = remark.includes('already') || remark.includes('duplicate');
@@ -666,21 +688,8 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
             lastRemark = d.remark || lastRemark;
             if (d.order_list?.length > 0) {
                 processOrderList(d.order_list);
-            } else if ((d.remark || '').toLowerCase().includes('already')) {
-                // Already approved — pull shipment_id from track_order
-                try {
-                    const tr = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, { orderId: `#${cleanId}` }, { headers, timeout: 8000 });
-                    const shipmentId = tr.data?.records?.[0]?.shipment_details?.[0]?.shipment_id;
-                    if (shipmentId) {
-                        shipmentMap[cleanId] = shipmentId;
-                        _shipmentCache.set(cleanId, shipmentId);
-                        alreadyApproved.push({ orderId: cleanId, shipmentId });
-                    } else {
-                        alreadyApproved.push({ orderId: cleanId, reason: 'Already approved' });
-                    }
-                } catch {
-                    alreadyApproved.push({ orderId: cleanId, reason: 'Already approved' });
-                }
+            } else if ((d.remark || '').toLowerCase().includes('already') || d.success_count >= 1 || (d.status || '').toUpperCase() === 'SUCCESS') {
+                alreadyApproved.push({ orderId: cleanId });
             } else {
                 failed.push({ orderId: cleanId, reason: d.remark || 'Rejected by RapidShyp' });
             }
@@ -689,23 +698,25 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
         }
     }
 
-    // Recovery sweep: ensure every approved/alreadyApproved entry has a shipment_id cached.
-    // RS sometimes returns an approval without shipment_id, or track_order failed earlier.
+    // Recovery: get shipment_ids from session API for any entries that don't have one
     const needsRecovery = [...approved, ...alreadyApproved].filter(o => !o.shipmentId);
     if (needsRecovery.length > 0) {
-        console.log(`[RAPIDSHYP] Recovering shipment_ids for ${needsRecovery.length} approved orders via track_order...`);
+        console.log(`[RAPIDSHYP] Recovering ${needsRecovery.length} shipment_ids via session API...`);
+        _orderMapCache = null; // force fresh fetch
+        const sessionMap = await fetchAllOrders();
+        let recovered = 0;
         for (const entry of needsRecovery) {
-            try {
-                const tr = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, { orderId: `#${entry.orderId}` }, { headers, timeout: 8000 });
-                const shipmentId = tr.data?.records?.[0]?.shipment_details?.[0]?.shipment_id;
-                if (shipmentId) {
-                    shipmentMap[entry.orderId] = shipmentId;
-                    _shipmentCache.set(entry.orderId, shipmentId);
-                    entry.shipmentId = shipmentId;
-                    delete entry.reason;
-                }
-            } catch { /* leave entry without shipmentId — will be retried in assignBatch */ }
+            const record = sessionMap.get(entry.orderId) || sessionMap.get(`#${entry.orderId}`);
+            const sid = extractShipmentId(record);
+            if (sid) {
+                shipmentMap[entry.orderId] = sid;
+                _shipmentCache.set(entry.orderId, sid);
+                entry.shipmentId = sid;
+                delete entry.reason;
+                recovered++;
+            }
         }
+        console.log(`[RAPIDSHYP] Recovery: ${recovered}/${needsRecovery.length} shipment_ids found`);
     }
 
     console.log(`[RAPIDSHYP] Approve complete: ${approved.length} approved, ${alreadyApproved.length} already, ${failed.length} failed. ShipmentMap size: ${Object.keys(shipmentMap).length}/${mpIds.length}`);
@@ -730,8 +741,27 @@ const assignBatch = async (cleanIds, shipmentMapFromApprove = {}) => {
     const headers = getPublicHeaders();
     const results = [];
 
+    // Resolve missing shipment_ids via session API (one bulk call)
+    const missingIds = cleanIds.filter(id => !shipmentMapFromApprove[id] && !_shipmentCache.get(id));
+    let sessionMap = new Map();
+    if (missingIds.length > 0) {
+        console.log(`[RAPIDSHYP] assignBatch: ${missingIds.length}/${cleanIds.length} missing shipment_ids, fetching from session API...`);
+        try {
+            sessionMap = await fetchAllOrders();
+        } catch (e) {
+            console.warn(`[RAPIDSHYP] assignBatch: session API failed:`, e.message);
+        }
+    }
+
     for (const cleanId of cleanIds) {
-        const shipmentId = shipmentMapFromApprove[cleanId] || _shipmentCache.get(cleanId) || null;
+        let shipmentId = shipmentMapFromApprove[cleanId] || _shipmentCache.get(cleanId) || null;
+
+        // Session API fallback
+        if (!shipmentId) {
+            const record = sessionMap.get(cleanId) || sessionMap.get(`#${cleanId}`);
+            shipmentId = extractShipmentId(record);
+            if (shipmentId) _shipmentCache.set(cleanId, shipmentId);
+        }
 
         if (!shipmentId) {
             results.push({ orderId: cleanId, success: false, message: `No shipment_id for #${cleanId}` });
@@ -938,5 +968,6 @@ module.exports = {
     schedulePickup,
     bulkSchedulePickup,
     mapRTORisk,
-    buildRTOReason
+    buildRTOReason,
+    extractShipmentId
 };

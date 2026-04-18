@@ -105,18 +105,15 @@ export default function ShipOrdersModal({ orders, onClose, onSuccess }) {
       await sleep(250);
       markComplete(2);
 
-      // Step 3: Assign Courier — resolve shipment_ids first, then assign per-order
+      // Step 3: Assign Courier — resolve ALL shipment_ids fresh from session API
       setCurrentStep(3);
-      const shipmentMap = JSON.parse(localStorage.getItem('shipmentMap') || '{}');
       const cleanOrderIds = uniqueOrderIds.map(id => id.toString().replace('#', ''));
-      const missingIds = cleanOrderIds.filter(id => !shipmentMap[id]);
-      if (missingIds.length > 0) {
-        try {
-          const resolveRes = await axios.post(`${API_URL}/rapidshyp/resolve-shipments`, { orderIds: missingIds });
-          Object.assign(shipmentMap, resolveRes.data?.shipmentMap || {});
-          localStorage.setItem('shipmentMap', JSON.stringify(shipmentMap));
-        } catch {}
-      }
+      let shipmentMap = {};
+      try {
+        const resolveRes = await axios.post(`${API_URL}/rapidshyp/resolve-shipments`, { orderIds: cleanOrderIds });
+        shipmentMap = resolveRes.data?.shipmentMap || {};
+        localStorage.setItem('shipmentMap', JSON.stringify(shipmentMap));
+      } catch {}
       const allAssignResults = [];
       for (const cleanId of cleanOrderIds) {
         try {

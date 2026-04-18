@@ -879,21 +879,28 @@ app.post('/api/rapidshyp/resolve-shipments', async (req, res) => {
         const orderMap = await rapidshyp.fetchAllOrders();
         const shipmentMap = {};
         let found = 0;
+        let notInMap = 0;
+        let inMapNoShipment = 0;
 
         for (const cleanId of cleanIds) {
             const record = orderMap.get(cleanId) || orderMap.get(`#${cleanId}`);
-            if (record) {
-                const shipment = record.shipments?.[0] || {};
-                const sid = shipment.shipment_id || record.shipment_id;
-                if (sid) {
-                    shipmentMap[cleanId] = sid;
-                    found++;
+            if (!record) { notInMap++; continue; }
+            const sid = rapidshyp.extractShipmentId(record);
+            if (sid) {
+                shipmentMap[cleanId] = sid;
+                found++;
+            } else {
+                inMapNoShipment++;
+                if (inMapNoShipment <= 2) {
+                    console.log(`[API] Order ${cleanId} found but no shipment_id. Keys: ${Object.keys(record).join(',')}`);
+                    const shipFields = Object.entries(record).filter(([k]) => k.toLowerCase().includes('ship'));
+                    console.log(`[API] Ship fields: ${JSON.stringify(Object.fromEntries(shipFields)).slice(0, 500)}`);
                 }
             }
         }
 
-        console.log(`[API] Resolved ${found}/${cleanIds.length} shipment_ids`);
-        res.json({ shipmentMap, found, total: cleanIds.length });
+        console.log(`[API] Resolved ${found}/${cleanIds.length} (${notInMap} not in map, ${inMapNoShipment} in map but no shipment_id)`);
+        res.json({ shipmentMap, found, total: cleanIds.length, notInMap, inMapNoShipment });
     } catch (e) {
         console.error('[API] Resolve shipments error:', e.message);
         res.status(500).json({ error: e.message, shipmentMap: {} });
