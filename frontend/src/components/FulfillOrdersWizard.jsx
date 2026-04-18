@@ -598,6 +598,10 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
     if (approveResult || approveLoading) return;
     setApproveLoading(true);
 
+    // Build pairs of [orderName, shopifyNumericId] — RS approve_orders needs the Shopify numeric ID
+    const shopifyIdMap = {};
+    workingOrders.forEach(o => { if (o.orderId && o.id) shopifyIdMap[o.orderId] = String(o.id); });
+
     const BATCH = 50;
     let totalApproved = 0;
     let totalAlready = 0;
@@ -613,7 +617,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       setApproveProgress({ done: i, total: uniqueIds.length, status: `Batch ${batchNum} · ${batch.length} orders` });
 
       try {
-        const r = await axios.post(`${API_URL}/rapidshyp/approve-batch`, { orderIds: batch });
+        const r = await axios.post(`${API_URL}/rapidshyp/approve-batch`, { orderIds: batch, shopifyIdMap });
         const d = r.data;
         totalApproved += d.success_count || 0;
         totalAlready += d.alreadyApproved_count || 0;

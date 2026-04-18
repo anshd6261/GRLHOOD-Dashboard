@@ -572,29 +572,44 @@ const bulkAssignAWB = async (orderNames, approveShipmentMap = {}) => {
  * Approve a batch of up to 50 orders.
  * RapidShyp expects 4-digit Shopify order IDs (no #) as order_id array + store_name.
  */
-const approveBatch = async (cleanIds) => {
+const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
     const headers = getPublicHeaders();
     const orderIds = cleanIds.map(id => String(id).replace('#', ''));
 
-    // RS approve_orders needs market_place_order_id (Shopify numeric ID like "6426473365692")
-    const orderMap = await fetchAllOrders();
+    // RS approve_orders needs market_place_order_id = Shopify's numeric order ID (e.g. "6426473365692")
+    // Frontend provides this via shopifyIdMap. Fallback to session API lookup for any missing.
     const mpIds = [];
     const mpToClean = {};
     const notFound = [];
+    const needLookup = [];
 
     for (const id of orderIds) {
-        const record = orderMap.get(id) || orderMap.get(`#${id}`);
-        const mpId = record?.market_place_order_id;
-        if (mpId) {
-            const mpStr = String(mpId);
+        const fromMap = shopifyIdMap[id];
+        if (fromMap) {
+            const mpStr = String(fromMap);
             mpIds.push(mpStr);
             mpToClean[mpStr] = id;
         } else {
-            notFound.push(id);
+            needLookup.push(id);
         }
     }
 
-    console.log(`[RAPIDSHYP] Approve batch: ${mpIds.length} resolved, ${notFound.length} not found. Sample mpIds: ${mpIds.slice(0, 3).join(', ')}`);
+    if (needLookup.length > 0) {
+        const orderMap = await fetchAllOrders();
+        for (const id of needLookup) {
+            const record = orderMap.get(id) || orderMap.get(`#${id}`);
+            const mpId = record?.market_place_order_id;
+            if (mpId) {
+                const mpStr = String(mpId);
+                mpIds.push(mpStr);
+                mpToClean[mpStr] = id;
+            } else {
+                notFound.push(id);
+            }
+        }
+    }
+
+    console.log(`[RAPIDSHYP] Approve batch: ${mpIds.length} resolved (${orderIds.length - needLookup.length} from Shopify map, ${needLookup.length - notFound.length} from session lookup), ${notFound.length} not found. Sample mpIds: ${mpIds.slice(0, 3).join(', ')}`);
 
     const approved = [];
     const alreadyApproved = [];
