@@ -598,23 +598,31 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
     if (approveResult || approveLoading) return;
     setApproveLoading(true);
 
-    // Build pairs of [orderName, shopifyNumericId] — RS approve_orders needs the Shopify numeric ID
     const shopifyIdMap = {};
     workingOrders.forEach(o => { if (o.orderId && o.id) shopifyIdMap[o.orderId] = String(o.id); });
 
+    const allShipmentMap = JSON.parse(localStorage.getItem('shipmentMap') || '{}');
+
+    // Pre-filter: orders already in shipmentMap are already approved — skip RS calls
+    const needsApproval = uniqueIds.filter(id => !allShipmentMap[id]);
+    const alreadyCached = uniqueIds.filter(id => allShipmentMap[id]);
+
     const BATCH = 50;
     let totalApproved = 0;
-    let totalAlready = 0;
+    let totalAlready = alreadyCached.length;
     const allFailed = [];
-    const allShipmentMap = JSON.parse(localStorage.getItem('shipmentMap') || '{}');
     const batchLog = [];
 
-    setApproveProgress({ done: 0, total: uniqueIds.length, status: 'Approving...' });
+    if (alreadyCached.length > 0) {
+      console.log(`[APPROVE] ${alreadyCached.length} orders skipped (already have shipment_id)`);
+    }
 
-    for (let i = 0; i < uniqueIds.length; i += BATCH) {
-      const batch = uniqueIds.slice(i, i + BATCH);
+    setApproveProgress({ done: alreadyCached.length, total: uniqueIds.length, status: needsApproval.length > 0 ? `${alreadyCached.length} cached · approving ${needsApproval.length}...` : 'All cached' });
+
+    for (let i = 0; i < needsApproval.length; i += BATCH) {
+      const batch = needsApproval.slice(i, i + BATCH);
       const batchNum = Math.floor(i / BATCH) + 1;
-      setApproveProgress({ done: i, total: uniqueIds.length, status: `Batch ${batchNum} · ${batch.length} orders` });
+      setApproveProgress({ done: alreadyCached.length + i, total: uniqueIds.length, status: `Batch ${batchNum} · ${batch.length} orders` });
 
       try {
         const r = await axios.post(`${API_URL}/rapidshyp/approve-batch`, { orderIds: batch, shopifyIdMap });
@@ -630,7 +638,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
         batchLog.push({ batch: batchNum, error: msg });
       }
 
-      setApproveProgress({ done: Math.min(i + BATCH, uniqueIds.length), total: uniqueIds.length, status: `${totalApproved} approved · ${totalAlready} already · ${allFailed.length} failed` });
+      setApproveProgress({ done: alreadyCached.length + Math.min(i + BATCH, needsApproval.length), total: uniqueIds.length, status: `${totalApproved} approved · ${totalAlready} already · ${allFailed.length} failed` });
     }
 
     localStorage.setItem('shipmentMap', JSON.stringify(allShipmentMap));
