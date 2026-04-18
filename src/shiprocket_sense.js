@@ -133,15 +133,16 @@ function saveCache() {
 
 // --- Payment detection ---
 function detectPayment(order) {
+    const tags = (order.tags || []).map(t => t.toLowerCase());
+    if (tags.includes('prepaid')) return 'Prepaid';
+    if (tags.includes('cod')) return 'Cash on Delivery';
+
     const gateways = (order.paymentGatewayNames || []).join(' ').toLowerCase();
-    if (gateways.includes('cash on delivery') || gateways.includes('manual') || gateways.includes('cod')) {
-        return 'Cash on Delivery';
-    }
     if (gateways.includes('razorpay') || gateways.includes('paytm') || gateways.includes('stripe') ||
         gateways.includes('paypal') || gateways.includes('phonepe') || gateways.includes('upi')) {
         return 'Prepaid';
     }
-    if ((order.displayFinancialStatus || '') === 'PENDING') return 'Cash on Delivery';
+    if ((order.displayFinancialStatus || '') === 'PAID') return 'Prepaid';
     return 'Cash on Delivery';
 }
 

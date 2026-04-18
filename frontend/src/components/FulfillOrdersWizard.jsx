@@ -83,9 +83,6 @@ const OrderDetailCard = React.memo(function OrderDetailCard({ group, onCancel, c
               {showFulfillment && group.fulfillmentStatus && group.fulfillmentStatus !== 'UNFULFILLED' && (
                 <span className={`text-[8px] uppercase font-bold px-1.5 py-0.5 rounded-full tracking-wider ${group.fulfillmentStatus === 'FULFILLED' ? 'bg-[rgba(52,211,153,0.08)] border border-[rgba(52,211,153,0.15)] text-emerald-400' : 'bg-[rgba(99,102,241,0.08)] border border-[rgba(99,102,241,0.15)] text-indigo-300'}`}>{group.fulfillmentStatus}</span>
               )}
-              {group.tags?.filter(t => !['unfulfilled','fulfilled'].includes(t.toLowerCase())).map(t => (
-                <span key={t} className="text-[8px] uppercase font-bold px-1.5 py-0.5 rounded-full tracking-wider bg-[rgba(99,102,241,0.08)] border border-[rgba(99,102,241,0.15)] text-indigo-300">{t}</span>
-              ))}
               {shopifyLink && <a href={shopifyLink} target="_blank" rel="noopener noreferrer" onClick={e => e.stopPropagation()} className="text-[rgba(245,245,245,0.2)] hover:text-[#e3cfd8]"><ExternalLink size={10} /></a>}
             </div>
             <div className="text-[11px] text-[rgba(245,245,245,0.35)] truncate">
@@ -182,9 +179,6 @@ const OtherOrdersList = React.memo(function OtherOrdersList({ others }) {
       {others.map(o => (
         <span key={o.orderId} className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[rgba(99,102,241,0.06)] border border-[rgba(99,102,241,0.12)] text-indigo-300">
           #{o.orderId} · {o.items.length}u
-          {o.tags?.filter(t => !['unfulfilled','fulfilled'].includes(t.toLowerCase())).map(t => (
-            <span key={t} className="ml-1 text-[8px] text-[rgba(245,245,245,0.3)]">{t}</span>
-          ))}
         </span>
       ))}
     </div>
@@ -310,7 +304,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const grouped = useMemo(() => {
     const m = {};
     workingOrders.forEach(o => {
-      if (!m[o.orderId]) m[o.orderId] = { orderId: o.orderId, shopifyId: o.id, customerName: o.customerName, shippingDetails: o.shippingDetails, aiRiskScore: o.aiRiskScore, aiRiskLevel: o.aiRiskLevel, aiRiskReasons: o.aiRiskReasons || [], items: [], createdAt: o.createdAt, awb: o.awb, rsOrderId: o.rsOrderId, customerOrdersCount: o.customerOrdersCount, payment: o.payment, tags: o.tags || [], fulfillmentStatus: o.fulfillmentStatus || 'UNFULFILLED' };
+      if (!m[o.orderId]) m[o.orderId] = { orderId: o.orderId, shopifyId: o.id, customerName: o.customerName, shippingDetails: o.shippingDetails, aiRiskScore: o.aiRiskScore, aiRiskLevel: o.aiRiskLevel, aiRiskReasons: o.aiRiskReasons || [], items: [], createdAt: o.createdAt, awb: o.awb, rsOrderId: o.rsOrderId, customerOrdersCount: o.customerOrdersCount, payment: o.payment, fulfillmentStatus: o.fulfillmentStatus || 'UNFULFILLED' };
       m[o.orderId].items.push(o);
     });
     return Object.values(m);
