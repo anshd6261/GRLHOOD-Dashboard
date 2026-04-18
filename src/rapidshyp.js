@@ -733,7 +733,8 @@ const assignBatch = async (cleanIds, shipmentMapFromApprove = {}) => {
     if (missingIds.length > 0) {
         try {
             sessionMap = await fetchAllOrders();
-            console.log(`[RAPIDSHYP] assignBatch: session map has ${sessionMap.size} records for ${missingIds.length} missing IDs`);
+            const foundInSession = missingIds.filter(id => sessionMap.get(id) || sessionMap.get(`#${id}`));
+            console.log(`[RAPIDSHYP] assignBatch: ${missingIds.length} missing from frontend map. Session API returned ${sessionMap.size} entries. Found ${foundInSession.length}/${missingIds.length} in session. Missing after session: ${missingIds.filter(id => !foundInSession.includes(id)).join(',')}`);
         } catch (e) {
             console.warn(`[RAPIDSHYP] assignBatch: session fetch failed:`, e.message);
         }
