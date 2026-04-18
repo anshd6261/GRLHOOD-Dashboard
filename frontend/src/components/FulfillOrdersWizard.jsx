@@ -669,8 +669,9 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
         const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, { orderIds: batch, shipmentMap: sm });
         const results = r.data?.results || [];
         allResults.push(...results);
-        // Capture any new shipment IDs for next batches
+        // Capture any new shipment IDs and persist immediately so they survive refreshes / next runs
         results.forEach(rr => { if (rr.shipmentId) sm[rr.orderId] = rr.shipmentId; });
+        localStorage.setItem('shipmentMap', JSON.stringify(sm));
       } catch (e) {
         batch.forEach(id => allResults.push({ orderId: id, success: false, message: e.response?.data?.error || e.message }));
       }
