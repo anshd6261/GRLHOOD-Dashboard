@@ -632,16 +632,22 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
         return { success_count: 0, alreadyApproved_count: 0, failure_count: failed.length, remark: 'No orders found in RapidShyp', shipmentMap, approved, alreadyApproved, failed };
     }
 
+    let sampleLogged = false;
     const processOrderList = (orderList) => {
         const seen = new Set();
         for (const ol of (orderList || [])) {
+            if (!sampleLogged) {
+                console.log(`[RAPIDSHYP] Sample order_list entry keys: ${Object.keys(ol).join(',')}`);
+                console.log(`[RAPIDSHYP] Sample entry: ${JSON.stringify(ol).slice(0, 800)}`);
+                sampleLogged = true;
+            }
             const rawId = String(ol.order_id || '');
             const cleanId = mpToClean[rawId] || String(ol.seller_order_id || rawId).replace('#', '');
             if (!cleanId) continue;
             seen.add(rawId);
 
-            const shipmentId = (ol.shipment || []).find(s => s.shipment_id)?.shipment_id
-                || ol.shipment_id || null;
+            const shipmentId = (ol.shipment || ol.shipments || []).find(s => s.shipment_id)?.shipment_id
+                || ol.shipment_id || ol.shipmentId || null;
             const remark = String(ol.remarks || ol.remark || ol.message || ol.reason || '').toLowerCase();
 
             const isAlready = remark.includes('already') || remark.includes('duplicate');
@@ -684,11 +690,23 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
             }
             if (d.order_list?.length > 0) {
                 processOrderList(d.order_list);
-            } else if (d.success_count >= 1 || (d.status || '').toUpperCase() === 'SUCCESS') {
-                // RS accepted but returned no order_list — mark approved, resolve shipment_id below
-                approved.push({ orderId: cleanId });
-            } else if ((d.remark || '').toLowerCase().includes('already')) {
-                alreadyApproved.push({ orderId: cleanId });
+            } else if ((d.remark || '').toLowerCase().includes('already') || d.success_count >= 1 || (d.status || '').toUpperCase() === 'SUCCESS') {
+                // Approved or already approved — try track_order to get shipment_id
+                let sid = null;
+                try {
+                    const tr = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, { orderId: `#${cleanId}` }, { headers, timeout: 8000 });
+                    sid = tr.data?.records?.[0]?.shipment_details?.[0]?.shipment_id;
+                } catch {}
+                if (sid) {
+                    shipmentMap[cleanId] = sid;
+                    _shipmentCache.set(cleanId, sid);
+                }
+                const isAlready = (d.remark || '').toLowerCase().includes('already');
+                if (isAlready) {
+                    alreadyApproved.push({ orderId: cleanId, shipmentId: sid || undefined });
+                } else {
+                    approved.push({ orderId: cleanId, shipmentId: sid || undefined });
+                }
             } else {
                 failed.push({ orderId: cleanId, reason: d.remark || 'Rejected by RapidShyp' });
             }
