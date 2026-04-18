@@ -224,7 +224,6 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const [shipProgress, setShipProgress] = useState(null);
   const [nbeUploadedIds] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('nbe_uploaded_ids') || '[]')); } catch { return new Set(); } });
   const [labelProgress, setLabelProgress] = useState(null);
-  const [rechargeOpen, setRechargeOpen] = useState(false);
 
   // ═══ Action History Logger ═══
   const logAction = useCallback((action, details = {}) => {
@@ -541,7 +540,11 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       setDlStatus('dbx');
       const [dbxRes, nbeRes] = await Promise.allSettled([
         axios.post(`${API_URL}/dropbox/upload`, { orders: workingOrders }).catch(e => { console.warn('Dropbox upload failed:', e.message); return { data: { success: false, error: e.message } }; }),
-        axios.post(`${API_URL}/nbe/upload-order`, { rows: workingOrders }, { timeout: 120000 }).catch(e => { console.warn('NBE upload failed:', e.message); return { data: { success: false, error: e.message } }; })
+        axios.post(`${API_URL}/nbe/upload-order`, { rows: workingOrders }, { timeout: 120000 }).catch(e => {
+          const payload = e.response?.data || { success: false, error: e.message };
+          console.warn('NBE upload failed:', payload);
+          return { data: { ...payload, success: false } };
+        })
       ]);
       const nbeOk = nbeRes.status === 'fulfilled' && nbeRes.value?.data?.success;
       const nbeErr = !nbeOk && (nbeRes.value?.data?.error || nbeRes.reason?.message || '');
@@ -595,9 +598,6 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
     if (approveResult || approveLoading) return;
     setApproveLoading(true);
 
-    const orderIdMap = {};
-    workingOrders.forEach(o => { if (o.orderId && o.id) orderIdMap[o.orderId] = o.id; });
-
     const BATCH = 50;
     let totalApproved = 0;
     let totalAlready = 0;
@@ -613,7 +613,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       setApproveProgress({ done: i, total: uniqueIds.length, status: `Batch ${batchNum} · ${batch.length} orders` });
 
       try {
-        const r = await axios.post(`${API_URL}/rapidshyp/approve-batch`, { orderIds: batch, orderIdMap });
+        const r = await axios.post(`${API_URL}/rapidshyp/approve-batch`, { orderIds: batch });
         const d = r.data;
         totalApproved += d.success_count || 0;
         totalAlready += d.alreadyApproved_count || 0;
@@ -758,16 +758,10 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           </span>
         </div>
         {walletBalance !== null && walletBalance < estCost && (
-          <div className="space-y-2">
-            <button onClick={() => setRechargeOpen(true)}
-              className="glass-btn w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 text-[#e3cfd8] border-[rgba(227,207,216,0.3)]">
-              <ExternalLink size={12} /> Recharge RapidShyp (Rs{rechargeNeeded} needed)
-            </button>
-            <a href={`https://wa.me/?text=${rechargeMsg}`} target="_blank" rel="noopener noreferrer"
-              className="block text-center text-[10px] text-[rgba(245,245,245,0.4)] hover:text-amber-400 underline">
-              or ask team on WhatsApp
-            </a>
-          </div>
+          <a href={`https://wa.me/?text=${rechargeMsg}`} target="_blank" rel="noopener noreferrer"
+            className="glass-btn w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 text-amber-400 border-amber-400/20">
+            <MessageSquare size={12} /> Ask to Recharge (Rs{rechargeNeeded} needed)
+          </a>
         )}
       </div>
 
@@ -993,39 +987,6 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
             </button>
           </div>
         )}
-
-        {/* Recharge Modal — iframes RapidShyp dashboard */}
-        <AnimatePresence>
-          {rechargeOpen && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="absolute inset-0 z-20 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
-              onClick={() => setRechargeOpen(false)}>
-              <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }}
-                onClick={e => e.stopPropagation()}
-                className="glass-card w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-[rgba(255,255,255,0.05)]">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-white">RapidShyp Recharge</span>
-                    <span className="text-[10px] text-[rgba(245,245,245,0.4)]">Rs{rechargeNeeded} needed</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <a href="https://app.rapidshyp.com/" target="_blank" rel="noopener noreferrer"
-                      className="glass-btn px-2.5 py-1 rounded-lg text-[10px] font-bold text-[#e3cfd8] flex items-center gap-1">
-                      <ExternalLink size={10} /> Open in new tab
-                    </a>
-                    <button onClick={() => { setRechargeOpen(false); fetchWallet(); }} className="glass-btn p-1.5 rounded-lg"><X size={12} className="text-white" /></button>
-                  </div>
-                </div>
-                <iframe src="https://app.rapidshyp.com/" title="RapidShyp"
-                  className="flex-1 w-full bg-white"
-                  sandbox="allow-same-origin allow-scripts allow-forms allow-popups allow-top-navigation-by-user-activation" />
-                <div className="px-4 py-2 border-t border-[rgba(255,255,255,0.05)] text-[10px] text-[rgba(245,245,245,0.4)]">
-                  If the page is blank, RapidShyp may block embedding — use "Open in new tab". Close this modal to refresh the wallet balance.
-                </div>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
 
         {/* Toast */}
         <AnimatePresence>

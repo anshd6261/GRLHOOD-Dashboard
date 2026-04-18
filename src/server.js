@@ -821,18 +821,12 @@ app.get('/api/rapidshyp/debug-session', async (req, res) => {
 // Approve a batch of up to 50 orders — frontend calls this in a loop for realtime progress
 app.post('/api/rapidshyp/approve-batch', async (req, res) => {
     try {
-        const { orderIds, orderIdMap } = req.body;
+        const { orderIds } = req.body;
         if (!orderIds?.length) return res.status(400).json({ error: 'No orderIds' });
 
         const cleanIds = orderIds.map(id => id.toString().replace('#', ''));
-        const marketplaceIds = cleanIds.map(id => (orderIdMap || {})[id] ? String(orderIdMap[id]) : id);
-
-        // Reverse map: marketplaceId → cleanId
-        const mpToClean = {};
-        cleanIds.forEach((c, i) => { mpToClean[marketplaceIds[i]] = c; });
-
-        console.log(`[API] Approve batch: ${cleanIds.length} orders, mpIds sample: ${marketplaceIds.slice(0, 3)}`);
-        const result = await rapidshyp.approveBatch(marketplaceIds, mpToClean);
+        console.log(`[API] Approve batch: ${cleanIds.length} orders, sample: ${cleanIds.slice(0, 3)}`);
+        const result = await rapidshyp.approveBatch(cleanIds);
         res.json(result);
     } catch (e) {
         console.error('[API] Approve Batch Error:', e.response?.data || e.message);
