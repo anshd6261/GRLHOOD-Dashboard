@@ -730,6 +730,20 @@ const assignBatch = async (cleanIds, shipmentMapFromApprove = {}) => {
     const headers = getPublicHeaders();
     const results = [];
 
+    const missingIds = cleanIds.filter(id => !shipmentMapFromApprove[id] && !_shipmentCache.get(id));
+    let sessionMap = new Map();
+    if (missingIds.length > 3) {
+        try {
+            sessionMap = await fetchAllOrders();
+            const foundInSession = missingIds.filter(id => sessionMap.get(id) || sessionMap.get(`#${id}`));
+            console.log(`[RAPIDSHYP] assignBatch: ${missingIds.length} missing. Session found ${foundInSession.length}/${missingIds.length}`);
+        } catch (e) {
+            console.warn(`[RAPIDSHYP] assignBatch: session fetch failed:`, e.message);
+        }
+    } else if (missingIds.length > 0) {
+        console.log(`[RAPIDSHYP] assignBatch: ${missingIds.length} missing — using track_order (skipping session API)`);
+    }
+
     for (const cleanId of cleanIds) {
         let shipmentId = shipmentMapFromApprove[cleanId] || _shipmentCache.get(cleanId) || null;
 

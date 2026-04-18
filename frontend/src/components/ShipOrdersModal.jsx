@@ -105,15 +105,23 @@ export default function ShipOrdersModal({ orders, onClose, onSuccess }) {
       await sleep(250);
       markComplete(2);
 
-      // Step 3: Assign Courier — pass cached shipmentMap so already-approved orders reuse their shipment_ids
+      // Step 3: Assign Courier per-order — pass cached shipmentMap so already-approved orders reuse their shipment_ids
       setCurrentStep(3);
       const shipmentMap = JSON.parse(localStorage.getItem('shipmentMap') || '{}');
-      const assignRes = await axios.post(`${API_URL}/rapidshyp/bulk-assign`, { orderNames: uniqueOrderIds, shipmentMap });
-      if (!assignRes.data.success) throw new Error(assignRes.data.error || 'Courier assignment failed');
-      // Persist any newly-resolved shipment_ids so they're reused next run
-      const mergedMap = { ...shipmentMap };
-      (assignRes.data.results || []).forEach(r => { if (r.orderId && r.shipmentId) mergedMap[String(r.orderId).replace('#', '')] = r.shipmentId; });
-      localStorage.setItem('shipmentMap', JSON.stringify(mergedMap));
+      const allAssignResults = [];
+      for (const orderId of uniqueOrderIds) {
+        try {
+          const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, { orderIds: [orderId.toString().replace('#', '')], shipmentMap });
+          const results = r.data?.results || [];
+          allAssignResults.push(...results);
+          results.forEach(rr => { if (rr.shipmentId) shipmentMap[rr.orderId] = rr.shipmentId; });
+        } catch (e) {
+          allAssignResults.push({ orderId: orderId.toString().replace('#', ''), success: false, message: e.response?.data?.error || e.message });
+        }
+      }
+      localStorage.setItem('shipmentMap', JSON.stringify(shipmentMap));
+      const assignRes = { data: { success: allAssignResults.some(r => r.success), results: allAssignResults } };
+      if (!assignRes.data.success) throw new Error('Courier assignment failed for all orders');
       markComplete(3);
 
       // Step 4: Generate Labels — use shipment IDs and AWBs from assign results

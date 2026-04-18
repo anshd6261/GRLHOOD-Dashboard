@@ -644,31 +644,30 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
 
   useEffect(() => { if ((step === 4 || step === 5) && !approveResult && !approveLoading) handleApprove(); }, [step]);
 
-  // ═══ SHIP: Frontend drives batches of 10 for realtime progress ═══
+  // ═══ SHIP: Per-order assign for reliability (no batching) ═══
   const handleShip = async () => {
     setShipLoading(true);
-    const sm = { ...(approveResult?.shipmentMap || {}) };
-    const BATCH = 10;
+    const sm = { ...JSON.parse(localStorage.getItem('shipmentMap') || '{}'), ...(approveResult?.shipmentMap || {}) };
     const allResults = [];
 
     setShipProgress({ done: 0, total: uniqueIds.length, status: 'Assigning AWBs...' });
 
-    for (let i = 0; i < uniqueIds.length; i += BATCH) {
-      const batch = uniqueIds.slice(i, i + BATCH);
-      setShipProgress({ done: i, total: uniqueIds.length, status: `Shipping ${i+1}–${Math.min(i+BATCH, uniqueIds.length)}` });
+    for (let i = 0; i < uniqueIds.length; i++) {
+      const id = uniqueIds[i];
+      setShipProgress({ done: i, total: uniqueIds.length, status: `Assigning #${id} (${i+1}/${uniqueIds.length})` });
 
       try {
-        const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, { orderIds: batch, shipmentMap: sm });
+        const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, { orderIds: [id], shipmentMap: sm });
         const results = r.data?.results || [];
         allResults.push(...results);
-        // Capture any new shipment IDs for next batches
         results.forEach(rr => { if (rr.shipmentId) sm[rr.orderId] = rr.shipmentId; });
+        localStorage.setItem('shipmentMap', JSON.stringify(sm));
       } catch (e) {
-        batch.forEach(id => allResults.push({ orderId: id, success: false, message: e.response?.data?.error || e.message }));
+        allResults.push({ orderId: id, success: false, message: e.response?.data?.error || e.message });
       }
 
       const shipped = allResults.filter(r => r.success).length;
-      setShipProgress({ done: Math.min(i + BATCH, uniqueIds.length), total: uniqueIds.length, status: `${shipped} assigned` });
+      setShipProgress({ done: i + 1, total: uniqueIds.length, status: `${shipped} assigned` });
     }
 
     const shipData = { success: true, results: allResults };
