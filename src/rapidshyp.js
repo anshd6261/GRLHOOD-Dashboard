@@ -652,64 +652,40 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
         return seen;
     };
 
-    // Try batch first
-    const res = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
-        order_id: mpIds,
-        store_name: 'GRLHOOD'
-    }, { headers });
-
-    const data = res.data || {};
-    console.log(`[RAPIDSHYP] Approve batch response: status=${data.status}, success=${data.success_count}, failure=${data.failure_count}, remark="${data.remark || ''}"`);
-    console.log(`[RAPIDSHYP][DEBUG] Raw response keys: ${Object.keys(data).join(', ')}`);
-    console.log(`[RAPIDSHYP][DEBUG] order_list length: ${data.order_list?.length || 0}`);
-    console.log(`[RAPIDSHYP][DEBUG] Full response: ${JSON.stringify(data).slice(0, 4000)}`);
-
-    // If batch rejected entirely (success_count=0 AND empty order_list), fall back to per-order
-    const batchRejected = (data.status === 'FAILED' || data.success_count === 0) && !(data.order_list?.length > 0);
-
-    if (batchRejected) {
-        console.log(`[RAPIDSHYP] Batch rejected ("${data.remark}"). Falling back to per-order approval for ${mpIds.length} orders...`);
-        // Approve one at a time — isolates already-approved & invalid orders
-        for (const mpId of mpIds) {
-            const cleanId = mpToClean[mpId] || mpId;
-            try {
-                const r = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
-                    order_id: [mpId],
-                    store_name: 'GRLHOOD'
-                }, { headers, timeout: 15000 });
-                const d = r.data || {};
-                if (d.order_list?.length > 0) {
-                    processOrderList(d.order_list);
-                } else if ((d.remark || '').toLowerCase().includes('already')) {
-                    // Order already approved — try to get shipment_id from track_order
-                    try {
-                        const tr = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, { orderId: `#${cleanId}` }, { headers, timeout: 8000 });
-                        const shipmentId = tr.data?.records?.[0]?.shipment_details?.[0]?.shipment_id;
-                        if (shipmentId) {
-                            shipmentMap[cleanId] = shipmentId;
-                            _shipmentCache.set(cleanId, shipmentId);
-                            alreadyApproved.push({ orderId: cleanId, shipmentId });
-                        } else {
-                            alreadyApproved.push({ orderId: cleanId, reason: 'Already approved' });
-                        }
-                    } catch {
+    // Per-order approval — RS approve_orders is all-or-nothing on batch, so per-order is the reliable path.
+    console.log(`[RAPIDSHYP] Approving ${mpIds.length} orders per-order...`);
+    let lastRemark = '';
+    for (const mpId of mpIds) {
+        const cleanId = mpToClean[mpId] || mpId;
+        try {
+            const r = await rsApi.post(`${PUBLIC_API_BASE}/approve_orders`, {
+                order_id: [mpId],
+                store_name: 'GRLHOOD'
+            }, { headers, timeout: 15000 });
+            const d = r.data || {};
+            lastRemark = d.remark || lastRemark;
+            if (d.order_list?.length > 0) {
+                processOrderList(d.order_list);
+            } else if ((d.remark || '').toLowerCase().includes('already')) {
+                // Already approved — pull shipment_id from track_order
+                try {
+                    const tr = await rsApi.post(`${PUBLIC_API_BASE}/track_order`, { orderId: `#${cleanId}` }, { headers, timeout: 8000 });
+                    const shipmentId = tr.data?.records?.[0]?.shipment_details?.[0]?.shipment_id;
+                    if (shipmentId) {
+                        shipmentMap[cleanId] = shipmentId;
+                        _shipmentCache.set(cleanId, shipmentId);
+                        alreadyApproved.push({ orderId: cleanId, shipmentId });
+                    } else {
                         alreadyApproved.push({ orderId: cleanId, reason: 'Already approved' });
                     }
-                } else {
-                    failed.push({ orderId: cleanId, reason: d.remark || 'Rejected by RapidShyp' });
+                } catch {
+                    alreadyApproved.push({ orderId: cleanId, reason: 'Already approved' });
                 }
-            } catch (e) {
-                failed.push({ orderId: cleanId, reason: e.response?.data?.remark || e.message });
+            } else {
+                failed.push({ orderId: cleanId, reason: d.remark || 'Rejected by RapidShyp' });
             }
-        }
-    } else {
-        // Batch accepted — process order_list normally
-        const seen = processOrderList(data.order_list);
-        for (const mpId of mpIds) {
-            if (!seen.has(mpId)) {
-                const cleanId = mpToClean[mpId] || mpId;
-                failed.push({ orderId: cleanId, reason: data.remark || 'Not in approve response' });
-            }
+        } catch (e) {
+            failed.push({ orderId: cleanId, reason: e.response?.data?.remark || e.message });
         }
     }
 
@@ -738,7 +714,7 @@ const approveBatch = async (cleanIds, shopifyIdMap = {}) => {
         success_count: approved.length,
         alreadyApproved_count: alreadyApproved.length,
         failure_count: failed.length,
-        remark: data.remark || '',
+        remark: lastRemark,
         shipmentMap,
         approved,
         alreadyApproved,

@@ -105,10 +105,15 @@ export default function ShipOrdersModal({ orders, onClose, onSuccess }) {
       await sleep(250);
       markComplete(2);
 
-      // Step 3: Assign Courier
+      // Step 3: Assign Courier — pass cached shipmentMap so already-approved orders reuse their shipment_ids
       setCurrentStep(3);
-      const assignRes = await axios.post(`${API_URL}/rapidshyp/bulk-assign`, { orderNames: uniqueOrderIds });
+      const shipmentMap = JSON.parse(localStorage.getItem('shipmentMap') || '{}');
+      const assignRes = await axios.post(`${API_URL}/rapidshyp/bulk-assign`, { orderNames: uniqueOrderIds, shipmentMap });
       if (!assignRes.data.success) throw new Error(assignRes.data.error || 'Courier assignment failed');
+      // Persist any newly-resolved shipment_ids so they're reused next run
+      const mergedMap = { ...shipmentMap };
+      (assignRes.data.results || []).forEach(r => { if (r.orderId && r.shipmentId) mergedMap[String(r.orderId).replace('#', '')] = r.shipmentId; });
+      localStorage.setItem('shipmentMap', JSON.stringify(mergedMap));
       markComplete(3);
 
       // Step 4: Generate Labels — use shipment IDs and AWBs from assign results
