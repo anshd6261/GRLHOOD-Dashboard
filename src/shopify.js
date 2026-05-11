@@ -246,6 +246,7 @@ const getUnfulfilledOrders = async (daysLookback = 3, startDate = null, endDate 
             riskLevel # HIGH, MEDIUM, LOW
             displayFinancialStatus
             displayFulfillmentStatus
+            currentTotalPriceSet { shopMoney { amount currencyCode } }
             paymentGatewayNames
             shippingAddress {
               name
@@ -419,6 +420,7 @@ const searchOrders = async (searchQuery) => {
             riskLevel
             displayFinancialStatus
             displayFulfillmentStatus
+            currentTotalPriceSet { shopMoney { amount currencyCode } }
             paymentGatewayNames
             shippingAddress {
               name
