@@ -1,0 +1,184 @@
+{% comment %}
+  GRLHOOD Custom Cart Drawer v13
+  INSTALL: 1) Upload as sections/custom-grl-cart-drawer.liquid
+           2) In layout/theme.liquid add before </body>:
+              {% section 'custom-grl-cart-drawer' %}
+{% endcomment %}
+
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+#floating-cart-btn,.grl-fc-btn,.grl-fc,[id*="floating-cart"],[class*="floating-cart"],[id*="float-cart"],[class*="float-cart"]{z-index:9000!important}
+.gc-ov{position:fixed;inset:0;background:rgba(0,0,0,0);z-index:999998;pointer-events:none;transition:background .4s ease}
+.gc-ov.open{background:rgba(0,0,0,0.28);pointer-events:all}
+.gc-d{position:fixed;top:0;bottom:0;width:100%;max-width:400px;z-index:999999;display:flex;flex-direction:column;background:#fff;font-family:'Plus Jakarta Sans',sans-serif;will-change:transform}
+@media(min-width:601px){.gc-d{right:0;transform:translateX(100%);transition:transform .45s cubic-bezier(.32,.72,0,1)}.gc-d.open{transform:translateX(0)}.gc-d.closing{transform:translateX(100%);transition:transform .3s cubic-bezier(.4,0,1,1)}}
+@media(max-width:600px){.gc-d{left:0;max-width:100%;transform:translateX(-100%);transition:transform .45s cubic-bezier(.32,.72,0,1)}.gc-d.open{transform:translateX(0)}.gc-d.closing{transform:translateX(-100%);transition:transform .3s cubic-bezier(.4,0,1,1)}}
+.gc-ann{position:relative;text-align:center;padding:11px 20px;font-size:11px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#2a2a2a;background:rgba(227,207,216,0.35);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-bottom:1px solid rgba(227,207,216,0.5);overflow:hidden;flex-shrink:0}
+.gc-ann::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(227,207,216,0.25) 0%,rgba(255,255,255,0.15) 50%,rgba(227,207,216,0.2) 100%);pointer-events:none}
+.gc-ann::after{content:'';position:absolute;inset:1px;border:.5px solid rgba(255,255,255,0.4);border-bottom:none;pointer-events:none}
+.gc-ann span{position:relative;z-index:1;text-shadow:0 .5px 0 rgba(255,255,255,0.5)}
+.gc-hdr{display:flex;align-items:center;justify-content:space-between;padding:20px 22px 16px;flex-shrink:0}
+.gc-ht{font-size:16px;font-weight:500;color:#2a2a2a;display:flex;align-items:center;gap:9px;letter-spacing:-.01em}
+.gc-hb{display:inline-flex;align-items:center;justify-content:center;background:#e3cfd8;color:#2a2a2a;font-size:11px;font-weight:600;min-width:22px;height:22px;padding:0 7px;border-radius:35px}
+.gc-hx{width:38px;height:38px;border-radius:35px;border:1px solid #eae4e7;background:transparent;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;transition:background .15s,border-color .15s}
+.gc-hx:hover{background:#f7f0f3;border-color:#e3cfd8}
+.gc-dv{height:1px;background:#f0eaed;margin:0 22px;flex-shrink:0}
+.gc-items{flex:1;overflow-y:auto;padding:4px 0 0;-webkit-overflow-scrolling:touch}
+.gc-items::-webkit-scrollbar{width:2px}
+.gc-items::-webkit-scrollbar-thumb{background:#e3cfd8;border-radius:2px}
+.gc-li{display:flex;gap:14px;padding:18px 22px;animation:gcIn .3s ease both}
+.gc-li+.gc-li{border-top:1px dashed #ebe5e8}
+@keyframes gcIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.gc-li-img{width:82px;height:82px;border-radius:16px;overflow:hidden;background:#f5f0f2;flex-shrink:0}
+.gc-li-img img{width:100%;height:100%;object-fit:cover;display:block}
+.gc-li-nfo{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;padding:1px 0}
+.gc-li-top{display:flex;justify-content:space-between;align-items:flex-start;gap:6px}
+.gc-li-nm{font-size:14px;font-weight:500;color:#2a2a2a;line-height:1.3;letter-spacing:-.01em}
+.gc-li-rm{width:22px;height:22px;border:none;background:transparent;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;opacity:.3;transition:opacity .15s;flex-shrink:0}
+.gc-li-rm:hover{opacity:.8}
+.gc-pills{display:flex;flex-direction:column;gap:4px;margin-top:5px}
+@media(min-width:601px){.gc-pills{flex-direction:row;flex-wrap:wrap;gap:5px}}
+.gc-pill{display:inline-block;padding:3px 10px;border-radius:35px;font-size:10.5px;font-weight:500;line-height:1.3;width:fit-content}
+.gc-pill-p{background:#f3e8ed;color:#7a5a68}
+.gc-pill-free{background:#e4f2e8;color:#3a6b3a}
+.gc-li-bt{display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:8px}
+.gc-li-pr{font-size:14px;font-weight:600;color:#2a2a2a;display:flex;align-items:center;gap:6px}
+.gc-li-cp{font-size:11.5px;color:#c5c5c5;text-decoration:line-through;font-weight:400}
+.gc-qt{display:inline-flex;align-items:center;border:1px solid #eae4e7;border-radius:35px;height:34px;overflow:hidden}
+.gc-qt-b{width:36px;height:34px;border:none;background:transparent;cursor:pointer;font-size:15px;color:#2a2a2a;display:flex;align-items:center;justify-content:center;transition:background .12s;padding:0;border-radius:35px}
+.gc-qt-b:hover{background:#f7f0f3}
+.gc-qt-b:active{background:#ede4e9}
+.gc-qt-v{min-width:24px;text-align:center;font-size:13px;font-weight:600;color:#2a2a2a}
+
+/* GIFT BLOCK */
+.gc-gft-wrap{margin:4px 22px 17px;position:relative;flex-shrink:0;animation:gcIn .3s ease both}
+.gc-gft{padding:20px 14px;background:#faf6f8;border-radius:20px;border:1px dashed #e3cfd8;display:flex;align-items:center;gap:10px;position:relative;overflow:visible}
+.gc-gft.ul{border-style:solid;background:#f6eef2}
+.gc-gft-ico{width:24px;height:24px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.gc-gft-txt{font-size:11.5px;color:#2a2a2a;font-weight:500;line-height:1.35;flex:1;padding-right:50px}
+.gc-gft-txt em{font-style:normal;color:#9a8a91;font-weight:400}
+.gc-gft-img{position:absolute;right:-8px;bottom:-6px;width:100px;height:100px;opacity:1;mix-blend-mode:multiply;pointer-events:none;z-index:3}
+.gc-gft.ul .gc-gft-img{opacity:0.28}
+
+.gc-ft{padding:20px 22px 24px;flex-shrink:0;background:#fff;border-top:1px solid #f0eaed}
+.gc-ft-sub{display:flex;justify-content:space-between;align-items:center;padding-bottom:14px}
+.gc-ft-sl{font-size:14px;font-weight:600;color:#2a2a2a}
+.gc-ft-sv{font-size:16px;font-weight:600;color:#2a2a2a}
+.gc-ft-cmp{font-size:12px;color:#c5c5c5;text-decoration:line-through;margin-right:6px;font-weight:400}
+.gc-ft-save{margin:0 0 18px;padding:12px 16px;border-radius:35px;border:1px solid rgba(180,210,180,0.4);display:flex;justify-content:space-between;align-items:center;position:relative;overflow:hidden}
+.gc-ft-save::before{content:'';position:absolute;inset:0;background:linear-gradient(110deg,#f0ece6,#e8f0e6,#f0ece6,#e6f0ea,#f0ece6);background-size:300% 100%;animation:gcSF 6s ease infinite;opacity:.55;pointer-events:none}
+@keyframes gcSF{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+.gc-ft-save-t{font-size:12px;font-weight:500;color:#3a6b3a;position:relative;z-index:1}
+.gc-ft-save-a{font-size:13px;font-weight:600;color:#3a6b3a;position:relative;z-index:1}
+.gc-co{display:flex;width:100%;padding:15px 20px;align-items:center;justify-content:center;gap:8px;font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;text-align:center;border:none;border-radius:35px;cursor:pointer;text-decoration:none;color:#fff;position:relative;overflow:hidden;background:#2a2a2a}
+.gc-co::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 120% 80% at 20% 50%,rgba(227,207,216,0.3) 0%,transparent 60%);background-size:200% 100%;animation:gcCoGlow 4s ease-in-out infinite;pointer-events:none}
+@keyframes gcCoGlow{0%{background-position:100% 50%}50%{background-position:0% 50%}100%{background-position:100% 50%}}
+.gc-co:hover{background:#333}
+.gc-co svg,.gc-co span{position:relative;z-index:1}
+.gc-em{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:72px 28px;text-align:center}
+.gc-em-i{width:60px;height:60px;border-radius:35px;background:#f5f0f2;display:flex;align-items:center;justify-content:center;margin-bottom:18px}
+.gc-em-t{font-size:15px;font-weight:600;color:#2a2a2a;margin-bottom:6px}
+.gc-em-s{font-size:12px;color:#aaa;margin-bottom:26px}
+.gc-em-c{display:inline-block;padding:13px 32px;background:#2a2a2a;color:#fff;font-family:'Plus Jakarta Sans',sans-serif;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;border-radius:35px;border:none;cursor:pointer}
+.gc-em-c:hover{background:#3a3a3a}
+body.gc-lk{overflow:hidden}
+</style>
+
+<div class="gc-ov" id="gcOv" onclick="GC.close()"></div>
+<div class="gc-d" id="gcD" role="dialog" aria-label="Shopping cart">
+  <div class="gc-ann"><span>{{ section.settings.announcement_text | default: 'GRL Special — Buy 3 : Pay for 2' }}</span></div>
+  <div class="gc-hdr">
+    <div class="gc-ht">Your selections <span class="gc-hb" id="gcCn">{{ cart.item_count }}</span></div>
+    <button class="gc-hx" onclick="GC.close()" aria-label="Close"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><line x1="6" y1="6" x2="18" y2="18" stroke="#2a2a2a" stroke-width="1.5"/><line x1="18" y1="6" x2="6" y2="18" stroke="#2a2a2a" stroke-width="1.5"/></svg></button>
+  </div>
+  <div class="gc-dv"></div>
+  <div class="gc-items" id="gcIt"></div>
+  <div id="gcGi"></div>
+  <div id="gcFt"></div>
+</div>
+
+<script>
+(function(){
+const XSvg='<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><line x1="6" y1="6" x2="18" y2="18" stroke="#2a2a2a" stroke-width="1.5"/><line x1="18" y1="6" x2="6" y2="18" stroke="#2a2a2a" stroke-width="1.5"/></svg>';
+const lockSvg='<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 118 0v4"/></svg>';
+const giftSvg='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9a8a91" stroke-width="1.5"><path d="M20 12v10H4V12"/><path d="M2 7h20v5H2z"/><path d="M12 22V7"/><path d="M12 7H7.5a2.5 2.5 0 010-5C11 2 12 7 12 7z"/><path d="M12 7h4.5a2.5 2.5 0 000-5C13 2 12 7 12 7z"/></svg>';
+const checkSvg='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7a5a68" stroke-width="2"><path d="M20 6L9 17l-5-5"/></svg>';
+const gpImg='https://cdn.shopify.com/s/files/1/0742/5474/5788/files/Baby_Pink_1_png_1ac23ad6-d4da-402f-a5d5-2a18ab841f90.jpg?v=1776004754&width=200';
+
+window.GC={
+  _busy:false,_last:'',
+  init(){
+    document.querySelectorAll('[data-gh-cart] model-viewer').forEach(mv=>{mv.style.pointerEvents='none';});
+    document.addEventListener('click',(e)=>{
+      let t=e.target.closest('[data-gh-cart]');if(t){e.preventDefault();e.stopPropagation();this.open();return;}
+      t=e.target.closest('[data-testid="cart-drawer-trigger"]');if(t){e.preventDefault();e.stopPropagation();this.open();return;}
+      t=e.target.closest('cart-icon');if(t){e.preventDefault();e.stopPropagation();this.open();return;}
+      t=e.target.closest('a[href="/cart"],a[href$="/cart"]');if(t){e.preventDefault();e.stopPropagation();this.open();return;}
+      t=e.target.closest('[on\\:click*="/open"]');if(t&&(t.getAttribute('aria-label')||'').toLowerCase().includes('cart')){e.preventDefault();e.stopPropagation();this.open();return;}
+      t=e.target.closest('[aria-controls="cart-drawer"]');if(t){e.preventDefault();e.stopPropagation();this.open();return;}
+      t=e.target.closest('[data-cart-trigger],.header__icon--cart,#cart-icon-bubble,.js-cart-drawer-trigger');if(t){e.preventDefault();e.stopPropagation();this.open();return;}
+    },true);
+    document.addEventListener('cart:open',(e)=>{e.stopImmediatePropagation();this.open();},true);
+    document.addEventListener('keydown',(e)=>{if(e.key==='Escape')this.close();});
+    const oh=()=>{const hc=document.querySelector('cart-drawer-component');if(hc){hc.style.cssText='display:none!important;visibility:hidden!important;pointer-events:none!important;';try{if(typeof hc.open==='function')hc.open=()=>this.open();}catch(e){}try{const p=Object.getPrototypeOf(hc);if(p&&typeof p.open==='function')p.open=()=>this.open();}catch(e){}}};
+    oh();new MutationObserver(oh).observe(document.body,{childList:true,subtree:true});
+    fetch('/cart.js').then(r=>r.json()).then(c=>this.render(c)).catch(()=>{});
+  },
+  open(){
+    document.querySelector('cart-drawer-component')&&(document.querySelector('cart-drawer-component').style.cssText='display:none!important');
+    const d=document.getElementById('gcD');d.classList.remove('closing');d.classList.add('open');
+    document.getElementById('gcOv').classList.add('open');document.body.classList.add('gc-lk');this.refresh();
+  },
+  close(){const d=document.getElementById('gcD');d.classList.add('closing');d.classList.remove('open');document.getElementById('gcOv').classList.remove('open');document.body.classList.remove('gc-lk');setTimeout(()=>d.classList.remove('closing'),300);},
+  async refresh(){if(this._busy)return;this._busy=true;try{const r=await fetch('/cart.js');const c=await r.json();const j=JSON.stringify(c);if(j!==this._last){this._last=j;this.render(c);}}catch(e){}this._busy=false;},
+  async qty(k,q){if(q<1)return this.rm(k);await fetch('/cart/change.js',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:k,quantity:q})});this.refresh();},
+  async rm(k){await fetch('/cart/change.js',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:k,quantity:0})});this.refresh();},
+  m(c){const n=c/100;return'\u20B9'+Math.floor(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,',')+(n%1===0?'':'.'+((n%1).toFixed(2)).slice(2));},
+  getModel(props){if(!props)return null;for(const k of Object.keys(props)){if(k.toLowerCase().includes('model')){let v=props[k];if(typeof v!=='string')continue;if(v.includes(':'))v=v.split(':').pop().trim();v=v.replace(/^(Apple|Samsung|OnePlus|Xiaomi|Redmi|Realme|Oppo|Vivo|Google|Nothing|Motorola|Poco)\s+/i,'').trim();return v||null;}}return null;},
+  render(c){
+    document.getElementById('gcCn').textContent=c.item_count;
+    document.querySelectorAll('[data-cart-count],.cart-count,.cart-bubble__text-count').forEach(e=>e.textContent=c.item_count);
+    const items=document.getElementById('gcIt'),gE=document.getElementById('gcGi'),fE=document.getElementById('gcFt');
+    if(c.item_count===0){items.innerHTML='<div class="gc-em"><div class="gc-em-i"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#b0a0a8" stroke-width="1.2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg></div><div class="gc-em-t">Your bag is empty</div><div class="gc-em-s">Looks like you haven\'t found your case yet</div><button class="gc-em-c" onclick="GC.close()">Continue shopping</button></div>';gE.innerHTML='';fE.innerHTML='';return;}
+    let pc=0;c.items.forEach(it=>pc+=it.quantity);
+    let tC=0,tF=0;c.items.forEach(it=>{tF+=it.final_line_price;tC+=it.original_line_price;});const sav=tC-tF;
+    items.innerHTML=c.items.map((it,idx)=>{
+      const img=it.image||(it.featured_image&&it.featured_image.url)||'';const vt=it.variant_title&&it.variant_title!=='Default Title'?it.variant_title:'';const cmp=it.original_line_price>it.final_line_price;const isFree=it.final_line_price===0;const model=this.getModel(it.properties);
+      let pa=[];if(model)pa.push('<span class="gc-pill gc-pill-p">'+model+'</span>');if(vt)pa.push('<span class="gc-pill gc-pill-p">'+vt+'</span>');let pillsH=pa.length?'<div class="gc-pills">'+pa.join('')+'</div>':'';
+      let prH=isFree?`<span class="gc-li-cp">${this.m(it.original_line_price||it.price||0)}</span><span class="gc-pill gc-pill-free">FREE</span>`:this.m(it.final_line_price)+(cmp?'<span class="gc-li-cp" style="margin-left:6px">'+this.m(it.original_line_price)+'</span>':'');
+      return`<div class="gc-li" style="animation-delay:${idx*0.04}s"><div class="gc-li-img"><img src="${img}" alt="${it.product_title}" loading="lazy" onerror="this.style.display='none'"></div><div class="gc-li-nfo"><div><div class="gc-li-top"><div class="gc-li-nm">${it.product_title}</div><button class="gc-li-rm" onclick="GC.rm('${it.key}')">${XSvg}</button></div>${pillsH}</div><div class="gc-li-bt"><div class="gc-li-pr">${prH}</div><div class="gc-qt"><button class="gc-qt-b" onclick="GC.qty('${it.key}',${it.quantity-1})">\u2212</button><span class="gc-qt-v">${it.quantity}</span><button class="gc-qt-b" onclick="GC.qty('${it.key}',${it.quantity+1})">+</button></div></div></div></div>`;
+    }).join('');
+
+    const ul=pc>=2;
+    const imgTag=`<img class="gc-gft-img" src="${gpImg}" alt="GripPad">`;
+    if(ul){
+      gE.innerHTML=`<div class="gc-gft-wrap"><div class="gc-gft ul"><div class="gc-gft-ico">${checkSvg}</div><div class="gc-gft-txt">Free GripPad unlocked! <em>Claim at checkout</em></div></div>${imgTag}</div>`;
+    }else if(pc===1){
+      gE.innerHTML=`<div class="gc-gft-wrap"><div class="gc-gft"><div class="gc-gft-ico">${giftSvg}</div><div class="gc-gft-txt">Add 1 more for a free GRL GripPad</div></div>${imgTag}</div>`;
+    }else{gE.innerHTML='';}
+
+    let svH=sav>0?`<div class="gc-ft-save"><span class="gc-ft-save-t">GRL Special: You're saving</span><span class="gc-ft-save-a">${this.m(sav)}</span></div>`:'';
+    fE.innerHTML=`<div class="gc-ft"><div class="gc-ft-sub"><span class="gc-ft-sl">Subtotal</span><span class="gc-ft-sv">${tC>tF?'<span class="gc-ft-cmp">'+this.m(tC)+'</span>':''}${this.m(tF)}</span></div>${svH}<a href="/checkout" class="gc-co">${lockSvg}<span>Secure checkout</span></a></div>`;
+  }
+};
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>GC.init());else GC.init();
+})();
+</script>
+
+{% schema %}
+{
+  "name": "GRL Cart Drawer",
+  "tag": "section",
+  "class": "grl-cart-section",
+  "settings": [
+    {
+      "type": "text",
+      "id": "announcement_text",
+      "label": "Announcement bar text",
+      "default": "GRL Special — Buy 3 : Pay for 2"
+    }
+  ],
+  "presets": [{ "name": "GRL Cart Drawer" }]
+}
+{% endschema %}
