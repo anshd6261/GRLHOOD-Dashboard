@@ -8,7 +8,7 @@ require('dotenv').config();
 const { getUnfulfilledOrders, searchOrders, assignSkuToProduct, getOrder } = require('./shopify');
 const { processOrders } = require('./processor');
 // RTO prediction now powered by Shiprocket Sense API (shiprocket_sense.js)
-const rapidshyp = require('./rapidshyp');
+const ithink = require('./ithink');
 const shiprocketSense = require('./shiprocket_sense');
 const riskValidator = require('./riskValidator'); // Fixed Import
 const { v4: uuidv4 } = require('uuid');
@@ -43,7 +43,7 @@ app.get('/api/status', (req, res) => {
         status: 'online',
         store: process.env.SHOPIFY_STORE_DOMAIN,
         connected: !!(process.env.SHOPIFY_CLIENT_ID && process.env.SHOPIFY_CLIENT_SECRET),
-        rapidshypJwt: !!(process.env.RAPIDSHYP_JWT),
+        ithink: !!(process.env.ITHINK_ACCESS_TOKEN && process.env.ITHINK_SECRET_KEY),
         senseKey: !!(process.env.SHIPROCKET_SENSE_API_KEY),
         senseSecret: !!(process.env.SHIPROCKET_SENSE_API_SECRET),
         bingWebmaster: !!(process.env.BING_WEBMASTER_API_KEY),
@@ -116,36 +116,12 @@ async function handleOrders(req, res) {
 
         console.log(`[API] Fetching orders... Options:`, { daysLookback, startDate, endDate, statusMode });
 
-        // Fetch from Shopify and RapidShyp concurrently (RapidShyp is non-blocking)
-        const [rawOrders, rsRes] = await Promise.all([
-            getUnfulfilledOrders(daysLookback, startDate, endDate, statusMode),
-            rapidshyp.fetchOrdersWithRTO('ALL', 10).catch(e => {
-                console.warn('[API] RapidShyp fetch failed (non-blocking):', e.message);
-                return { success: false, data: [] };
-            }),
-        ]);
+        // Fetch from Shopify. (iThink creates the AWB at ship time; AWB shows via
+        // Shopify fulfillment tracking, so no separate aggregator order-list fetch is needed.)
+        const rawOrders = await getUnfulfilledOrders(daysLookback, startDate, endDate, statusMode);
 
-        // Build shipping data map from RapidShyp (AWB, status, IDs only)
+        // Shipping data map (AWB/status) — populated from Shopify fulfillment in the processor.
         const rtoMap = {};
-        if (rsRes.success && rsRes.data) {
-            rsRes.data.forEach(rsOrder => {
-                const sellerId = rsOrder.seller_order_id; // e.g., "#3419"
-                const cleanId = rsOrder.channel_order_id; // e.g., "3419"
-                if (sellerId || cleanId) {
-                    const shippingEntry = {
-                        rsOrderId: rsOrder.order_id,
-                        rsStatus: rsOrder.order_status || "",
-                        awb: rsOrder.awb_number || ""
-                    };
-                    if (sellerId) rtoMap[sellerId] = shippingEntry;
-                    if (cleanId) {
-                        rtoMap[cleanId] = shippingEntry;
-                        rtoMap[`#${cleanId}`] = shippingEntry;
-                    }
-                }
-            });
-            console.log(`[API] Built shipping map with ${Object.keys(rtoMap).length} entries from RapidShyp.`);
-        }
 
         // RTO risk: try quick cache lookup only (don't block order loading with Sense API calls)
         // Full Sense API calls happen via separate /api/rto-check endpoint
@@ -592,22 +568,22 @@ app.post('/api/upload-portal', async (req, res) => {
 app.post('/api/orders/:id/cancel', async (req, res) => {
     try {
         const numericId = req.params.id; // e.g., 123456789 from Shopify
-        const { orderName } = req.body; // e.g., #1005
+        const { orderName, awb } = req.body; // e.g., #1005, and the iThink AWB if shipped
 
         if (!numericId || !orderName) {
             return res.status(400).json({ error: 'Missing numeric ID or orderName' });
         }
 
-        console.log(`[API] Processing Cancellation for Order ${orderName} (${numericId})...`);
+        console.log(`[API] Processing Cancellation for Order ${orderName} (${numericId}), awb=${awb || 'none'}...`);
 
-        // Cancel in RapidShyp + Shopify in parallel
+        // Cancel on iThink (by AWB, only if shipped) + Shopify in parallel
         const { cancelOrder: shopifyCancelOrder } = require('./shopify');
-        const [rsResult, shopifyResult] = await Promise.allSettled([
-            rapidshyp.cancelOrder(orderName),
+        const [itlResult, shopifyResult] = await Promise.allSettled([
+            awb ? ithink.cancelOrder(awb) : Promise.resolve({ success: true, message: 'No AWB — nothing to cancel on courier' }),
             shopifyCancelOrder(numericId)
         ]);
 
-        const rsRes = rsResult.status === 'fulfilled' ? rsResult.value : { success: false, message: rsResult.reason?.message };
+        const itlRes = itlResult.status === 'fulfilled' ? itlResult.value : { success: false, message: itlResult.reason?.message };
         if (shopifyResult.status === 'rejected') {
             throw new Error(`Shopify cancel failed: ${shopifyResult.reason?.message}`);
         }
@@ -617,7 +593,7 @@ app.post('/api/orders/:id/cancel', async (req, res) => {
         res.json({
             success: true,
             message: `Order ${orderName} cancelled successfully.`,
-            rapidshyp: rsRes,
+            courier: itlRes,
         });
 
     } catch (e) {
@@ -660,72 +636,18 @@ app.get('/api/orders/verified', (req, res) => {
     }
 });
 
-// 7.5 Generate Label (RapidShyp)
+// 7.5 Generate Label (iThink — print by AWB/waybill)
 app.post('/api/rapidshyp/label', async (req, res) => {
     try {
-        const { orderIds, awbs, shopifyOrderId } = req.body;
+        const { awbs, awb } = req.body;
+        const awbList = (Array.isArray(awbs) ? awbs : [awbs || awb]).filter(Boolean).map(String);
 
-        let resolvedIds = [];
-
-        // Priority 1: AWB tracking lookup (gives correct shipment_id format like S2603415750)
-        if (awbs && Array.isArray(awbs) && awbs.length > 0) {
-            console.log(`[API] Looking up shipment IDs from AWBs:`, awbs);
-            const lookups = await Promise.allSettled(awbs.filter(Boolean).map(awb => rapidshyp.findOrderIdByAWB(awb)));
-            for (const r of lookups) {
-                if (r.status === 'fulfilled' && r.value) resolvedIds.push(r.value);
-            }
+        if (awbList.length === 0) {
+            return res.status(400).json({ success: false, error: 'No AWB provided. Ship the order first to get a waybill.' });
         }
 
-        // Priority 2: Direct order IDs (from rsOrderId — but these are MongoDB ObjectIds, may not work)
-        if (resolvedIds.length === 0 && orderIds && Array.isArray(orderIds)) {
-            resolvedIds = orderIds.filter(Boolean);
-        }
-
-        // Priority 3: Search by Shopify order ID via order map (fetches all RS orders)
-        if (resolvedIds.length === 0 && shopifyOrderId) {
-            console.log(`[API] Looking up RS order for Shopify #${shopifyOrderId} via order map...`);
-            try {
-                const orderMap = await rapidshyp.fetchAllOrders();
-                const cleanId = shopifyOrderId.toString().replace('#', '');
-                const match = orderMap.get(cleanId);
-                if (match) {
-                    const shipId = match.shipment_id || match.order_id;
-                    resolvedIds.push(shipId);
-                    console.log(`[API] Found RS shipment ${shipId} for Shopify #${shopifyOrderId}`);
-                }
-            } catch (searchErr) {
-                console.warn(`[API] Order map lookup failed:`, searchErr.message);
-            }
-        }
-
-        // Priority 4: Use track_order public API (no JWT needed, works for any order)
-        if (resolvedIds.length === 0 && shopifyOrderId) {
-            console.log(`[API] Trying track_order for Shopify #${shopifyOrderId}...`);
-            try {
-                const infoResult = await rapidshyp.getOrderInfo(shopifyOrderId);
-                if (infoResult.success && infoResult.data) {
-                    const shipLines = infoResult.data.shipment_lines || [];
-                    for (const s of shipLines) {
-                        if (s.shipment_id) resolvedIds.push(s.shipment_id);
-                    }
-                    if (resolvedIds.length === 0 && infoResult.data.shipment_id) {
-                        resolvedIds.push(infoResult.data.shipment_id);
-                    }
-                    if (resolvedIds.length > 0) {
-                        console.log(`[API] Found shipment IDs via track_order:`, resolvedIds);
-                    }
-                }
-            } catch (infoErr) {
-                console.warn(`[API] track_order lookup failed:`, infoErr.message);
-            }
-        }
-
-        if (resolvedIds.length === 0) {
-            return res.status(400).json({ success: false, error: 'Order not found in RapidShyp. Assign a courier first.' });
-        }
-
-        console.log(`[API] Generating labels for RapidShyp IDs:`, resolvedIds);
-        const result = await rapidshyp.generateLabel(resolvedIds);
+        console.log(`[API] Generating label for AWB(s):`, awbList);
+        const result = await ithink.printLabel(awbList);
 
         if (result.success) {
             res.json(result.data);
@@ -768,456 +690,160 @@ app.get('/api/proxy-pdf', async (req, res) => {
 });
 
 // ==========================================
-// RAPIDSHYP FULFILLMENT ENDPOINTS
+// ITHINK LOGISTICS FULFILLMENT ENDPOINTS
+// (Paths kept under /api/rapidshyp/* for frontend compatibility; backed by iThink.)
 // ==========================================
 
-// Bulk Approve Orders (before AWB assignment)
-// Debug: Test approve with raw response capture
-app.post('/api/rapidshyp/debug-approve', async (req, res) => {
-    try {
-        const { marketplaceIds } = req.body; // Array of marketplace IDs to test
-        if (!marketplaceIds?.length) return res.status(400).json({ error: 'Send { marketplaceIds: ["123",...] }' });
-        const axios = require('axios');
-        const apiKey = (process.env.RAPIDSHYP_API_KEY || '').trim();
-        const headers = { 'Content-Type': 'application/json', 'rapidshyp-token': apiKey };
-        const r = await axios.post('https://api.rapidshyp.com/rapidshyp/apis/v1/approve_orders', {
-            order_id: marketplaceIds.slice(0, 5), // Max 5 for debug
-            store_name: 'GRLHOOD'
-        }, { headers, timeout: 30000 });
-        res.json({ status: r.status, data: r.data });
-    } catch (e) {
-        res.json({ error: e.message, status: e.response?.status, data: e.response?.data });
-    }
-});
-
-// Debug: Check RapidShyp session status for orders
-app.get('/api/rapidshyp/debug-session', async (req, res) => {
-    try {
-        const sessionHeaders = rapidshyp.getSessionHeaders();
-        if (!sessionHeaders) return res.json({ error: 'No JWT configured' });
-        const axios = require('axios');
-        const allOrders = [];
-        for (let page = 1; page <= 3; page++) {
-            const r = await axios.post('https://api.rapidshyp.com/session/orders/get_orders',
-                { page, limit: 200 }, { headers: sessionHeaders, timeout: 10000 });
-            const records = r.data?.records || [];
-            allOrders.push(...records);
-            if (records.length < 200) break;
-        }
-        const statusCounts = {};
-        for (const r of allOrders) {
-            const st = r.order_status || 'UNKNOWN';
-            statusCounts[st] = (statusCounts[st] || 0) + 1;
-        }
-        const sample = allOrders.slice(0, 5).map(r => ({
-            seller_order_id: r.seller_order_id,
-            market_place_order_id: r.market_place_order_id,
-            order_status: r.order_status,
-            awb_number: r.awb_number
-        }));
-        res.json({ total: allOrders.length, statusCounts, sample });
-    } catch (e) {
-        res.status(500).json({ error: e.message, status: e.response?.status });
-    }
-});
-
-// Approve a batch of up to 50 orders — frontend calls this in a loop for realtime progress
+// Approve — iThink has no separate approve step (order creation assigns the AWB
+// directly). Kept as an instant no-op so the wizard's approve stage completes.
 app.post('/api/rapidshyp/approve-batch', async (req, res) => {
-    try {
-        const { orderIds, shopifyIdMap } = req.body;
-        if (!orderIds?.length) return res.status(400).json({ error: 'No orderIds' });
-
-        const cleanIds = orderIds.map(id => id.toString().replace('#', ''));
-        console.log(`[API] Approve batch: ${cleanIds.length} orders, sample: ${cleanIds.slice(0, 3)}`);
-        const result = await rapidshyp.approveBatch(cleanIds, shopifyIdMap || {});
-        res.json(result);
-    } catch (e) {
-        console.error('[API] Approve Batch Error:', e.response?.data || e.message);
-        res.status(500).json({ error: e.response?.data?.remarks || e.message });
-    }
+    const { orderIds } = req.body;
+    const cleanIds = (orderIds || []).map(id => id.toString().replace('#', ''));
+    res.json({
+        success_count: cleanIds.length,
+        alreadyApproved_count: 0,
+        failure_count: 0,
+        remark: 'iThink: no approval needed — AWB is assigned at ship time',
+        shipmentMap: {},
+        approved: cleanIds.map(orderId => ({ orderId })),
+        alreadyApproved: [],
+        failed: [],
+    });
 });
 
-// Assign AWB for a batch of orders — frontend calls this in a loop
+// Resolve shipments — not applicable for iThink (AWB is created at ship time).
+// Kept as a no-op returning an empty map so the wizard flow proceeds.
+app.post('/api/rapidshyp/resolve-shipments', async (req, res) => {
+    const { orderIds } = req.body;
+    res.json({ shipmentMap: {}, found: 0, total: (orderIds || []).length, notInMap: 0, inMapNoShipment: 0 });
+});
+
+// Ship — create the order(s) on iThink. The waybill (AWB) is returned immediately.
+// Frontend sends full order objects (address + items + payment) under `orders`.
 app.post('/api/rapidshyp/assign-batch', async (req, res) => {
     try {
-        const { orderIds, shipmentMap } = req.body;
-        if (!orderIds?.length) return res.status(400).json({ error: 'No orderIds' });
-
-        const cleanIds = orderIds.map(id => id.toString().replace('#', ''));
-        console.log(`[API] Assign batch: ${cleanIds.length} orders`);
-        const result = await rapidshyp.assignBatch(cleanIds, shipmentMap || {});
-
-        // Auto-schedule pickup for assigned orders
-        const assigned = (result.results || []).filter(r => r.success && r.awb && r.shipmentId);
-        if (assigned.length > 0) {
-            try {
-                const pickupResult = await rapidshyp.bulkSchedulePickup(
-                    assigned.map(r => ({ shipmentId: r.shipmentId, awb: r.awb }))
-                );
-                result.pickup = pickupResult;
-            } catch (pe) {
-                console.warn('[API] Pickup scheduling failed (non-blocking):', pe.message);
-            }
+        const { orders, orderIds } = req.body;
+        if (!orders?.length) {
+            return res.status(400).json({
+                error: 'Missing order data. iThink needs full order details (address + items) to ship. Re-run from the wizard.',
+                results: (orderIds || []).map(id => ({ orderId: String(id).replace('#', ''), success: false, message: 'No order data sent' })),
+            });
         }
 
+        console.log(`[API] iThink ship: creating ${orders.length} order(s)`);
+        const result = await ithink.createOrders(orders);
         res.json(result);
     } catch (e) {
-        console.error('[API] Assign Batch Error:', e.response?.data || e.message);
-        res.status(500).json({ error: e.response?.data?.remarks || e.message });
-    }
-});
-
-// Debug: dump raw session API record fields for an order
-app.get('/api/rapidshyp/debug-order/:orderId', async (req, res) => {
-    try {
-        const cleanId = req.params.orderId.replace('#', '');
-        const sessionHeaders = rapidshyp.getSessionHeaders();
-        if (!sessionHeaders) return res.status(400).json({ error: 'No JWT configured' });
-
-        const axios = require('axios');
-        const apiRes = await axios.post('https://api.rapidshyp.com/session/orders/get_orders', {
-            page: 1, limit: 200
-        }, { headers: sessionHeaders, timeout: 15000 });
-
-        const records = apiRes.data?.records || [];
-        const match = records.find(r => r.seller_order_id === `#${cleanId}` || r.seller_order_id === cleanId);
-
-        if (!match) return res.json({ found: false, totalRecords: records.length, searchedFor: cleanId });
-
-        res.json({
-            found: true,
-            allKeys: Object.keys(match).sort(),
-            relevantFields: {
-                order_id: match.order_id,
-                seller_order_id: match.seller_order_id,
-                market_place_order_id: match.market_place_order_id,
-                order_status: match.order_status,
-                awb_number: match.awb_number,
-                shipment_id: match.shipment_id,
-                shipments: match.shipments,
-                shipment: match.shipment,
-            },
-            // Dump any field containing 'ship' in the key name
-            shipFields: Object.fromEntries(Object.entries(match).filter(([k]) => k.toLowerCase().includes('ship'))),
-            rawRecord: match
-        });
-    } catch (e) {
-        res.status(500).json({ error: e.message, status: e.response?.status });
-    }
-});
-
-// Bulk Assign AWB
-app.post('/api/rapidshyp/bulk-assign', async (req, res) => {
-    try {
-        const { orderNames, shipmentMap } = req.body;
-        if (!orderNames || !Array.isArray(orderNames) || orderNames.length === 0) {
-            return res.status(400).json({ error: 'Missing or invalid orderNames array' });
-        }
-
-        console.log(`[API] Bulk assigning AWB for ${orderNames.length} orders, ${Object.keys(shipmentMap || {}).length} shipment IDs from frontend...`);
-        const result = await rapidshyp.bulkAssignAWB(orderNames, shipmentMap || {});
-
-        // Auto-schedule pickup for all successfully assigned orders
-        const assigned = (result.results || []).filter(r => r.success && r.awb && r.shipmentId);
-        if (assigned.length > 0) {
-            console.log(`[API] Auto-scheduling pickup for ${assigned.length} assigned orders...`);
-            const pickupResult = await rapidshyp.bulkSchedulePickup(
-                assigned.map(r => ({ shipmentId: r.shipmentId, awb: r.awb }))
-            );
-            result.pickup = pickupResult;
-        }
-
-        res.json(result);
-    } catch (e) {
-        console.error('[API] Bulk Assign Error:', e);
-        res.status(500).json({ success: false, error: e.message });
-    }
-});
-
-// Debug: inspect raw RapidShyp record for an order (temporary)
-app.get('/api/rapidshyp/debug-order/:id', async (req, res) => {
-    try {
-        const orderMap = await rapidshyp.fetchAllOrders();
-        const cleanId = req.params.id.replace('#', '');
-        const match = orderMap.get(cleanId);
-
-        // Also try track_order to get shipment_id
-        let trackResult = null;
-        try {
-            trackResult = await rapidshyp.getOrderInfo(cleanId);
-        } catch (e) { trackResult = { error: e.message }; }
-
-        if (!match) return res.json({ found: false, mapSize: orderMap.size, triedKey: cleanId, trackResult });
-        res.json({
-            found: true,
-            mapSize: orderMap.size,
-            fields: Object.keys(match),
-            order_id: match.order_id,
-            shipment_id: match.shipment_id,
-            seller_order_id: match.seller_order_id,
-            order_status: match.order_status,
-            awb_number: match.awb_number,
-            store_name: match.store_name,
-            id: match.id,
-            contact_name: match.contact_name,
-            trackResult,
-        });
-    } catch (e) {
+        console.error('[API] iThink ship error:', e.response?.data || e.message);
         res.status(500).json({ error: e.message });
     }
 });
 
-// Debug: test JWT and try login
-app.get('/api/rapidshyp/test-jwt', async (req, res) => {
-    try {
-        const results = {};
-
-        // Test current JWT
-        const sessionHeaders = rapidshyp.getSessionHeaders();
-        if (sessionHeaders) {
-            try {
-                const r = await axios.post('https://api.rapidshyp.com/session/orders/get_orders', {
-                    page: 1, limit: 1
-                }, { headers: sessionHeaders, timeout: 10000 });
-                results.currentJwt = { status: 'OK', orderCount: r.data?.data?.length };
-            } catch (e) {
-                results.currentJwt = { status: 'FAILED', code: e.response?.status, data: e.response?.data || e.message };
-            }
-        } else {
-            results.currentJwt = 'NO JWT SET';
-        }
-
-        // Try login to get fresh JWT
-        const loginAttempts = [
-            { url: 'https://api.rapidshyp.com/session/login', method: 'post' },
-            { url: 'https://api.rapidshyp.com/session/auth/login', method: 'post' },
-            { url: 'https://api.rapidshyp.com/rapidshyp/apis/v1/login', method: 'post' },
-        ];
-        for (const attempt of loginAttempts) {
-            try {
-                const r = await axios({ method: attempt.method, url: attempt.url, data: {}, timeout: 5000 });
-                results[attempt.url] = { status: r.status, data: r.data };
-            } catch (e) {
-                results[attempt.url] = { status: e.response?.status, data: e.response?.data || e.message };
-            }
-        }
-
-        res.json(results);
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// Debug: lookup order via session API + get_orders_info to find shipment_id
-app.get('/api/rapidshyp/lookup/:orderId', async (req, res) => {
-    try {
-        const cleanId = req.params.orderId.replace('#', '');
-        const publicHeaders = {
-            'Content-Type': 'application/json',
-            'rapidshyp-token': process.env.RAPIDSHYP_API_KEY.trim()
-        };
-
-        // Step 1: Find order in session API to get RapidShyp order_id + marketplace_id
-        let sessionOrder = null;
-        let allSessionOrders = [];
-        const sessionHeaders = rapidshyp.getSessionHeaders();
-        if (sessionHeaders) {
-            try {
-                // Session API uses POST, not GET
-                // Paginate through records to find the order
-                const totalRecordsEstimate = 1000;
-                for (let page = 1; page <= 10; page++) {
-                    const sr = await axios.post('https://api.rapidshyp.com/session/orders/get_orders', {
-                        page, limit: 200
-                    }, { headers: sessionHeaders, timeout: 15000 });
-                    const pageOrders = sr.data?.records || sr.data?.data || [];
-                    allSessionOrders.push(...pageOrders);
-                    const found = pageOrders.find(o => {
-                        const sellerClean = (o.seller_order_id || '').replace('#', '');
-                        return sellerClean === cleanId;
-                    });
-                    if (found) { sessionOrder = found; break; }
-                    if (pageOrders.length < 200) break;
-                }
-            } catch (e) {
-                sessionOrder = { error: e.response?.status, errorData: e.response?.data || e.message };
-            }
-        }
-
-        // Step 2: Try get_orders_info with different ID formats
-        const results = {};
-        const rsOrderId = sessionOrder?.order_id;
-        const marketplaceId = sessionOrder?.market_place_order_id;
-
-        // Try all param name combos (orderId vs order_id, Channel_order_id vs channel_order_id)
-        const combos = [];
-        if (rsOrderId && marketplaceId) {
-            combos.push({ order_id: rsOrderId, channel_order_id: marketplaceId });
-            combos.push({ orderId: rsOrderId, channel_order_id: marketplaceId });
-            combos.push({ order_id: rsOrderId, Channel_order_id: marketplaceId });
-        }
-        if (rsOrderId) {
-            combos.push({ order_id: rsOrderId, channel_order_id: rsOrderId });
-        }
-        // Also try with seller_order_id as channel
-        if (rsOrderId) {
-            combos.push({ order_id: rsOrderId, channel_order_id: `#${cleanId}` });
-        }
-        // Fallback: try without session API data
-        combos.push({ order_id: `#${cleanId}`, channel_order_id: `#${cleanId}` });
-        combos.push({ order_id: cleanId, channel_order_id: cleanId });
-
-        for (const params of combos) {
-            const key = JSON.stringify(params);
-            try {
-                const r = await axios.get('https://api.rapidshyp.com/rapidshyp/apis/v1/get_orders_info', {
-                    params, headers: publicHeaders, timeout: 15000
-                });
-                results[key] = r.data;
-            } catch (e) {
-                results[key] = e.response?.data || e.message;
-            }
-        }
-
-        res.json({
-            orderId: cleanId,
-            sessionOrder: sessionOrder || null,
-            sessionOrderCount: allSessionOrders.length,
-            results
-        });
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
-
-// Schedule Pickup (after AWB assignment)
+// Schedule Pickup — iThink schedules pickup automatically at order creation. No-op.
 app.post('/api/rapidshyp/schedule-pickup', async (req, res) => {
+    res.json({ success: true, scheduled: 0, message: 'iThink schedules pickup automatically at order creation' });
+});
+
+// Wallet — iThink V3 has no public wallet-balance endpoint. Report unavailable gracefully.
+app.get('/api/rapidshyp/wallet', async (req, res) => {
+    res.json({ success: false, balance: null, message: 'Wallet balance not available via iThink API' });
+});
+
+// Track a shipment by AWB
+app.post('/api/rapidshyp/track', async (req, res) => {
     try {
-        const { assignments } = req.body; // [{ shipmentId, awb }]
-        if (!assignments || !Array.isArray(assignments) || assignments.length === 0) {
-            return res.status(400).json({ error: 'Missing or invalid assignments array' });
-        }
-        const result = await rapidshyp.bulkSchedulePickup(assignments);
+        const { awb, awbs } = req.body;
+        const list = (Array.isArray(awbs) ? awbs : [awbs || awb]).filter(Boolean);
+        if (list.length === 0) return res.status(400).json({ error: 'No AWB provided' });
+        const result = await ithink.trackOrder(list);
         res.json(result);
     } catch (e) {
-        console.error('[API] Schedule Pickup Error:', e);
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-// Get Wallet Balance
-app.get('/api/rapidshyp/wallet', async (req, res) => {
+// Pincode serviceability
+app.post('/api/rapidshyp/pincode', async (req, res) => {
     try {
-        const result = await rapidshyp.getWalletBalance();
+        const { pincode } = req.body;
+        if (!pincode) return res.status(400).json({ error: 'No pincode provided' });
+        const result = await ithink.checkPincode(pincode);
         res.json(result);
     } catch (e) {
-        console.error('[API] Wallet Error:', e);
-        res.json({ success: false, balance: 0, error: e.message });
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
-// Bulk Generate Labels + Upload to Dropbox
+// Courier rates
+app.post('/api/rapidshyp/rate', async (req, res) => {
+    try {
+        const result = await ithink.getRate(req.body || {});
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Warehouses (pickup addresses)
+app.get('/api/rapidshyp/warehouses', async (req, res) => {
+    try {
+        const result = await ithink.getWarehouses(req.query.warehouseId);
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Helper: print labels by AWB + upload PDF to Dropbox.
+async function printLabelsToDropbox(awbList) {
+    const awbs = (awbList || []).filter(Boolean).map(String);
+    if (awbs.length === 0) return { success: false, error: 'No AWB numbers provided' };
+
+    const labelResult = await ithink.printLabel(awbs);
+    if (!labelResult.success) {
+        return { success: false, error: labelResult.message || 'Label generation failed' };
+    }
+    const labelUrl = labelResult.labelUrl;
+
+    let dropboxPath = null;
+    if (labelUrl) {
+        try {
+            const { uploadOrderPayload } = require('./dropbox');
+            dropboxPath = await uploadOrderPayload(labelUrl, null, null);
+            console.log(`[API] Labels uploaded to Dropbox: ${dropboxPath}`);
+        } catch (dbxErr) {
+            console.warn('[API] Dropbox label upload failed (non-blocking):', dbxErr.message);
+        }
+    }
+    return { success: true, labelUrl, label_pdf_url: labelUrl, dropboxPath };
+}
+
+// Bulk Generate Labels (by AWB) + Upload to Dropbox
 app.post('/api/rapidshyp/bulk-labels-dropbox', async (req, res) => {
     try {
-        const { orderIds, awbs, orders } = req.body;
-
-        // Use shipment IDs directly (orderIds from frontend are already shipment IDs like S260444036)
-        let shipmentIds = (orderIds || []).filter(Boolean);
-
-        // Fallback: if no shipment IDs, resolve from AWBs via track_order
-        if (shipmentIds.length === 0 && awbs && Array.isArray(awbs) && awbs.length > 0) {
-            console.log(`[API] No shipment IDs provided, resolving ${awbs.length} AWBs...`);
-            const lookups = await Promise.allSettled(awbs.filter(Boolean).map(awb => rapidshyp.findOrderIdByAWB(awb)));
-            for (const r of lookups) {
-                if (r.status === 'fulfilled' && r.value) shipmentIds.push(r.value);
-            }
-        }
-        if (shipmentIds.length === 0) {
-            return res.status(400).json({ error: 'No valid shipment IDs or AWBs provided' });
-        }
-
-        console.log(`[API] Generating labels for ${shipmentIds.length} shipments + Dropbox upload...`);
-
-        // Generate labels
-        const labelResult = await rapidshyp.bulkGenerateLabels(shipmentIds);
-        if (!labelResult.success) {
-            return res.status(500).json({ success: false, error: labelResult.message || 'Label generation failed' });
-        }
-
-        const labelUrl = labelResult.labelUrl;
-
-        // Upload labels PDF to Dropbox if we have a URL
-        let dropboxPath = null;
-        if (labelUrl) {
-            try {
-                const { uploadOrderPayload } = require('./dropbox');
-                dropboxPath = await uploadOrderPayload(labelUrl, null, null);
-                console.log(`[API] Labels uploaded to Dropbox: ${dropboxPath}`);
-            } catch (dbxErr) {
-                console.warn('[API] Dropbox label upload failed (non-blocking):', dbxErr.message);
-            }
-        }
-
-        res.json({
-            success: true,
-            labelUrl,
-            labels: labelResult.labels,
-            dropboxPath
-        });
+        const { awbs, orderIds } = req.body;
+        // orderIds may carry AWBs in the iThink world (waybill == shipment id)
+        const awbList = (awbs && awbs.length ? awbs : orderIds) || [];
+        const result = await printLabelsToDropbox(awbList);
+        if (!result.success) return res.status(400).json(result);
+        res.json(result);
     } catch (e) {
         console.error('[API] Bulk Labels+Dropbox Error:', e);
         res.status(500).json({ success: false, error: e.message });
     }
 });
 
-// Bulk Generate Labels by Shopify Order IDs (from CSV)
+// Bulk Generate Labels by AWB (fallback path)
 app.post('/api/rapidshyp/bulk-labels-by-orders', async (req, res) => {
     try {
-        const { orderIds } = req.body;
-        if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
-            return res.status(400).json({ error: 'Missing or invalid orderIds array' });
+        const { awbs, orderIds } = req.body;
+        const awbList = (awbs && awbs.length ? awbs : orderIds) || [];
+        if (awbList.length === 0) {
+            return res.status(400).json({ error: 'No AWB numbers provided. Ship the orders first to get waybills.' });
         }
-
-        console.log(`[API] Bulk labels by Shopify order IDs: ${orderIds.length} orders`);
-
-        // Resolve shipment IDs via public track_order API (no JWT needed)
-        const shipmentIds = [];
-        const BATCH = 10;
-        for (let i = 0; i < orderIds.length; i += BATCH) {
-            const batch = orderIds.slice(i, i + BATCH);
-            const results = await Promise.allSettled(batch.map(id => rapidshyp.getOrderInfo(id)));
-            for (const r of results) {
-                if (r.status === 'fulfilled' && r.value?.success && r.value.data?.shipment_id) {
-                    shipmentIds.push(r.value.data.shipment_id);
-                }
-            }
-        }
-
-        if (shipmentIds.length === 0) {
-            return res.status(400).json({ error: 'No matching shipments found in RapidShyp for these orders' });
-        }
-
-        console.log(`[API] Resolved ${shipmentIds.length}/${orderIds.length} orders to shipment IDs`);
-        const labelResult = await rapidshyp.bulkGenerateLabels(shipmentIds);
-
-        if (!labelResult.success) {
-            return res.status(500).json({ success: false, error: labelResult.message || 'Label generation failed' });
-        }
-
-        const labelUrl = labelResult.labelUrl;
-
-        // Upload to Dropbox
-        let dropboxPath = null;
-        if (labelUrl) {
-            try {
-                const { uploadOrderPayload } = require('./dropbox');
-                dropboxPath = await uploadOrderPayload(labelUrl, null, null);
-            } catch (dbxErr) {
-                console.warn('[API] Dropbox label upload failed (non-blocking):', dbxErr.message);
-            }
-        }
-
-        res.json({ success: true, labelUrl, label_pdf_url: labelUrl, labels: labelResult.labels, dropboxPath });
+        const result = await printLabelsToDropbox(awbList);
+        if (!result.success) return res.status(400).json(result);
+        res.json(result);
     } catch (e) {
         console.error('[API] Bulk Labels by Orders Error:', e);
         res.status(500).json({ success: false, error: e.message });

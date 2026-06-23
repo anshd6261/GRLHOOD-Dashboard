@@ -22,6 +22,8 @@ const path = require('path');
 const SENSE_URL = 'https://sense.shiprocket.in/v3/rto/predict';
 const API_KEY = (process.env.SHIPROCKET_SENSE_API_KEY || '').trim();
 const API_SECRET = (process.env.SHIPROCKET_SENSE_API_SECRET || '').trim();
+const SENSE_PROXY_URL = (process.env.SENSE_PROXY_URL || '').trim();
+const PROXY_SECRET = (process.env.PROXY_SECRET || '').trim();
 const CONCURRENCY = 3;
 const PER_REQUEST_TIMEOUT = 60000;
 const CACHE_FILE = '/tmp/rto_cache.json';
@@ -219,52 +221,50 @@ async function predictSingleOrder(order, authHeader) {
         source_company: 'SR',
     };
 
-    try {
-        const res = await axios.post(SENSE_URL, payload, {
-            headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
-            timeout: PER_REQUEST_TIMEOUT,
-        });
+    const senseHeaders = { 'Content-Type': 'application/json', 'Authorization': authHeader };
 
+    const callSense = async () => {
+        if (SENSE_PROXY_URL) {
+            const proxyHeaders = { 'Content-Type': 'application/json' };
+            if (PROXY_SECRET) proxyHeaders['x-proxy-secret'] = PROXY_SECRET;
+            const res = await axios.post(`${SENSE_PROXY_URL}/proxy`, {
+                url: SENSE_URL, method: 'POST', headers: senseHeaders, body: payload
+            }, { headers: proxyHeaders, timeout: PER_REQUEST_TIMEOUT });
+            return res;
+        }
+        return axios.post(SENSE_URL, payload, { headers: senseHeaders, timeout: PER_REQUEST_TIMEOUT });
+    };
+
+    const parseSenseResponse = (res) => {
         if (res.data?.success && res.data?.data) {
             const d = res.data.data;
             return {
-                risk: d.risk || 'unknown',
-                score: d.score || 0,
+                risk: d.risk || 'unknown', score: d.score || 0,
                 probability: d.model_probability || 0,
                 reasons: (d.reasons || []).map(r => r.reason),
                 reasonCodes: (d.reasons || []).map(r => r.reason_code),
-                riskTags: (d.risk_tags || []).map(t => ({
-                    code: t.code,
-                    reason: t.reason,
-                })),
+                riskTags: (d.risk_tags || []).map(t => ({ code: t.code, reason: t.reason })),
             };
         }
+        return null;
+    };
 
+    try {
+        const res = await callSense();
+        const parsed = parseSenseResponse(res);
+        if (parsed) return parsed;
         return defaultResult('Sense API returned unsuccessful response');
     } catch (e) {
         const status = e.response?.status;
         if (status === 402) {
             console.error('[SENSE] 402 — Sense wallet has no balance. Recharge at sense.shiprocket.in');
         } else if (status === 429) {
-            // Rate limited — wait and retry once
             console.warn('[SENSE] Rate limited (429), retrying after 1.5s...');
             await new Promise(r => setTimeout(r, 1500));
             try {
-                const retry = await axios.post(SENSE_URL, payload, {
-                    headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
-                    timeout: PER_REQUEST_TIMEOUT,
-                });
-                if (retry.data?.success && retry.data?.data) {
-                    const d = retry.data.data;
-                    return {
-                        risk: d.risk || 'unknown',
-                        score: d.score || 0,
-                        probability: d.model_probability || 0,
-                        reasons: (d.reasons || []).map(r => r.reason),
-                        reasonCodes: (d.reasons || []).map(r => r.reason_code),
-                        riskTags: (d.risk_tags || []).map(t => ({ code: t.code, reason: t.reason })),
-                    };
-                }
+                const retry = await callSense();
+                const parsed = parseSenseResponse(retry);
+                if (parsed) return parsed;
             } catch (retryErr) {
                 console.warn('[SENSE] Retry also failed:', retryErr.message);
             }

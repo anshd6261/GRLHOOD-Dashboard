@@ -1,0 +1,13 @@
+{
+  "name": "grlhood-static-proxy",
+  "version": "1.0.0",
+  "description": "Static IP proxy for Shiprocket Sense API whitelisting",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "axios": "^1.7.2"
+  }
+}

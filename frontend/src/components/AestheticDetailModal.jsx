@@ -91,17 +91,12 @@ export default function AestheticDetailModal({ order, onClose, isSupplier }) {
   const cleanPhone = phone.replace(/[^0-9]/g, '');
 
   const handleDownloadLabel = async () => {
-    if (!order.rsOrderId && !order.awb && !order.orderId) return;
+    if (!order.awb) { setLabelError('No AWB yet — ship this order first.'); return; }
     setLabelLoading(true);
     setLabelError(null);
     try {
-      // Always send AWB if available — tracking API gives the correct shipment_id
-      const payload = {
-        ...(order.awb ? { awbs: [order.awb] } : {}),
-        ...(order.rsOrderId ? { orderIds: [order.rsOrderId] } : {}),
-        shopifyOrderId: order.orderId,
-      };
-      const res = await axios.post(`${API_URL}/rapidshyp/label`, payload);
+      // iThink prints labels by AWB (waybill).
+      const res = await axios.post(`${API_URL}/rapidshyp/label`, { awbs: [order.awb] });
       const url = res.data?.label_pdf_url || res.data?.label_url || res.data?.labelUrl || res.data?.pdf_url;
       if (url) {
         const fileName = `${order.customerName || 'Label'} - ${order.orderId || 'download'}.pdf`;
@@ -242,7 +237,7 @@ export default function AestheticDetailModal({ order, onClose, isSupplier }) {
                   </a>
                   {order.awb && (
                     <a
-                      href={order.awb.startsWith('http') ? order.awb : `https://seller.rapidshyp.com/orders/forward-orders`}
+                      href={order.awb.startsWith('http') ? order.awb : `https://my.ithinklogistics.com/shipments`}
                       target="_blank"
                       className="p-1.5 rounded-lg bg-[rgba(227,207,216,0.06)] border border-[rgba(227,207,216,0.12)] text-[#e3cfd8] hover:bg-[rgba(227,207,216,0.15)] transition-colors"
                       title="Download Label"
@@ -392,8 +387,8 @@ export default function AestheticDetailModal({ order, onClose, isSupplier }) {
             </a>
           )}
           {(order.rsOrderId || order.awb) && (
-            <a href={`https://app.rapidshyp.com/orders/all?search=%23${order.orderId}`} target="_blank" className="glass-pill text-[10px] hover:bg-[rgba(245,245,245,0.08)] transition-colors inline-flex items-center gap-1.5">
-              <ExternalLink size={10} /> RapidShyp
+            <a href={`https://my.ithinklogistics.com/shipments`} target="_blank" className="glass-pill text-[10px] hover:bg-[rgba(245,245,245,0.08)] transition-colors inline-flex items-center gap-1.5">
+              <ExternalLink size={10} /> iThink
             </a>
           )}
           {order.customerProfileUrl && (
