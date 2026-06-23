@@ -293,7 +293,8 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
     setCancellingId(orderId);
     try {
       const numericId = shopifyId || orderId;
-      await axios.post(`${API_URL}/orders/${numericId}/cancel`, { orderName: `#${orderId}` });
+      const awb = workingOrders.find(o => o.orderId === orderId && o.awb)?.awb;
+      await axios.post(`${API_URL}/orders/${numericId}/cancel`, { orderName: `#${orderId}`, awb });
       setWorkingOrders(p => p.filter(o => o.orderId !== orderId));
       setToast({ msg: `#${orderId} cancelled` });
     }
@@ -309,6 +310,12 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
     });
     return Object.values(m);
   }, [workingOrders]);
+
+  const groupedById = useMemo(() => {
+    const m = {};
+    grouped.forEach(g => { m[g.orderId] = g; });
+    return m;
+  }, [grouped]);
 
   const uniqueIds = useMemo(() => [...new Set(workingOrders.map(o => o.orderId))], [workingOrders]);
   const highRisk = useMemo(() => grouped.filter(g => g.aiRiskLevel === 'High'), [grouped]);
@@ -644,45 +651,44 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
 
   useEffect(() => { if ((step === 4 || step === 5) && !approveResult && !approveLoading) handleApprove(); }, [step]);
 
-  // ═══ SHIP: Resolve ALL shipment_ids from session API, then assign AWB per-order ═══
+  // ═══ SHIP: Create each order on iThink (creation assigns the AWB immediately) ═══
+  const buildShipPayload = (id) => {
+    const g = groupedById[id] || {};
+    return {
+      orderId: id,
+      id: g.shopifyId,
+      customerName: g.customerName,
+      shippingDetails: g.shippingDetails,
+      payment: g.payment,
+      createdAt: g.createdAt,
+      orderTotal: g.items?.[0]?.orderTotal ?? null,
+      items: (g.items || []).map(it => ({ model: it.model, category: it.category, sku: it.sku, price: it.price, quantity: 1 })),
+    };
+  };
+
   const handleShip = async () => {
     setShipLoading(true);
 
-    // Step 1: Resolve ALL shipment_ids fresh from session API (ignore stale localStorage)
-    const sm = { ...(approveResult?.shipmentMap || {}) };
-    setShipProgress({ done: 0, total: uniqueIds.length, status: `Resolving shipment IDs for ${uniqueIds.length} orders...` });
-    try {
-      const resolveRes = await axios.post(`${API_URL}/rapidshyp/resolve-shipments`, { orderIds: uniqueIds });
-      Object.assign(sm, resolveRes.data?.shipmentMap || {});
-      localStorage.setItem('shipmentMap', JSON.stringify(sm));
-      const found = resolveRes.data?.found || 0;
-      const notInMap = resolveRes.data?.notInMap || 0;
-      const noSid = resolveRes.data?.inMapNoShipment || 0;
-      console.log(`[SHIP] Resolved ${found}/${uniqueIds.length} shipment IDs (${notInMap} not in RS, ${noSid} no shipment_id)`);
-    } catch (e) {
-      console.warn('[SHIP] Resolve failed:', e.message);
-    }
-
-    // Step 2: Assign AWB per-order
     const allResults = [];
-    setShipProgress({ done: 0, total: uniqueIds.length, status: 'Assigning AWBs...' });
+    const awbMap = {}; // orderId -> awb
+    setShipProgress({ done: 0, total: uniqueIds.length, status: 'Creating shipments...' });
 
     for (let i = 0; i < uniqueIds.length; i++) {
       const id = uniqueIds[i];
-      setShipProgress({ done: i, total: uniqueIds.length, status: `Assigning #${id} (${i+1}/${uniqueIds.length})` });
+      setShipProgress({ done: i, total: uniqueIds.length, status: `Shipping #${id} (${i+1}/${uniqueIds.length})` });
 
       try {
-        const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, { orderIds: [id], shipmentMap: sm });
+        const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, { orders: [buildShipPayload(id)] });
         const results = r.data?.results || [];
         allResults.push(...results);
-        results.forEach(rr => { if (rr.shipmentId) sm[rr.orderId] = rr.shipmentId; });
-        localStorage.setItem('shipmentMap', JSON.stringify(sm));
+        results.forEach(rr => { if (rr.success && rr.awb) awbMap[rr.orderId] = rr.awb; });
+        localStorage.setItem('awbMap', JSON.stringify(awbMap));
       } catch (e) {
         allResults.push({ orderId: id, success: false, message: e.response?.data?.error || e.message });
       }
 
       const shipped = allResults.filter(r => r.success).length;
-      setShipProgress({ done: i + 1, total: uniqueIds.length, status: `${shipped} assigned` });
+      setShipProgress({ done: i + 1, total: uniqueIds.length, status: `${shipped} shipped` });
     }
 
     const shipData = { success: true, results: allResults };
@@ -817,37 +823,18 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   // ═══ STEP 6: Labels ═══
   const handleLabels = async () => {
     setLabelLoading(true);
-    setLabelProgress({ done: 0, total: 3, status: 'Collecting shipment IDs...' });
+    setLabelProgress({ done: 0, total: 3, status: 'Collecting AWBs...' });
     try {
-      const successResults = shipResults?.results?.filter(r => r.success) || [];
-      const shipmentIds = successResults.map(r => r.shipmentId).filter(Boolean);
-      const awbs = successResults.map(r => r.awb).filter(Boolean);
+      // Collect waybills (AWBs) from ship results, order rows, or the saved awbMap.
+      const fromShip = (shipResults?.results || []).filter(r => r.success).map(r => r.awb).filter(Boolean);
+      const fromOrders = workingOrders.map(o => o.awb).filter(Boolean);
+      let savedMap = {};
+      try { savedMap = JSON.parse(localStorage.getItem('awbMap') || '{}'); } catch {}
+      const awbs = [...new Set([...fromShip, ...fromOrders, ...Object.values(savedMap)])].filter(Boolean);
 
-      // Fallback: if no AWBs/shipmentIds from ship step, use order IDs from the CSV
-      if (!shipmentIds.length && !awbs.length && uniqueIds.length > 0) {
-        const orderAwbs = workingOrders.map(o => o.awb).filter(Boolean);
-        if (orderAwbs.length > 0) {
-          awbs.push(...orderAwbs);
-        } else {
-          setLabelProgress({ done: 1, total: 3, status: `Resolving ${uniqueIds.length} orders...` });
-          const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-by-orders`, { orderIds: uniqueIds });
-          setLabelProgress({ done: 2, total: 3, status: 'Downloading PDF...' });
-          setLabelResult(r.data);
-          const url = r.data?.label_pdf_url || r.data?.labelUrl;
-          if (url) {
-            const batchName = `${getOrdinalDate()} - Labels.pdf`;
-            try { const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(batchName)}`; const pr = await fetch(proxyUrl); if (!pr.ok) throw new Error('fail'); const bl = new Blob([await pr.arrayBuffer()], { type: 'application/pdf' }); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = batchName; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(bu), 1000); } catch { window.open(url, '_blank'); }
-          }
-          setLabelProgress({ done: 3, total: 3, status: 'Done' });
-          setToast({ msg: 'Labels generated' });
-          setLabelLoading(false);
-          return;
-        }
-      }
-
-      if (!shipmentIds.length && !awbs.length) { setToast({ msg: 'No shipped orders for labels', err: true }); setLabelLoading(false); return; }
-      setLabelProgress({ done: 1, total: 3, status: `Generating ${shipmentIds.length || awbs.length} labels...` });
-      const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-dropbox`, { orderIds: shipmentIds, awbs, orders: workingOrders });
+      if (!awbs.length) { setToast({ msg: 'No shipped orders for labels', err: true }); setLabelLoading(false); return; }
+      setLabelProgress({ done: 1, total: 3, status: `Generating ${awbs.length} labels...` });
+      const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-dropbox`, { awbs });
       setLabelProgress({ done: 2, total: 3, status: 'Downloading PDF...' });
       setLabelResult(r.data);
       const url = r.data?.label_pdf_url || r.data?.labelUrl;

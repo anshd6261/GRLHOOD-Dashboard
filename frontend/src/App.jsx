@@ -312,15 +312,11 @@ function App() {
   };
 
   const handleDownloadLabel = async (orderIds, awbs, customerName, orderId) => {
-    const hasOrderIds = orderIds && orderIds.filter(Boolean).length > 0;
     const hasAwbs = awbs && awbs.filter(Boolean).length > 0;
-    if (!hasOrderIds && !hasAwbs) return;
+    if (!hasAwbs) return;
     setLoading(true);
     try {
-      const payload = {};
-      if (hasAwbs) payload.awbs = awbs.filter(Boolean);
-      if (hasOrderIds) payload.orderIds = orderIds.filter(Boolean);
-      if (orderId) payload.shopifyOrderId = orderId;
+      const payload = { awbs: awbs.filter(Boolean) };
       const res = await axios.post(`${API_URL}/rapidshyp/label`, payload);
       const url = res.data?.label_pdf_url || res.data?.label_url || res.data?.labelUrl || res.data?.pdf_url;
       if (url) {
@@ -492,7 +488,7 @@ function App() {
 
     setLoading(true);
     try {
-      const res = await axios.post(`${API_URL}/orders/${row.id}/cancel`, { orderName: row.orderId });
+      const res = await axios.post(`${API_URL}/orders/${row.id}/cancel`, { orderName: row.orderId, awb: row.awb });
       if (res.data.success) {
         setToast({ message: `Order ${row.orderId} Cancelled Successfully`, type: 'success' });
         const removedCount = data.orders.filter(o => o.orderId === row.orderId).length;

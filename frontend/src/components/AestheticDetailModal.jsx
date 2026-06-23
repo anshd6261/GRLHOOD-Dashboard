@@ -91,17 +91,12 @@ export default function AestheticDetailModal({ order, onClose, isSupplier }) {
   const cleanPhone = phone.replace(/[^0-9]/g, '');
 
   const handleDownloadLabel = async () => {
-    if (!order.rsOrderId && !order.awb && !order.orderId) return;
+    if (!order.awb) { setLabelError('No AWB yet — ship this order first.'); return; }
     setLabelLoading(true);
     setLabelError(null);
     try {
-      // Always send AWB if available — tracking API gives the correct shipment_id
-      const payload = {
-        ...(order.awb ? { awbs: [order.awb] } : {}),
-        ...(order.rsOrderId ? { orderIds: [order.rsOrderId] } : {}),
-        shopifyOrderId: order.orderId,
-      };
-      const res = await axios.post(`${API_URL}/rapidshyp/label`, payload);
+      // iThink prints labels by AWB (waybill).
+      const res = await axios.post(`${API_URL}/rapidshyp/label`, { awbs: [order.awb] });
       const url = res.data?.label_pdf_url || res.data?.label_url || res.data?.labelUrl || res.data?.pdf_url;
       if (url) {
         const fileName = `${order.customerName || 'Label'} - ${order.orderId || 'download'}.pdf`;

@@ -53,7 +53,7 @@ export default function HomeAnalytics({ startDate, endDate, onNavigateToProductA
         if (!window.confirm(`Cancel order ${orderName}?`)) return;
         setCancellingId(order.orderId);
         try {
-            await axios.post(`${API_URL}/orders/${numericId}/cancel`, { orderName });
+            await axios.post(`${API_URL}/orders/${numericId}/cancel`, { orderName, awb: order.awb });
             setData(prev => prev ? { ...prev, orders: prev.orders.filter(o => o.orderId !== order.orderId) } : prev);
         } catch (e) {
             alert(`Cancel failed: ${e.response?.data?.error || e.message}`);

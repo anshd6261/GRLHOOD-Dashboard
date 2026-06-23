@@ -105,37 +105,45 @@ export default function ShipOrdersModal({ orders, onClose, onSuccess }) {
       await sleep(250);
       markComplete(2);
 
-      // Step 3: Assign Courier — resolve ALL shipment_ids fresh from session API
+      // Step 3: Ship — create each order on iThink (creation assigns the AWB).
       setCurrentStep(3);
-      const cleanOrderIds = uniqueOrderIds.map(id => id.toString().replace('#', ''));
-      let shipmentMap = {};
-      try {
-        const resolveRes = await axios.post(`${API_URL}/rapidshyp/resolve-shipments`, { orderIds: cleanOrderIds });
-        shipmentMap = resolveRes.data?.shipmentMap || {};
-        localStorage.setItem('shipmentMap', JSON.stringify(shipmentMap));
-      } catch {}
+      // Group order rows by orderId so each shipment carries its full item list.
+      const grouped = {};
+      orders.forEach(o => {
+        const cleanId = o.orderId.toString().replace('#', '');
+        if (!grouped[cleanId]) {
+          grouped[cleanId] = {
+            orderId: cleanId,
+            id: o.id,
+            customerName: o.customerName,
+            shippingDetails: o.shippingDetails,
+            payment: o.payment,
+            createdAt: o.createdAt,
+            orderTotal: o.orderTotal ?? null,
+            items: [],
+          };
+        }
+        grouped[cleanId].items.push({ model: o.model, category: o.category, sku: o.sku, price: o.price, quantity: 1 });
+      });
+
       const allAssignResults = [];
-      for (const cleanId of cleanOrderIds) {
+      for (const cleanId of Object.keys(grouped)) {
         try {
-          const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, { orderIds: [cleanId], shipmentMap });
-          const results = r.data?.results || [];
-          allAssignResults.push(...results);
-          results.forEach(rr => { if (rr.shipmentId) shipmentMap[rr.orderId] = rr.shipmentId; });
+          const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, { orders: [grouped[cleanId]] });
+          allAssignResults.push(...(r.data?.results || []));
         } catch (e) {
           allAssignResults.push({ orderId: cleanId, success: false, message: e.response?.data?.error || e.message });
         }
       }
-      localStorage.setItem('shipmentMap', JSON.stringify(shipmentMap));
       const assignRes = { data: { success: allAssignResults.some(r => r.success), results: allAssignResults } };
-      if (!assignRes.data.success) throw new Error('Courier assignment failed for all orders');
+      if (!assignRes.data.success) throw new Error('Shipping failed for all orders');
       markComplete(3);
 
-      // Step 4: Generate Labels — use shipment IDs and AWBs from assign results
+      // Step 4: Generate Labels — print by AWB (waybill)
       setCurrentStep(4);
       const assignedResults = assignRes.data?.results?.filter(r => r.success) || [];
-      const shipmentIds = assignedResults.map(r => r.shipmentId).filter(Boolean);
       const awbs = assignedResults.map(r => r.awb).filter(Boolean);
-      const labelRes = await axios.post(`${API_URL}/rapidshyp/bulk-labels-dropbox`, { orderIds: shipmentIds, awbs, orders });
+      const labelRes = await axios.post(`${API_URL}/rapidshyp/bulk-labels-dropbox`, { awbs });
       if (!labelRes.data.success) throw new Error(labelRes.data.error || 'Label generation failed');
       markComplete(4);
 
