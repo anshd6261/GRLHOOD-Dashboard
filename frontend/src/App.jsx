@@ -543,6 +543,30 @@ function App() {
 
   /* ─── FILTERING & GROUPING ─── */
 
+  // Count unique unfulfilled orders per phone number (for repeat detection)
+  const phoneUnfulfilledCounts = useMemo(() => {
+    if (!data?.orders) return {};
+    const map = {};
+    const seen = new Set();
+    data.orders.forEach(o => {
+      const phone = (o.shippingDetails?.phone || '').replace(/\D/g, '').slice(-10);
+      if (phone.length >= 10 && !seen.has(`${phone}_${o.orderId}`)) {
+        seen.add(`${phone}_${o.orderId}`);
+        map[phone] = (map[phone] || 0) + 1;
+      }
+    });
+    return map;
+  }, [data]);
+
+  const getRepeatType = (phone, customerOrdersCount) => {
+    const cleanPhone = (phone || '').replace(/\D/g, '').slice(-10);
+    const unfulfilled = phoneUnfulfilledCounts[cleanPhone] || 1;
+    const historical = customerOrdersCount || 1;
+    if (unfulfilled > 1) return 'repeat';
+    if (historical > unfulfilled) return 'true-repeat';
+    return null;
+  };
+
   const filteredOrders = useMemo(() => {
     if (!data?.orders || !Array.isArray(data.orders)) return [];
     return data.orders.filter(r => {
@@ -555,10 +579,10 @@ function App() {
       let matchesFilter = true;
       if (activeFilter === 'High Risk') matchesFilter = r.aiRiskLevel === 'High';
       if (activeFilter === 'Missing Device') matchesFilter = !r.model || r.model.trim() === '' || r.model.toLowerCase() === 'unknown model';
-      if (activeFilter === 'Repeat Orders') matchesFilter = (r.customerOrdersCount || 1) > 1;
+      if (activeFilter === 'Repeat Orders') matchesFilter = getRepeatType(r.shippingDetails?.phone, r.customerOrdersCount) !== null;
       return matchesSearch && matchesFilter;
     });
-  }, [data, searchTerm, activeFilter]);
+  }, [data, searchTerm, activeFilter, phoneUnfulfilledCounts]);
 
   const groupedFilteredOrders = useMemo(() => {
     const groups = {};
@@ -575,8 +599,12 @@ function App() {
       groups[o.orderId].totalCogs += (o.cogs || 0);
       if (o.orderTotal) groups[o.orderId].orderTotal = o.orderTotal;
     });
-    return Object.values(groups).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-  }, [filteredOrders]);
+    const result = Object.values(groups).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    result.forEach(g => {
+      g.repeatType = getRepeatType(g.shippingDetails?.phone, g.customerOrdersCount);
+    });
+    return result;
+  }, [filteredOrders, phoneUnfulfilledCounts]);
 
   const filterCounts = useMemo(() => {
     if (!data?.orders) return {};
@@ -585,9 +613,9 @@ function App() {
       'All': all.length,
       'High Risk': all.filter(r => r.aiRiskLevel === 'High').length,
       'Missing Device': all.filter(r => !r.model || r.model.trim() === '' || r.model.toLowerCase() === 'unknown model').length,
-      'Repeat Orders': all.filter(r => (r.customerOrdersCount || 1) > 1).length,
+      'Repeat Orders': all.filter(r => getRepeatType(r.shippingDetails?.phone, r.customerOrdersCount) !== null).length,
     };
-  }, [data]);
+  }, [data, phoneUnfulfilledCounts]);
 
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -898,7 +926,6 @@ function App() {
                       {groupedFilteredOrders.map((group) => {
                         const isExpanded = expandedOrders.has(group.orderId);
                         const isSelected = selectedOrders.has(group.orderId);
-                        const isRepeat = (group.customerOrdersCount || 1) > 1;
                         const totalCogs = group.items.reduce((sum, item) => sum + (item.cogs || 0), 0);
 
                         return (
@@ -961,9 +988,14 @@ function App() {
                                     <span className="text-[9px] uppercase font-bold px-2.5 py-0.5 rounded-full tracking-wider bg-[rgba(245,245,245,0.04)] text-[rgba(245,245,245,0.35)] border border-[rgba(245,245,245,0.06)]">
                                       {group.items.length} unit{group.items.length > 1 ? 's' : ''}
                                     </span>
-                                    {isRepeat && (
-                                      <span className="text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider bg-[rgba(99,102,241,0.08)] border border-[rgba(99,102,241,0.15)] text-indigo-400">
-                                        Repeat ({group.customerOrdersCount})
+                                    {group.repeatType === 'repeat' && (
+                                      <span className="text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider bg-[rgba(255,165,0,0.1)] border border-[rgba(255,165,0,0.2)] text-orange-400">
+                                        Repeat ({phoneUnfulfilledCounts[(group.shippingDetails?.phone || '').replace(/\D/g, '').slice(-10)] || '?'})
+                                      </span>
+                                    )}
+                                    {group.repeatType === 'true-repeat' && (
+                                      <span className="text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider bg-[rgba(52,211,153,0.1)] border border-[rgba(52,211,153,0.2)] text-emerald-400">
+                                        True Repeat
                                       </span>
                                     )}
                                     {group.items[0].awb && (
@@ -984,21 +1016,21 @@ function App() {
                                   </div>
                                 </div>
 
-                                {/* Right side: COGS + age + status */}
-                                {!isSupplier && (
+                                {/* Right side: COGS + date + status */}
                                 <div className="text-right shrink-0 flex flex-col items-end gap-1.5">
+                                  {!isSupplier && (
                                   <div>
                                     <div className="text-[9px] text-[rgba(245,245,245,0.25)] uppercase font-bold tracking-[0.12em] mb-0.5">COGS</div>
                                     <div className="text-lg font-black text-[#e3cfd8] glow-text">₹{totalCogs}</div>
                                   </div>
+                                  )}
                                   <div className="flex items-center gap-1.5">
-                                    <span className="text-[9px] text-[rgba(245,245,245,0.3)] font-medium font-mono">
+                                    <span className="text-[11px] text-[rgba(245,245,245,0.4)] font-semibold font-mono">
                                       {new Date(group.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                                     </span>
                                     <div className={`w-2 h-2 rounded-full ${group.items[0].awb ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]' : 'bg-[rgba(245,245,245,0.15)]'}`} title={group.items[0].awb ? 'AWB Assigned' : 'Pending'} />
                                   </div>
                                 </div>
-                                )}
                               </div>
                             </div>
 
