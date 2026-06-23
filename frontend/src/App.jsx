@@ -512,10 +512,22 @@ function App() {
 
   /* ─── SELECTION ─── */
 
-  const toggleSelectRow = (id) => {
+  const lastSelectedRef = useRef(null);
+  const toggleSelectRow = (id, shiftKey = false) => {
     if (!id) return;
     const newSet = new Set(selectedOrders);
-    if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
+    if (shiftKey && lastSelectedRef.current && lastSelectedRef.current !== id) {
+      const ids = groupedFilteredOrders.map(g => g.orderId);
+      const startIdx = ids.indexOf(lastSelectedRef.current);
+      const endIdx = ids.indexOf(id);
+      if (startIdx !== -1 && endIdx !== -1) {
+        const [from, to] = startIdx < endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
+        for (let i = from; i <= to; i++) newSet.add(ids[i]);
+      }
+    } else {
+      if (newSet.has(id)) newSet.delete(id); else newSet.add(id);
+    }
+    lastSelectedRef.current = id;
     setSelectedOrders(newSet);
   };
 
@@ -560,13 +572,14 @@ function App() {
           orderId: o.orderId, customerName: o.customerName, payment: o.payment,
           customerOrdersCount: o.customerOrdersCount, shippingDetails: o.shippingDetails,
           orderLink: o.orderLink, items: [],
-          totalCogs: 0, createdAt: o.createdAt
+          totalCogs: 0, orderTotal: o.orderTotal || 0, createdAt: o.createdAt
         };
       }
       groups[o.orderId].items.push(o);
       groups[o.orderId].totalCogs += (o.cogs || 0);
+      if (o.orderTotal) groups[o.orderId].orderTotal = o.orderTotal;
     });
-    return Object.values(groups).sort((a, b) => (parseInt(b.orderId) || 0) - (parseInt(a.orderId) || 0));
+    return Object.values(groups).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   }, [filteredOrders]);
 
   const filterCounts = useMemo(() => {
@@ -806,7 +819,7 @@ function App() {
                     </div>
 
                     {/* Stats Row */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-7">
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-7">
                       <SpotlightCard className="p-5 relative overflow-hidden">
                         <div className="absolute -top-10 -right-10 w-24 h-24 bg-[rgba(227,207,216,0.04)] blur-3xl rounded-full" />
                         <div className="flex justify-between items-start relative z-10 mb-3">
@@ -834,6 +847,27 @@ function App() {
                         <div className="text-lg font-black text-white tracking-tight">Ready to Ship</div>
                         <div className="text-[10px] text-[rgba(245,245,245,0.3)] mt-1 group-hover:text-[rgba(245,245,245,0.5)] transition-colors">Click to start fulfillment →</div>
                       </SpotlightCard>
+
+                      {(() => {
+                        const source = selectedOrders.size > 0
+                          ? groupedFilteredOrders.filter(g => selectedOrders.has(g.orderId))
+                          : groupedFilteredOrders;
+                        const totalValue = source.reduce((s, g) => s + (g.orderTotal || g.items.reduce((a, i) => a + (i.price || 0), 0)), 0);
+                        const totalCogs = source.reduce((s, g) => s + g.totalCogs, 0);
+                        return (
+                          <SpotlightCard className="p-5 relative overflow-hidden">
+                            <div className="absolute -top-10 -right-10 w-24 h-24 bg-[rgba(227,207,216,0.04)] blur-3xl rounded-full" />
+                            <div className="flex justify-between items-start relative z-10 mb-3">
+                              <div className="text-[9px] font-bold text-[rgba(245,245,245,0.35)] tracking-[0.15em] uppercase">
+                                {selectedOrders.size > 0 ? `${selectedOrders.size} Selected` : 'Order Value'}
+                              </div>
+                              <div className="p-1.5 rounded-lg bg-[rgba(227,207,216,0.06)]"><IndianRupee size={14} className="text-[#e3cfd8]" /></div>
+                            </div>
+                            <div className="text-2xl font-black text-white tracking-tight">₹{totalValue.toLocaleString('en-IN')}</div>
+                            <div className="text-[10px] text-[rgba(245,245,245,0.3)] mt-1">COGS: ₹{totalCogs.toLocaleString('en-IN')}</div>
+                          </SpotlightCard>
+                        );
+                      })()}
                     </div>
 
                     {/* Filter Bar */}
@@ -885,7 +919,7 @@ function App() {
                             {/* Card Header */}
                             <div
                               className="p-5 cursor-pointer"
-                              onClick={() => { if (justSelectedRef.current) { justSelectedRef.current = false; return; } if (selectionMode) toggleSelectRow(group.orderId); else toggleOrderExpanded(group.orderId); }}
+                              onClick={(e) => { if (justSelectedRef.current) { justSelectedRef.current = false; return; } if (selectionMode) toggleSelectRow(group.orderId, e.shiftKey); else toggleOrderExpanded(group.orderId); }}
                               onPointerDown={() => !selectionMode && handlePressStart(group.orderId)}
                               onPointerUp={handlePressEnd}
                               onPointerLeave={handlePressEnd}
@@ -896,7 +930,7 @@ function App() {
                                   <div className="flex items-center gap-2.5 mb-1.5">
                                     {selectionMode && (
                                       <div
-                                        onClick={(e) => { e.stopPropagation(); toggleSelectRow(group.orderId); }}
+                                        onClick={(e) => { e.stopPropagation(); toggleSelectRow(group.orderId, e.shiftKey); }}
                                         className={`w-4.5 h-4.5 rounded-md border-2 flex items-center justify-center shrink-0 cursor-pointer transition-all ${isSelected ? 'border-[#e3cfd8] bg-[rgba(227,207,216,0.15)]' : 'border-[rgba(245,245,245,0.12)]'}`}
                                       >
                                         {isSelected && <div className="w-2 h-2 rounded-sm bg-[#e3cfd8]" />}
@@ -943,7 +977,7 @@ function App() {
                                         AWB {group.items[0].awb} ↗
                                       </a>
                                     )}
-                                    {(group.items[0].tags || []).filter(t => !['unfulfilled','fulfilled'].includes(t.toLowerCase())).map(t => (
+                                    {(group.items[0].tags || []).filter(t => !['unfulfilled','fulfilled','flexype'].includes(t.toLowerCase())).map(t => (
                                       <span key={t} className="text-[8px] uppercase font-bold px-2 py-0.5 rounded-full tracking-wider bg-[rgba(99,102,241,0.06)] border border-[rgba(99,102,241,0.12)] text-indigo-300">{t}</span>
                                     ))}
                                     {(() => { const age = (Date.now() - new Date(group.createdAt).getTime()) / (1000*60*60*24); return age > 15 ? (
@@ -962,8 +996,8 @@ function App() {
                                     <div className="text-lg font-black text-[#e3cfd8] glow-text">₹{totalCogs}</div>
                                   </div>
                                   <div className="flex items-center gap-1.5">
-                                    <span className="text-[9px] text-[rgba(245,245,245,0.3)] font-medium">
-                                      {(() => { const d = Math.floor((Date.now() - new Date(group.createdAt).getTime()) / (1000*60*60*24)); return d === 0 ? 'Today' : d === 1 ? '1d ago' : `${d}d ago`; })()}
+                                    <span className="text-[9px] text-[rgba(245,245,245,0.3)] font-medium font-mono">
+                                      {new Date(group.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                                     </span>
                                     <div className={`w-2 h-2 rounded-full ${group.items[0].awb ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]' : 'bg-[rgba(245,245,245,0.15)]'}`} title={group.items[0].awb ? 'AWB Assigned' : 'Pending'} />
                                   </div>
