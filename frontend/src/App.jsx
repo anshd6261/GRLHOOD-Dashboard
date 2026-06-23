@@ -89,7 +89,7 @@ function SettingsTab({ historyData, onHistorySelect }) {
 
   const connectedAPIs = [
     { name: 'Shopify Admin', status: 'connected', desc: 'Order sync & management' },
-    { name: 'RapidShyp', status: 'connected', desc: 'Shipping & RTO data' },
+    { name: 'iThink Logistics', status: 'connected', desc: 'Shipping & AWB assignment' },
     { name: 'Dropbox', status: 'connected', desc: 'CSV backup storage' },
   ];
 
@@ -481,7 +481,7 @@ function App() {
     
     // Set cancelling state to show aesthetic loading/confirming screen
     setCancellingOrder(row);
-    if (!confirm(`Are you absolutely sure you want to cancel and DELETE order ${row.orderId} from Shopify and RapidShyp?`)) {
+    if (!confirm(`Are you absolutely sure you want to cancel and DELETE order ${row.orderId} from Shopify and iThink Logistics?`)) {
       setCancellingOrder(null);
       return;
     }
@@ -722,11 +722,11 @@ function App() {
                                 </a>
                               )}
                                 <a
-                                  href={`https://app.rapidshyp.com/orders/all?search=%23${searchedOrderOptions.orderId.replace('#', '')}`} 
+                                  href={`https://my.ithinklogistics.com/shipments`}
                                   target="_blank"
                                   className="w-full text-left px-3 py-2 text-xs font-bold text-white hover:bg-[rgba(227,207,216,0.08)] rounded-xl transition-colors block"
                                 >
-                                  3. Open in RapidShyp
+                                  3. Open in iThink
                                 </a>
                            </motion.div>
                         )}
@@ -1056,10 +1056,10 @@ function App() {
                                           <ExternalLink size={13} />
                                         </a>
                                         <a
-                                          href={`https://app.rapidshyp.com/orders/all?search=%23${group.orderId.replace('#', '')}`}
+                                          href={`https://my.ithinklogistics.com/shipments`}
                                           target="_blank"
                                           className="glass-icon-btn-sm"
-                                          title="Open in RapidShyp"
+                                          title="Open in iThink"
                                         >
                                           <ExternalLink size={13} />
                                         </a>
@@ -1175,7 +1175,7 @@ function App() {
              <h2 className="text-2xl font-black text-white tracking-widest uppercase mb-4">Cancelling Order {cancellingOrder.orderId}</h2>
              <div className="flex items-center gap-3">
                 <RefreshCw size={18} className="animate-spin text-[#e3cfd8]" />
-                <span className="text-xs font-bold text-[rgba(245,245,245,0.4)] tracking-widest uppercase">Deleting from Shopify & RapidShyp...</span>
+                <span className="text-xs font-bold text-[rgba(245,245,245,0.4)] tracking-widest uppercase">Deleting from Shopify & iThink...</span>
              </div>
           </motion.div>
         )}

@@ -702,7 +702,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
 
   const estCost = uniqueIds.length * 85;
   const rechargeNeeded = walletBalance !== null ? Math.max(0, estCost - walletBalance + 500) : estCost;
-  const rechargeMsg = encodeURIComponent(`Hey, we need a wallet recharge for RapidShyp.\n\nToday's Order: ${uniqueIds.length} orders\nEstimated Shipping: Rs${estCost}\nCurrent Balance: Rs${walletBalance !== null ? walletBalance : 'N/A'}\nPlease recharge: Rs${rechargeNeeded}\n\nThanks`);
+  const rechargeMsg = encodeURIComponent(`Hey, we need a wallet recharge for iThink Logistics.\n\nToday's Order: ${uniqueIds.length} orders\nEstimated Shipping: Rs${estCost}\nCurrent Balance: Rs${walletBalance !== null ? walletBalance : 'N/A'}\nPlease recharge: Rs${rechargeNeeded}\n\nThanks`);
 
   // ═══ Progress Bar Component ═══
   const ProgressBar = ({ progress, color = '#e3cfd8' }) => {
