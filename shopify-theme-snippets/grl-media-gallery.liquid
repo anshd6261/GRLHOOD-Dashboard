@@ -2,6 +2,7 @@
   GRL — Custom product media gallery (renders INSIDE the gallery block).
   Per-device controls: Desktop / Tablet / Mobile each get their own layout,
   sizing, padding, background and navigation style (thumbnails / pager / none).
+  Mobile gets its own pager group (pill / count / dots, overlay or below).
   Uses data-grl-mid (NOT data-media-id) to stay decoupled from the legacy
   __grlFI variant script. Params: block, product (closest.product)
 {%- endcomment -%}
@@ -9,8 +10,7 @@
   assign s = block.settings
   assign gid = 'grlmg-' | append: block.id | replace: ':', '-'
 
-  # ---------- per-device helper values ----------
-  # Desktop
+  # ---------- Desktop ----------
   assign d_nav = s.grl_d_nav | default: 'thumbs'
   assign d_pos = s.grl_d_pos | default: 'left'
   assign d_valign = s.grl_d_valign | default: 'center'
@@ -28,7 +28,7 @@
   assign d_pl = s.grl_d_pl | default: 0
   assign d_pr = s.grl_d_pr | default: 0
 
-  # Tablet
+  # ---------- Tablet ----------
   assign t_nav = s.grl_t_nav | default: 'thumbs'
   assign t_pos = s.grl_t_pos | default: 'left'
   assign t_valign = s.grl_t_valign | default: 'center'
@@ -46,7 +46,7 @@
   assign t_pl = s.grl_t_pl | default: 0
   assign t_pr = s.grl_t_pr | default: 0
 
-  # Mobile
+  # ---------- Mobile ----------
   assign m_nav = s.grl_m_nav | default: 'pager'
   assign m_pos = s.grl_m_pos | default: 'bottom'
   assign m_valign = s.grl_m_valign | default: 'center'
@@ -95,13 +95,29 @@
   assign chev_sh_color = s.grl_chevron_shadow_color | default: '#000000'
   assign chev_sh_op = s.grl_chevron_shadow_opacity | default: 12
 
+  # ---------- pager: desktop/tablet (shared) ----------
   assign pg_size = s.grl_pager_size | default: 13
   assign pg_color = s.grl_pager_color | default: '#111111'
   assign pg_bg = s.grl_pager_bg | default: '#ffffff'
   assign pg_bg_op = s.grl_pager_bg_opacity | default: 80
   assign pg_blur = s.grl_pager_blur | default: 10
-  assign pg_radius = s.grl_pager_radius | default: 999
+  assign pg_radius = s.grl_pager_radius | default: 20
   assign pg_offset = s.grl_pager_offset | default: 14
+
+  # ---------- pager: mobile ----------
+  assign pm_style = s.grl_pm_style | default: 'pill'
+  assign pm_place = s.grl_pm_placement | default: 'below'
+  assign pm_size = s.grl_pm_size | default: 11
+  assign pm_offset = s.grl_pm_offset | default: 10
+  assign pm_gap = s.grl_pm_gap | default: 7
+  assign pm_color = s.grl_pm_color | default: '#111111'
+  assign pm_bg = s.grl_pm_bg | default: '#ffffff'
+  assign pm_bg_op = s.grl_pm_bg_opacity | default: 0
+  assign pm_blur = s.grl_pm_blur | default: 0
+  assign pm_radius = s.grl_pm_radius | default: 20
+  assign pm_dot_size = s.grl_pm_dot_size | default: 6
+  assign pm_dot_color = s.grl_pm_dot_color | default: '#cfcfcf'
+  assign pm_dot_active = s.grl_pm_dot_active | default: '#111111'
 
   assign sh_a = sh_op | divided_by: 100.0
   assign t_border_a = t_border_op | divided_by: 100.0
@@ -109,8 +125,19 @@
   assign chev_bg_a = chev_bg_op | divided_by: 100.0
   assign chev_sh_a = chev_sh_op | divided_by: 100.0
   assign pg_bg_a = pg_bg_op | divided_by: 100.0
+  assign pm_bg_a = pm_bg_op | divided_by: 100.0
 
-  # root flex direction + thumb orientation per device
+  assign pg_bg_v = pg_bg | color_modify: 'alpha', pg_bg_a
+  assign pm_bg_v = pm_bg | color_modify: 'alpha', pm_bg_a
+  assign pg_shadow = 'none'
+  if pg_bg_op > 0
+    assign pg_shadow = '0 2px 12px rgba(0,0,0,.12)'
+  endif
+  assign pm_shadow = 'none'
+  if pm_bg_op > 0
+    assign pm_shadow = '0 2px 12px rgba(0,0,0,.12)'
+  endif
+
   assign d_root = 'row'
   if d_pos == 'right'
     assign d_root = 'row-reverse'
@@ -167,10 +194,13 @@
   #{{ gid }} .grl-mg__thumb--active { transform: scale({{ t_active_scale | divided_by: 100.0 }});
     box-shadow: inset 0 0 0 {{ t_active_w }}px {{ t_active_c }}, 0 3px 12px rgba(0,0,0,.14); }
 
+  /* main column (stage + pager) */
+  #{{ gid }} .grl-mg__main { flex:1; min-width:0; position:relative; display:flex; flex-direction:column; }
+
   /* stage */
-  #{{ gid }} .grl-mg__stage { flex:1; min-width:0; position:relative; overflow:hidden;
+  #{{ gid }} .grl-mg__stage { position:relative; overflow:hidden; width:100%;
     border-radius: var(--grl-main-radius); aspect-ratio: var(--grl-aspect); max-height: var(--grl-max-h);
-    background: var(--grl-main-bg); width:100%; align-self:stretch; -webkit-user-select:none; user-select:none;
+    background: var(--grl-main-bg); -webkit-user-select:none; user-select:none;
     {% if main_border_w > 0 %}border: {{ main_border_w }}px solid {{ main_border_c }};{% endif %}
     {% if sh_op > 0 %}box-shadow: 0 {{ sh_y }}px {{ sh_blur }}px {{ sh_color | color_modify: 'alpha', sh_a }};{% endif %} }
   #{{ gid }} .grl-mg__slide { position:absolute; inset:0; width:100%; height:100%; opacity:0;
@@ -179,7 +209,7 @@
     width:100%; height:100%; object-fit: var(--grl-fit); display:block; -webkit-user-drag:none; }
   #{{ gid }} .grl-mg__slide--active { opacity:1; z-index:1; }
 
-  /* chevron cursor */
+  /* chevron cursor (desktop) */
   #{{ gid }} .grl-mg__chev { position:absolute; z-index:5; top:0; left:0; width:{{ chev_size }}px; height:{{ chev_size }}px;
     margin:-{{ chev_size | divided_by: 2 }}px 0 0 -{{ chev_size | divided_by: 2 }}px; pointer-events:none; opacity:0;
     display:flex; align-items:center; justify-content:center; border-radius:50%;
@@ -193,25 +223,32 @@
     transition: transform .18s ease; }
   #{{ gid }} .grl-mg__chev--left svg { transform: rotate(180deg); }
 
-  /* pager  ‹ 1 / 3 › */
-  #{{ gid }} .grl-mg__pager { position:absolute; z-index:4; left:50%; bottom:{{ pg_offset }}px; transform:translateX(-50%);
-    display:none; align-items:center; gap:6px; padding:5px 8px; border-radius:{{ pg_radius }}px;
-    background:{{ pg_bg | color_modify: 'alpha', pg_bg_a }};
-    {% if pg_blur > 0 %}backdrop-filter: blur({{ pg_blur }}px); -webkit-backdrop-filter: blur({{ pg_blur }}px);{% endif %}
-    box-shadow:0 2px 12px rgba(0,0,0,.12); -webkit-user-select:none; user-select:none;
-    font-size:{{ pg_size }}px; line-height:1; color:{{ pg_color }};
-    font-family:inherit; font-variant-numeric:tabular-nums; }
+  /* pager  ‹ 1 / 3 › — desktop/tablet defaults (overlay on stage) */
+  #{{ gid }} .grl-mg__pager { --pg-size:{{ pg_size }}px; --pg-color:{{ pg_color }}; --pg-bg:{{ pg_bg_v }};
+    --pg-blur:{{ pg_blur }}px; --pg-radius:{{ pg_radius }}px; --pg-gap:6px; --pg-shadow:{{ pg_shadow }};
+    --pg-dot-size:6px; --pg-dot-color:#cfcfcf; --pg-dot-active:#111111;
+    position:absolute; left:50%; bottom:{{ pg_offset }}px; transform:translateX(-50%); z-index:4;
+    display:none; align-items:center; gap:var(--pg-gap); padding:5px 8px; border-radius:var(--pg-radius);
+    background:var(--pg-bg); box-shadow:var(--pg-shadow); backdrop-filter:blur(var(--pg-blur));
+    -webkit-backdrop-filter:blur(var(--pg-blur)); -webkit-user-select:none; user-select:none;
+    font-size:var(--pg-size); line-height:1; color:var(--pg-color); font-family:inherit; font-variant-numeric:tabular-nums; }
   #{{ gid }} .grl-mg__pager--hidden { display:none !important; }
-  #{{ gid }} .grl-mg__pg-btn { display:flex; align-items:center; justify-content:center; width:{{ pg_size | plus: 9 }}px;
-    height:{{ pg_size | plus: 9 }}px; padding:0; margin:0; border:0; background:transparent; cursor:pointer; border-radius:50%;
-    color:{{ pg_color }}; -webkit-tap-highlight-color:transparent; transition:opacity .15s ease, transform .15s ease; }
+  #{{ gid }} .grl-mg__pg-btn { display:flex; align-items:center; justify-content:center;
+    width:calc(var(--pg-size) + 9px); height:calc(var(--pg-size) + 9px); padding:0; margin:0; border:0; background:transparent;
+    cursor:pointer; border-radius:50%; color:var(--pg-color); -webkit-tap-highlight-color:transparent;
+    transition:opacity .15s ease, transform .15s ease; }
   #{{ gid }} .grl-mg__pg-btn:active { transform:scale(.86); }
-  #{{ gid }} .grl-mg__pg-btn svg { width:{{ pg_size | plus: 2 }}px; height:{{ pg_size | plus: 2 }}px; stroke:currentColor;
+  #{{ gid }} .grl-mg__pg-btn svg { width:calc(var(--pg-size) + 2px); height:calc(var(--pg-size) + 2px); stroke:currentColor;
     stroke-width:2.2; fill:none; stroke-linecap:round; stroke-linejoin:round; }
-  #{{ gid }} .grl-mg__pg-count { min-width:34px; text-align:center; font-weight:600; letter-spacing:.3px; }
+  #{{ gid }} .grl-mg__pg-count { min-width:30px; text-align:center; font-weight:600; letter-spacing:.3px; }
   #{{ gid }} .grl-mg__pg-count em { font-style:normal; opacity:.5; margin:0 2px; }
+  #{{ gid }} .grl-mg__dots { display:none; align-items:center; gap:var(--pg-gap); }
+  #{{ gid }} .grl-mg__dot { width:var(--pg-dot-size); height:var(--pg-dot-size); border-radius:50%; padding:0; margin:0; border:0;
+    background:var(--pg-dot-color); cursor:pointer; -webkit-tap-highlight-color:transparent;
+    transition:transform .2s ease, background .2s ease; }
+  #{{ gid }} .grl-mg__dot--active { background:var(--pg-dot-active); transform:scale(1.35); }
 
-  /* ---------- DESKTOP (base, applies ≥1200 after overrides) ---------- */
+  /* ---------- DESKTOP (base) ---------- */
   #{{ gid }} {
     --grl-root-dir: {{ d_root }};
     --grl-gap: {{ d_gap }}px; --grl-thumb-w: {{ d_thumb_w }}px; --grl-thumb-gap: {{ d_thumb_gap }}px;
@@ -251,15 +288,29 @@
       --grl-thumb-aspect: {{ m_thumb_aspect }}; --grl-thumb-valign: {{ m_valign }};
       --grl-aspect: {{ m_aspect }}; --grl-fit: {{ m_fit }}; --grl-main-radius: {{ m_radius }}px;
       --grl-main-bg: {{ m_bg }}; --grl-max-h: {{ m_maxh_v }};
-      --grl-pt: {{ m_pt }}px; --grl-pb: {{ m_pb }}px; --grl-pl: {{ m_pl }}px; --grl-pr: {{ m_pr }}px;
-      align-items:stretch; }
+      --grl-pt: {{ m_pt }}px; --grl-pb: {{ m_pb }}px; --grl-pl: {{ m_pl }}px; --grl-pr: {{ m_pr }}px; }
     #{{ gid }} .grl-mg__thumbcol { display:{% if m_nav == 'thumbs' %}block{% else %}none{% endif %};
       {% if m_pos == 'bottom' %}width:100%;{% else %}width:calc(var(--grl-thumb-w) + {{ t_pad | times: 2 }}px);{% endif %} }
     #{{ gid }} .grl-mg__thumbs {
       {% if m_pos == 'bottom' %}flex-direction:row; position:static; inset:auto; width:100%; overflow-x:auto; overflow-y:hidden; justify-content:safe center;{% else %}flex-direction:column; position:absolute; inset:0; overflow-y:auto; overflow-x:hidden; justify-content:safe {{ m_valign }};{% endif %} }
-    #{{ gid }} .grl-mg__pager { display:{% if m_nav == 'pager' %}flex{% else %}none{% endif %}; }
     #{{ gid }} .grl-mg__stage { cursor:default; }
     #{{ gid }} .grl-mg__chev { display:none; }
+
+    /* mobile pager overrides */
+    #{{ gid }} .grl-mg__pager {
+      --pg-size:{{ pm_size }}px; --pg-color:{{ pm_color }}; --pg-bg:{{ pm_bg_v }}; --pg-blur:{{ pm_blur }}px;
+      --pg-radius:{{ pm_radius }}px; --pg-gap:{{ pm_gap }}px; --pg-shadow:{{ pm_shadow }};
+      --pg-dot-size:{{ pm_dot_size }}px; --pg-dot-color:{{ pm_dot_color }}; --pg-dot-active:{{ pm_dot_active }};
+      display:{% if m_nav == 'pager' %}flex{% else %}none{% endif %};
+      padding:{% if pm_bg_op > 0 %}4px 8px{% else %}0{% endif %};
+      {% if pm_place == 'below' %}position:static; transform:none; left:auto; bottom:auto; margin:{{ pm_offset }}px auto 0; align-self:center;{% else %}position:absolute; left:50%; bottom:{{ pm_offset }}px; transform:translateX(-50%); margin:0;{% endif %} }
+    /* style: count only — hide arrows */
+    #{{ gid }} .grl-mg__pager--m-count .grl-mg__pg-btn { display:none; }
+    /* style: dots — hide arrows + count, show dots, drop pill bg */
+    #{{ gid }} .grl-mg__pager--m-dots .grl-mg__pg-btn,
+    #{{ gid }} .grl-mg__pager--m-dots .grl-mg__pg-count { display:none; }
+    #{{ gid }} .grl-mg__pager--m-dots .grl-mg__dots { display:flex; }
+    #{{ gid }} .grl-mg__pager--m-dots { background:transparent; box-shadow:none; backdrop-filter:none; -webkit-backdrop-filter:none; padding:0; }
   }
 </style>
 
@@ -276,36 +327,39 @@
   </div>
   {%- endif -%}
 
-  <div class="grl-mg__stage" data-grl-stage>
-    {%- for media in product.media -%}
-      <div class="grl-mg__slide{% if forloop.first %} grl-mg__slide--active{% endif %}" data-grl-slide data-grl-mid="{{ media.id }}">
-        {%- if media.media_type == 'image' -%}
-          {%- if forloop.first -%}{%- assign ld = 'eager' -%}{%- else -%}{%- assign ld = 'lazy' -%}{%- endif -%}
-          <img src="{{ media | image_url: width: 1200 }}"
-            srcset="{{ media | image_url: width: 600 }} 600w, {{ media | image_url: width: 900 }} 900w, {{ media | image_url: width: 1200 }} 1200w, {{ media | image_url: width: 1600 }} 1600w"
-            sizes="(max-width:749px) 100vw, 50vw" alt="{{ media.alt | escape }}" loading="{{ ld }}" width="{{ media.width }}" height="{{ media.height }}" draggable="false">
-        {%- else -%}
-          {{ media | media_tag: image_size: '1200x' }}
-        {%- endif -%}
-      </div>
-    {%- endfor -%}
+  <div class="grl-mg__main">
+    <div class="grl-mg__stage" data-grl-stage>
+      {%- for media in product.media -%}
+        <div class="grl-mg__slide{% if forloop.first %} grl-mg__slide--active{% endif %}" data-grl-slide data-grl-mid="{{ media.id }}">
+          {%- if media.media_type == 'image' -%}
+            {%- if forloop.first -%}{%- assign ld = 'eager' -%}{%- else -%}{%- assign ld = 'lazy' -%}{%- endif -%}
+            <img src="{{ media | image_url: width: 1200 }}"
+              srcset="{{ media | image_url: width: 600 }} 600w, {{ media | image_url: width: 900 }} 900w, {{ media | image_url: width: 1200 }} 1200w, {{ media | image_url: width: 1600 }} 1600w"
+              sizes="(max-width:749px) 100vw, 50vw" alt="{{ media.alt | escape }}" loading="{{ ld }}" width="{{ media.width }}" height="{{ media.height }}" draggable="false">
+          {%- else -%}
+            {{ media | media_tag: image_size: '1200x' }}
+          {%- endif -%}
+        </div>
+      {%- endfor -%}
 
-    {%- if chev_on -%}
-      <div class="grl-mg__chev" data-grl-chev>
-        {%- case chev_style -%}
-          {%- when 'arrow' -%}<svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="18" y2="12"></line><polyline points="12 6 18 12 12 18"></polyline></svg>
-          {%- when 'triangle' -%}<svg viewBox="0 0 24 24"><polygon points="8 5 18 12 8 19"></polygon></svg>
-          {%- when 'caret' -%}<svg viewBox="0 0 24 24"><polyline points="10 7 15 12 10 17"></polyline></svg>
-          {%- when 'chevron-thin' -%}<svg viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"></polyline></svg>
-          {%- else -%}<svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg>
-        {%- endcase -%}
-      </div>
-    {%- endif -%}
+      {%- if chev_on -%}
+        <div class="grl-mg__chev" data-grl-chev>
+          {%- case chev_style -%}
+            {%- when 'arrow' -%}<svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="18" y2="12"></line><polyline points="12 6 18 12 12 18"></polyline></svg>
+            {%- when 'triangle' -%}<svg viewBox="0 0 24 24"><polygon points="8 5 18 12 8 19"></polygon></svg>
+            {%- when 'caret' -%}<svg viewBox="0 0 24 24"><polyline points="10 7 15 12 10 17"></polyline></svg>
+            {%- when 'chevron-thin' -%}<svg viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"></polyline></svg>
+            {%- else -%}<svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          {%- endcase -%}
+        </div>
+      {%- endif -%}
+    </div>
 
-    <div class="grl-mg__pager" data-grl-pager>
+    <div class="grl-mg__pager grl-mg__pager--m-{{ pm_style }}" data-grl-pager>
       <button type="button" class="grl-mg__pg-btn" data-grl-prev aria-label="Previous image"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
       <span class="grl-mg__pg-count"><span data-grl-cur>1</span><em>/</em><span data-grl-tot>1</span></span>
       <button type="button" class="grl-mg__pg-btn" data-grl-next aria-label="Next image"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+      <span class="grl-mg__dots" data-grl-dots></span>
     </div>
   </div>
 </div>
@@ -321,12 +375,14 @@
   var pager = root.querySelector('[data-grl-pager]');
   var pgCur = root.querySelector('[data-grl-cur]');
   var pgTot = root.querySelector('[data-grl-tot]');
+  var dotsWrap = root.querySelector('[data-grl-dots]');
   var allSlides = Array.prototype.slice.call(root.querySelectorAll('[data-grl-slide]'));
   var allThumbs = thumbsWrap ? Array.prototype.slice.call(thumbsWrap.querySelectorAll('[data-grl-thumb]')) : [];
   var MID = 'data-grl-mid';
 
   // ---- Variant segment data ----
   var MEDIA_ORDER = [{% for m in product.media %}"{{ m.id }}"{% unless forloop.last %},{% endunless %}{% endfor %}];
+  var INIT_TITLE = {{ product.selected_or_first_available_variant.title | json }};
   var VARIANTS = [
     {% for v in product.variants -%}
     { title: {{ v.title | json }}, media: {% if v.featured_media %}"{{ v.featured_media.id }}"{% else %}null{% endif %} }{% unless forloop.last %},{% endunless %}
@@ -352,6 +408,18 @@
   var idx = 0;
   var isMobile = window.matchMedia('(max-width:749px)').matches;
 
+  function buildDots(){
+    if(!dotsWrap) return;
+    if(dotsWrap.children.length === visSlides.length) return;
+    dotsWrap.innerHTML = '';
+    for(var i=0;i<visSlides.length;i++){
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'grl-mg__dot'; b.setAttribute('data-grl-dot', i);
+      b.setAttribute('aria-label', 'Go to image ' + (i+1));
+      dotsWrap.appendChild(b);
+    }
+  }
+
   function rebuildVisible(){
     if(!curSet){ visSlides = allSlides.slice(); visThumbs = allThumbs.slice(); }
     else {
@@ -360,6 +428,7 @@
     }
     allSlides.forEach(function(el){ el.style.display = (curSet && !curSet[el.getAttribute(MID)]) ? 'none' : ''; });
     allThumbs.forEach(function(el){ el.style.display = (curSet && !curSet[el.getAttribute(MID)]) ? 'none' : ''; });
+    buildDots();
     if(pager) pager.classList.toggle('grl-mg__pager--hidden', visSlides.length < 2);
   }
 
@@ -372,6 +441,7 @@
     visThumbs.forEach(function(el,j){ el.classList.toggle('grl-mg__thumb--active', j===i); });
     if(pgCur) pgCur.textContent = (i+1);
     if(pgTot) pgTot.textContent = visSlides.length;
+    if(dotsWrap){ var dts = dotsWrap.children; for(var k=0;k<dts.length;k++){ dts[k].classList.toggle('grl-mg__dot--active', k===i); } }
     var at = visThumbs[i];
     if(at && at.scrollIntoView) at.scrollIntoView({ block:'nearest', inline:'nearest', behavior:'smooth' });
   }
@@ -379,8 +449,9 @@
   function setVariant(title){
     var key = norm(title);
     if(key === curKey) return;
+    if(!SEG[key]) return;            // unknown variant — keep current view, don't reset to all
     curKey = key;
-    curSet = SEG[key] || null;
+    curSet = SEG[key];
     rebuildVisible();
     show(0);
   }
@@ -394,12 +465,16 @@
     });
   }
 
-  // ---- Pager ----
+  // ---- Pager (arrows + dots) ----
   if(pager){
     var prev = pager.querySelector('[data-grl-prev]');
     var next = pager.querySelector('[data-grl-next]');
     if(prev) prev.addEventListener('click', function(e){ e.stopPropagation(); show(idx-1); });
     if(next) next.addEventListener('click', function(e){ e.stopPropagation(); show(idx+1); });
+    if(dotsWrap) dotsWrap.addEventListener('click', function(e){
+      var d = e.target.closest('[data-grl-dot]'); if(!d) return;
+      e.stopPropagation(); show(parseInt(d.getAttribute('data-grl-dot'),10) || 0);
+    });
   }
 
   // ---- Chevron cursor + click nav ----
@@ -418,7 +493,6 @@
   }
   stage.addEventListener('click', function(e){
     if(isMobile || visSlides.length < 2) return;
-    if(e.target.closest('[data-grl-pager]')) return;
     var r = stage.getBoundingClientRect();
     if((e.clientX - r.left) < r.width/2) show(idx-1); else show(idx+1);
   });
@@ -445,9 +519,10 @@
   }, true);
   window.matchMedia('(max-width:749px)').addEventListener('change', function(e){ isMobile = e.matches; });
 
-  // ---- Init ----
-  rebuildVisible();
-  show(0);
+  // ---- Init: filter to the selected variant immediately, then keep syncing ----
+  if(INIT_TITLE && SEG[norm(INIT_TITLE)]) { setVariant(INIT_TITLE); }
+  else { rebuildVisible(); show(0); }
   syncVariant();
+  [50,150,400,900].forEach(function(d){ setTimeout(syncVariant, d); });
 })();
 </script>
