@@ -18,7 +18,7 @@
 {%- if request.page_type == 'product' and product.variants.size > 1 -%}
 <script>
 (function () {
-  if (window.__grlVImg) return; window.__grlVImg = true;
+  if (window.__grlVImg || window.__grlGal) return; window.__grlVImg = true;
 
   // ---- Server-rendered data -------------------------------------------
   var MEDIA_ORDER = [{% for m in product.media %}"{{ m.id }}"{% unless forloop.last %},{% endunless %}{% endfor %}];
