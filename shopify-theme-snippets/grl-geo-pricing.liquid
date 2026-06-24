@@ -1,0 +1,126 @@
+{% comment %}
+  GRL® International Price Display — DISPLAY ONLY
+  ───────────────────────────────────────────────
+  Shows premium USD ($) / GBP (£) prices to visitors detected in the US or UK.
+  Checkout still processes in INR (no payment gateway for foreign currency yet).
+
+  SAFETY: All logic is gated behind a US/GB country check. Visitors from India
+  (or anywhere else) trigger ZERO changes — they see the exact INR site as-is.
+
+  Price map by case type:
+    Double Armoured  → $45 / £45
+    Glass Case       → $35 / £35
+    Slim Snap Case   → $35 / £35
+    Silicone Clear   → $35 / £35
+  Collection/card "from" price → floor ($35 / £35)
+
+  Test without a VPN by appending ?grl_geo=US or ?grl_geo=GB to any URL.
+{% endcomment %}
+<script>
+(function(){
+  var MAP = {
+    US: { sym:'$', floor:35, types:{
+      'double armoured':45, 'glass case':35, 'slim snap case':35, 'silicone clear case':35
+    }},
+    GB: { sym:'£', floor:35, types:{
+      'double armoured':45, 'glass case':35, 'slim snap case':35, 'silicone clear case':35
+    }}
+  };
+
+  function detect(cb){
+    var KEY='grl_geo_cc', TKEY='grl_geo_ts';
+    try{
+      var p = new URLSearchParams(window.location.search).get('grl_geo');
+      if(p){ p=p.toUpperCase(); try{localStorage.setItem(KEY,p);localStorage.setItem(TKEY,''+Date.now());}catch(e){} cb(p); return; }
+      var c=localStorage.getItem(KEY), t=localStorage.getItem(TKEY);
+      if(c!==null && t && (Date.now()-(+t) < 21600000)){ cb(c); return; } // 6h cache
+    }catch(e){}
+    fetch('https://get.geojs.io/v1/ip/country.json')
+      .then(function(r){ return r.json(); })
+      .then(function(d){ var c=(d&&d.country)?d.country:''; try{localStorage.setItem(KEY,c);localStorage.setItem(TKEY,''+Date.now());}catch(e){} cb(c); })
+      .catch(function(){ cb(''); });
+  }
+
+  function priceForType(conf, s){
+    if(!s) return null;
+    var k = s.toLowerCase().replace(/[^a-z ]/g,' ').replace(/\s+/g,' ').trim();
+    for(var t in conf.types){ if(k.indexOf(t) > -1) return conf.types[t]; }
+    return null;
+  }
+  function money(conf, v){ return conf.sym + v; }
+
+  function apply(country){
+    var conf = MAP[country];
+    if(!conf) return; // ← NOT US/UK: do absolutely nothing. India untouched.
+
+    window.GRL_GEO = { country:country, conf:conf, priceForType:priceForType, money:money };
+    document.documentElement.setAttribute('data-grl-geo', country);
+
+    var obs = null;
+    var isProduct = /\/products\//.test(window.location.pathname);
+
+    function run(){
+      if(obs){ obs.disconnect(); }
+
+      // 1) Custom variant cards (product page): map each via its radio value
+      var labels = document.querySelectorAll('.grl-variant-label');
+      labels.forEach(function(lab){
+        var radio = lab.querySelector('input.grl-variant-radio');
+        var priceEl = lab.querySelector('.grl-variant-price');
+        if(radio && priceEl){
+          var v = priceForType(conf, radio.value);
+          if(v!=null){
+            var want = money(conf, v);
+            if(priceEl.textContent !== want) priceEl.textContent = want;
+          }
+        }
+      });
+
+      if(isProduct){
+        // 2) Main product price = selected case type (fallback: floor for single-type products)
+        var checked = document.querySelector('input.grl-variant-radio:checked');
+        var pv = checked ? priceForType(conf, checked.value) : null;
+        if(pv==null) pv = conf.floor;
+        var want = money(conf, pv);
+        document.querySelectorAll('.price').forEach(function(p){
+          if(p.classList.contains('grl-variant-price')) return;
+          if(p.textContent !== want) p.textContent = want;
+        });
+      } else {
+        // 3) Collection / search / card prices → "from" floor
+        var fl = money(conf, conf.floor);
+        document.querySelectorAll('.price, .gh__sres-price').forEach(function(p){
+          if(p.classList.contains('grl-variant-price')) return;
+          if(p.textContent !== fl) p.textContent = fl;
+        });
+      }
+
+      // 4) Hide INR compare-at prices (avoid ₹ next to $)
+      document.querySelectorAll('.compare-at-price').forEach(function(c){
+        if(c.style.display !== 'none') c.style.display='none';
+      });
+
+      if(obs){ obs.observe(document.body, {childList:true, subtree:true, characterData:true}); }
+    }
+
+    function boot(){
+      run();
+      // Live-update on variant selection
+      document.addEventListener('change', function(e){
+        if(e.target && e.target.classList && e.target.classList.contains('grl-variant-radio')) run();
+      });
+      // Re-apply on dynamic DOM (ajax cards, quick-add, etc.) — debounced, observer paused during run
+      obs = new MutationObserver(function(){
+        if(window.__grlGeoT) return;
+        window.__grlGeoT = setTimeout(function(){ window.__grlGeoT=null; run(); }, 150);
+      });
+      obs.observe(document.body, {childList:true, subtree:true, characterData:true});
+    }
+
+    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
+    else boot();
+  }
+
+  detect(apply);
+})();
+</script>
