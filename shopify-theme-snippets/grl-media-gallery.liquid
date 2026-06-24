@@ -23,6 +23,9 @@
   assign d_radius = s.grl_d_radius | default: 16
   assign d_bg = s.grl_d_bg | default: '#f4f4f4'
   assign d_maxh = s.grl_d_maxh | default: 0
+  assign d_maxw = s.grl_d_maxw | default: 0
+  assign d_minh = s.grl_d_minh | default: 0
+  assign d_scale = s.grl_d_scale | default: 100
   assign d_pt = s.grl_d_pt | default: 0
   assign d_pb = s.grl_d_pb | default: 0
   assign d_pl = s.grl_d_pl | default: 0
@@ -59,6 +62,9 @@
   assign m_radius = s.grl_m_radius | default: 14
   assign m_bg = s.grl_m_bg | default: '#ffffff'
   assign m_maxh = s.grl_m_maxh | default: 0
+  assign m_maxw = s.grl_m_maxw | default: 0
+  assign m_minh = s.grl_m_minh | default: 0
+  assign m_scale = s.grl_m_scale | default: 100
   assign m_pt = s.grl_m_pt | default: 0
   assign m_pb = s.grl_m_pb | default: 0
   assign m_pl = s.grl_m_pl | default: 0
@@ -161,14 +167,34 @@
   if d_maxh > 0
     assign d_maxh_v = d_maxh | append: 'px'
   endif
+  assign d_maxw_v = 'none'
+  if d_maxw > 0
+    assign d_maxw_v = d_maxw | append: 'px'
+  endif
+  assign d_minh_v = '0'
+  if d_minh > 0
+    assign d_minh_v = d_minh | append: 'px'
+  endif
+  assign d_scale_v = d_scale | divided_by: 100.0
+
   assign t_maxh_v = 'none'
   if t_maxh > 0
     assign t_maxh_v = t_maxh | append: 'px'
   endif
+
   assign m_maxh_v = 'none'
   if m_maxh > 0
     assign m_maxh_v = m_maxh | append: 'px'
   endif
+  assign m_maxw_v = 'none'
+  if m_maxw > 0
+    assign m_maxw_v = m_maxw | append: 'px'
+  endif
+  assign m_minh_v = '0'
+  if m_minh > 0
+    assign m_minh_v = m_minh | append: 'px'
+  endif
+  assign m_scale_v = m_scale | divided_by: 100.0
 
   assign image_media = product.media | where: 'media_type', 'image'
 -%}
@@ -178,6 +204,8 @@
   #{{ gid }} { display:flex; gap: var(--grl-gap); width:100%; box-sizing:border-box;
     flex-direction: var(--grl-root-dir); align-items:stretch;
     padding: var(--grl-pt) var(--grl-pr) var(--grl-pb) var(--grl-pl);
+    max-width: var(--grl-max-w); min-height: var(--grl-min-h);
+    transform: scale(var(--grl-scale)); transform-origin: top left;
     -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 
   #{{ gid }} .grl-mg__thumbcol { flex-shrink:0; position:relative; }
@@ -255,6 +283,7 @@
     --grl-thumb-aspect: {{ d_thumb_aspect }}; --grl-thumb-valign: {{ d_valign }};
     --grl-aspect: {{ d_aspect }}; --grl-fit: {{ d_fit }}; --grl-main-radius: {{ d_radius }}px;
     --grl-main-bg: {{ d_bg }}; --grl-max-h: {{ d_maxh_v }};
+    --grl-max-w: {{ d_maxw_v }}; --grl-min-h: {{ d_minh_v }}; --grl-scale: {{ d_scale_v }};
     --grl-pt: {{ d_pt }}px; --grl-pb: {{ d_pb }}px; --grl-pl: {{ d_pl }}px; --grl-pr: {{ d_pr }}px; }
   #{{ gid }} .grl-mg__thumbcol { display:{% if d_nav == 'thumbs' %}block{% else %}none{% endif %};
     {% if d_pos == 'bottom' %}width:100%;{% else %}width:calc(var(--grl-thumb-w) + {{ t_pad | times: 2 }}px);{% endif %} }
@@ -271,6 +300,7 @@
       --grl-thumb-aspect: {{ t_thumb_aspect }}; --grl-thumb-valign: {{ t_valign }};
       --grl-aspect: {{ t_aspect }}; --grl-fit: {{ t_fit }}; --grl-main-radius: {{ t_radius }}px;
       --grl-main-bg: {{ t_bg }}; --grl-max-h: {{ t_maxh_v }};
+      --grl-max-w: none; --grl-min-h: 0; --grl-scale: 1;
       --grl-pt: {{ t_pt }}px; --grl-pb: {{ t_pb }}px; --grl-pl: {{ t_pl }}px; --grl-pr: {{ t_pr }}px; }
     #{{ gid }} .grl-mg__thumbcol { display:{% if t_nav == 'thumbs' %}block{% else %}none{% endif %};
       {% if t_pos == 'bottom' %}width:100%;{% else %}width:calc(var(--grl-thumb-w) + {{ t_pad | times: 2 }}px);{% endif %} }
@@ -288,6 +318,7 @@
       --grl-thumb-aspect: {{ m_thumb_aspect }}; --grl-thumb-valign: {{ m_valign }};
       --grl-aspect: {{ m_aspect }}; --grl-fit: {{ m_fit }}; --grl-main-radius: {{ m_radius }}px;
       --grl-main-bg: {{ m_bg }}; --grl-max-h: {{ m_maxh_v }};
+      --grl-max-w: {{ m_maxw_v }}; --grl-min-h: {{ m_minh_v }}; --grl-scale: {{ m_scale_v }};
       --grl-pt: {{ m_pt }}px; --grl-pb: {{ m_pb }}px; --grl-pl: {{ m_pl }}px; --grl-pr: {{ m_pr }}px; }
     #{{ gid }} .grl-mg__thumbcol { display:{% if m_nav == 'thumbs' %}block{% else %}none{% endif %};
       {% if m_pos == 'bottom' %}width:100%;{% else %}width:calc(var(--grl-thumb-w) + {{ t_pad | times: 2 }}px);{% endif %} }
