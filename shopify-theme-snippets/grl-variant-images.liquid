@@ -7,18 +7,13 @@
   including) the next variant's marker. The last variant owns everything
   from its marker to the end of the gallery.
 
-  Example (3 variants):
-    pos 1  Double Armoured (marker) ─┐ DA
-    pos 2-4                          ─┘
-    pos 5  Glass Case (marker)       ─┐ Glass
-    pos 6-9                          ─┘
-    pos 10 Slim Snap Case (marker)   ─┐ Slim
-    pos 11-12                        ─┘
+  Hiding is driven by a single persistent <style> rule keyed on
+  data-media-id (slides) and position (thumbnails). Because it is pure
+  CSS, it applies INSTANTLY to any slide the theme inserts — including
+  the slides Horizon re-renders when a variant changes — so there is no
+  flash-of-all-images and no race with the theme's own gallery logic.
 
-  Selecting a variant (radio name="grl_type") shows only that variant's
-  segment and hides the rest, in both the main slideshow and the
-  thumbnails. Works for any number of variants. Single-variant products
-  are skipped entirely (no filtering needed).
+  Single-variant products are skipped (no filtering needed).
 {%- endcomment -%}
 {%- if request.page_type == 'product' and product.variants.size > 1 -%}
 <script>
@@ -26,18 +21,16 @@
   if (window.__grlVImg) return; window.__grlVImg = true;
 
   // ---- Server-rendered data -------------------------------------------
-  // Gallery media IDs in display order (match data-media-id in the DOM)
   var MEDIA_ORDER = [{% for m in product.media %}"{{ m.id }}"{% unless forloop.last %},{% endunless %}{% endfor %}];
-  // Variants in option order, each with its single assigned media id
   var VARIANTS = [
     {% for v in product.variants -%}
     { title: {{ v.title | json }}, media: {% if v.featured_media %}"{{ v.featured_media.id }}"{% else %}null{% endif %} }{% unless forloop.last %},{% endunless %}
     {% endfor -%}
   ];
-
   if (!MEDIA_ORDER.length || VARIANTS.length < 2) return;
 
   // ---- Build per-variant segments from boundary markers ----------------
+  var norm = function (s) { return (s == null ? '' : String(s)).trim().toLowerCase(); };
   var marks = [];
   VARIANTS.forEach(function (v) {
     if (!v.media) return;
@@ -45,109 +38,129 @@
     if (idx < 0) return;
     marks.push({ title: v.title, start: idx });
   });
-  if (marks.length < 2) return; // nothing meaningful to filter
+  if (marks.length < 2) return;
   marks.sort(function (a, b) { return a.start - b.start; });
-  // Absorb any leading un-assigned images into the first variant
-  marks[0].start = 0;
+  marks[0].start = 0; // absorb any leading un-assigned images into 1st variant
 
-  var SEG = {};            // normalized title -> { set: {mediaId:1}, ids: [...] }
-  var norm = function (s) { return (s == null ? '' : String(s)).trim().toLowerCase(); };
+  // For each variant: which media indices to HIDE (everything outside its segment)
+  var HIDE = {};           // normalized title -> [mediaIndex,...]
+  var ORDER = [];          // normalized titles in display order
   marks.forEach(function (m, i) {
     var end = (i + 1 < marks.length) ? marks[i + 1].start : MEDIA_ORDER.length;
-    var ids = MEDIA_ORDER.slice(m.start, end);
-    var set = {}; ids.forEach(function (x) { set[x] = 1; });
-    SEG[norm(m.title)] = { set: set, ids: ids };
+    var keep = {};
+    for (var k = m.start; k < end; k++) keep[k] = 1;
+    var hide = [];
+    for (var j = 0; j < MEDIA_ORDER.length; j++) if (!keep[j]) hide.push(j);
+    var t = norm(m.title);
+    HIDE[t] = hide;
+    ORDER.push(t);
   });
-  var ORDER = marks.map(function (m) { return norm(m.title); });
 
-  // ---- DOM helpers -----------------------------------------------------
-  function scroller() {
-    return document.querySelector('slideshow-slides[ref="scroller"]')
-        || document.querySelector('slideshow-slides');
-  }
-  function selectedTitle() {
-    var c = document.querySelector('input[name="grl_type"]:checked');
-    return c ? norm(c.value) : ORDER[0];
-  }
+  // ---- Persistent style rule ------------------------------------------
+  var styleEl = document.createElement('style');
+  styleEl.id = 'grl-vimg-style';
+  (document.head || document.documentElement).appendChild(styleEl);
 
-  function apply() {
-    var seg = SEG[selectedTitle()];
-    if (!seg) return;
-    var set = seg.set;
+  var current = null;
 
-    // 1) Main slideshow slides
-    var slides = document.querySelectorAll('slideshow-slide');
-    var firstVisible = null;
-    slides.forEach(function (slide) {
-      var pm = slide.querySelector('[data-media-id]');
-      var id = pm && pm.getAttribute('data-media-id');
-      var show = id ? !!set[id] : true; // unknown elements stay visible
-      slide.style.display = show ? '' : 'none';
-      slide.toggleAttribute('aria-hidden', !show);
-      if (show && !firstVisible) firstVisible = slide;
+  function buildRule(title) {
+    var hide = HIDE[title];
+    if (!hide || !hide.length) return '';
+    var slideSel = [], thumbSel = [];
+    hide.forEach(function (i) {
+      var id = MEDIA_ORDER[i];
+      slideSel.push('slideshow-slide:has(.product-media[data-media-id="' + id + '"])');
+      slideSel.push('slideshow-slide:has([data-media-id="' + id + '"])');
+      // thumbnails render in the same order as the slides
+      thumbSel.push('.slideshow-controls__thumbnails > button:nth-of-type(' + (i + 1) + ')');
     });
-
-    // 2) Thumbnails (same order as slides). Toggle by matching index.
-    var thumbs = document.querySelectorAll('.slideshow-controls__thumbnail');
-    if (thumbs.length === slides.length) {
-      slides.forEach(function (slide, i) {
-        thumbs[i].style.display = (slide.style.display === 'none') ? 'none' : '';
-      });
-    }
-
-    // 3) Bring the first image of the segment into view
-    if (firstVisible) scrollToSlide(firstVisible);
+    var css = slideSel.join(',') + '{display:none!important}';
+    if (thumbSel.length) css += thumbSel.join(',') + '{display:none!important}';
+    return css;
   }
 
-  function scrollToSlide(slide) {
-    var sc = scroller();
+  function setVariant(title) {
+    title = norm(title);
+    if (!(title in HIDE)) return;
+    current = title;
+    var rule = buildRule(title);
+    if (styleEl.textContent !== rule) styleEl.textContent = rule;
+    requestAnimationFrame(scrollToFirst);
+    setTimeout(scrollToFirst, 140);
+  }
+
+  function reassert() {
+    // adopt the currently-checked variant (or keep current) and ensure the rule is live
+    var c = document.querySelector('input[name="grl_type"]:checked');
+    var t = c ? norm(c.value) : current;
+    if (!t || !(t in HIDE)) t = current || ORDER[0];
+    if (!t) return;
+    current = t;
+    var rule = buildRule(t);
+    if (styleEl.textContent !== rule) styleEl.textContent = rule;
+  }
+
+  // ---- Scroll the gallery to the first visible (in-segment) slide ------
+  function scrollToFirst() {
+    var sc = document.querySelector('slideshow-slides[ref="scroller"]')
+          || document.querySelector('slideshow-slides');
     if (!sc) return;
+    var slides = sc.querySelectorAll('slideshow-slide');
+    var first = null;
+    for (var i = 0; i < slides.length; i++) {
+      var s = slides[i];
+      if (s.offsetParent !== null && getComputedStyle(s).display !== 'none') { first = s; break; }
+    }
+    if (!first) return;
     try {
-      var delta = slide.getBoundingClientRect().left - sc.getBoundingClientRect().left;
+      var delta = first.getBoundingClientRect().left - sc.getBoundingClientRect().left;
       if (Math.abs(delta) > 1) sc.scrollLeft += delta;
     } catch (e) {}
   }
 
   // ---- Wiring ----------------------------------------------------------
-  var raf;
-  function schedule() { cancelAnimationFrame(raf); raf = requestAnimationFrame(apply); }
-
-  // Re-filter when the variant changes (let theme logic run first)
+  // Update the rule the instant the user picks a variant (value is already
+  // set on the input by the time these bubble up), BEFORE the theme re-renders.
   document.addEventListener('change', function (e) {
-    if (e.target && e.target.name === 'grl_type') setTimeout(apply, 60);
-  });
-  // Some pickers fire clicks without change events
+    if (e.target && e.target.name === 'grl_type') setVariant(e.target.value);
+  }, true);
   document.addEventListener('click', function (e) {
-    if (e.target && e.target.closest && e.target.closest('label.grl-variant-label')) {
-      setTimeout(apply, 80);
+    var lbl = e.target && e.target.closest && e.target.closest('label.grl-variant-label');
+    if (lbl) {
+      var inp = lbl.querySelector('input[name="grl_type"]');
+      if (inp) setVariant(inp.value);
+    } else if (e.target && e.target.name === 'grl_type') {
+      setVariant(e.target.value);
     }
+  }, true);
+
+  // Re-assert + re-scroll whenever the gallery DOM changes (variant re-render).
+  var deb;
+  var mo = new MutationObserver(function (recs) {
+    var relevant = false;
+    for (var i = 0; i < recs.length; i++) {
+      var r = recs[i];
+      if (r.addedNodes.length || r.removedNodes.length) { relevant = true; break; }
+    }
+    if (!relevant) return;
+    clearTimeout(deb);
+    deb = setTimeout(function () { reassert(); scrollToFirst(); }, 30);
   });
 
-  // Re-apply if the gallery re-renders its slides (variant media swap, etc.)
-  function watch() {
-    var sc = scroller();
-    if (!sc) return false;
-    new MutationObserver(schedule).observe(sc, { childList: true, subtree: true });
-    return true;
-  }
-
-  function init() {
-    apply();
-    if (!watch()) {
-      // gallery not ready yet — retry briefly
-      var tries = 0, t = setInterval(function () {
-        tries++;
-        if (watch() || tries > 20) { clearInterval(t); apply(); }
-      }, 150);
-    }
+  function start() {
+    reassert();                 // set initial rule from checked variant
+    scrollToFirst();
+    var target = document.querySelector('media-gallery') || document.body;
+    // observe a stable ancestor so full gallery re-renders are still caught
+    mo.observe(target.parentElement || target, { childList: true, subtree: true });
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener('DOMContentLoaded', start);
   } else {
-    init();
+    start();
   }
-  window.addEventListener('load', apply);
+  window.addEventListener('load', function () { reassert(); scrollToFirst(); });
 })();
 </script>
 {%- endif -%}
