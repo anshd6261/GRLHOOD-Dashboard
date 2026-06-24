@@ -196,6 +196,32 @@
   endif
   assign m_scale_v = m_scale | divided_by: 100.0
 
+  # ---------- aspect "auto" => frame matches the image, so it can never crop ----------
+  assign d_aspect_v = d_aspect
+  assign d_slide_h = '100%'
+  assign d_img_h = '100%'
+  if d_aspect == 'auto'
+    assign d_aspect_v = 'auto'
+    assign d_slide_h = 'auto'
+    assign d_img_h = 'auto'
+  endif
+  assign t_aspect_v = t_aspect
+  assign t_slide_h = '100%'
+  assign t_img_h = '100%'
+  if t_aspect == 'auto'
+    assign t_aspect_v = 'auto'
+    assign t_slide_h = 'auto'
+    assign t_img_h = 'auto'
+  endif
+  assign m_aspect_v = m_aspect
+  assign m_slide_h = '100%'
+  assign m_img_h = '100%'
+  if m_aspect == 'auto'
+    assign m_aspect_v = 'auto'
+    assign m_slide_h = 'auto'
+    assign m_img_h = 'auto'
+  endif
+
   assign image_media = product.media | where: 'media_type', 'image'
 -%}
 
@@ -228,15 +254,15 @@
   /* stage */
   #{{ gid }} .grl-mg__stage { position:relative; overflow:hidden; width:100%;
     border-radius: var(--grl-main-radius); aspect-ratio: var(--grl-aspect); max-height: var(--grl-max-h);
-    background: var(--grl-main-bg); -webkit-user-select:none; user-select:none;
+    background: var(--grl-main-bg); -webkit-user-select:none; user-select:none; touch-action: pan-y;
     {% if main_border_w > 0 %}border: {{ main_border_w }}px solid {{ main_border_c }};{% endif %}
     {% if sh_op > 0 %}box-shadow: 0 {{ sh_y }}px {{ sh_blur }}px {{ sh_color | color_modify: 'alpha', sh_a }};{% endif %} }
-  #{{ gid }} .grl-mg__slide { position:absolute; inset:0; width:100%; height:100%; opacity:0;
+  #{{ gid }} .grl-mg__slide { position:absolute; top:0; left:0; width:100%; height:var(--grl-slide-h,100%); opacity:0;
     transition: opacity {{ fade_ms }}ms {{ fade_ease }}; pointer-events:none; display:flex; align-items:center; justify-content:center; }
   #{{ gid }} .grl-mg__slide img, #{{ gid }} .grl-mg__slide video, #{{ gid }} .grl-mg__slide iframe {
-    width:100% !important; height:100% !important; max-width:none !important; max-height:none !important;
+    width:100% !important; height:var(--grl-img-h,100%) !important; max-width:none !important; max-height:none !important;
     object-fit: var(--grl-fit) !important; object-position:center center !important; display:block; -webkit-user-drag:none; }
-  #{{ gid }} .grl-mg__slide--active { opacity:1; z-index:1; }
+  #{{ gid }} .grl-mg__slide--active { opacity:1; z-index:1; position:relative; }
 
   /* chevron cursor (desktop) */
   #{{ gid }} .grl-mg__chev { position:absolute; z-index:5; top:0; left:0; width:{{ chev_size }}px; height:{{ chev_size }}px;
@@ -282,7 +308,7 @@
     --grl-root-dir: {{ d_root }};
     --grl-gap: {{ d_gap }}px; --grl-thumb-w: {{ d_thumb_w }}px; --grl-thumb-gap: {{ d_thumb_gap }}px;
     --grl-thumb-aspect: {{ d_thumb_aspect }}; --grl-thumb-valign: {{ d_valign }};
-    --grl-aspect: {{ d_aspect }}; --grl-fit: {{ d_fit }}; --grl-main-radius: {{ d_radius }}px;
+    --grl-aspect: {{ d_aspect_v }}; --grl-slide-h: {{ d_slide_h }}; --grl-img-h: {{ d_img_h }}; --grl-fit: {{ d_fit }}; --grl-main-radius: {{ d_radius }}px;
     --grl-main-bg: {{ d_bg }}; --grl-max-h: {{ d_maxh_v }};
     --grl-max-w: {{ d_maxw_v }}; --grl-min-h: {{ d_minh_v }}; --grl-scale: {{ d_scale_v }};
     --grl-pt: {{ d_pt }}px; --grl-pb: {{ d_pb }}px; --grl-pl: {{ d_pl }}px; --grl-pr: {{ d_pr }}px; }
@@ -299,7 +325,7 @@
       --grl-root-dir: {{ t_root }};
       --grl-gap: {{ t_gap }}px; --grl-thumb-w: {{ t_thumb_w }}px; --grl-thumb-gap: {{ t_thumb_gap }}px;
       --grl-thumb-aspect: {{ t_thumb_aspect }}; --grl-thumb-valign: {{ t_valign }};
-      --grl-aspect: {{ t_aspect }}; --grl-fit: {{ t_fit }}; --grl-main-radius: {{ t_radius }}px;
+      --grl-aspect: {{ t_aspect_v }}; --grl-slide-h: {{ t_slide_h }}; --grl-img-h: {{ t_img_h }}; --grl-fit: {{ t_fit }}; --grl-main-radius: {{ t_radius }}px;
       --grl-main-bg: {{ t_bg }}; --grl-max-h: {{ t_maxh_v }};
       --grl-max-w: none; --grl-min-h: 0; --grl-scale: 1;
       --grl-pt: {{ t_pt }}px; --grl-pb: {{ t_pb }}px; --grl-pl: {{ t_pl }}px; --grl-pr: {{ t_pr }}px; }
@@ -317,7 +343,7 @@
       --grl-root-dir: {{ m_root }};
       --grl-gap: {{ m_gap }}px; --grl-thumb-w: {{ m_thumb_w }}px; --grl-thumb-gap: {{ m_thumb_gap }}px;
       --grl-thumb-aspect: {{ m_thumb_aspect }}; --grl-thumb-valign: {{ m_valign }};
-      --grl-aspect: {{ m_aspect }}; --grl-fit: {{ m_fit }}; --grl-main-radius: {{ m_radius }}px;
+      --grl-aspect: {{ m_aspect_v }}; --grl-slide-h: {{ m_slide_h }}; --grl-img-h: {{ m_img_h }}; --grl-fit: {{ m_fit }}; --grl-main-radius: {{ m_radius }}px;
       --grl-main-bg: {{ m_bg }}; --grl-max-h: {{ m_maxh_v }};
       --grl-max-w: {{ m_maxw_v }}; --grl-min-h: {{ m_minh_v }}; --grl-scale: {{ m_scale_v }};
       --grl-pt: {{ m_pt }}px; --grl-pb: {{ m_pb }}px; --grl-pl: {{ m_pl }}px; --grl-pr: {{ m_pr }}px; }
@@ -532,14 +558,25 @@
   stage.addEventListener('selectstart', function(e){ e.preventDefault(); });
   stage.addEventListener('mousedown', function(e){ if(e.detail > 1) e.preventDefault(); });
 
-  // ---- Mobile swipe ----
-  var tsx=0, tsy=0;
-  stage.addEventListener('touchstart', function(e){ tsx = e.touches[0].clientX; tsy = e.touches[0].clientY; }, {passive:true});
-  stage.addEventListener('touchend', function(e){
-    var dx = e.changedTouches[0].clientX - tsx;
-    var dy = e.changedTouches[0].clientY - tsy;
-    if(Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) || visSlides.length < 2) return;
-    if(dx < 0) show(idx+1); else show(idx-1);
+  // ---- Mobile swipe (locks vertical page scroll once a horizontal swipe starts) ----
+  var sX=0, sY=0, sdx=0, sdy=0, sDecided=false, sHoriz=false;
+  stage.addEventListener('touchstart', function(e){
+    sX = e.touches[0].clientX; sY = e.touches[0].clientY;
+    sdx = 0; sdy = 0; sDecided = false; sHoriz = false;
+  }, {passive:true});
+  stage.addEventListener('touchmove', function(e){
+    sdx = e.touches[0].clientX - sX;
+    sdy = e.touches[0].clientY - sY;
+    if(!sDecided && (Math.abs(sdx) > 6 || Math.abs(sdy) > 6)){
+      sDecided = true; sHoriz = Math.abs(sdx) > Math.abs(sdy);
+    }
+    // horizontal intent → stop the page from scrolling vertically during the swipe
+    if(sDecided && sHoriz && e.cancelable) e.preventDefault();
+  }, {passive:false});
+  stage.addEventListener('touchend', function(){
+    if(sHoriz && Math.abs(sdx) > 40 && visSlides.length > 1){
+      if(sdx < 0) show(idx+1); else show(idx-1);
+    }
   }, {passive:true});
 
   // ---- Variant picker wiring ----
