@@ -92,8 +92,9 @@
     box-shadow: inset 0 0 0 {{ t_border }}px rgba(255,255,255,{{ t_border_a }}), 0 1px 5px rgba(0,0,0,{{ t_shadow_a }});
     transition: transform .25s cubic-bezier(.22,1,.36,1), box-shadow .25s ease; }
   #{{ gid }} .grl-mg__thumb::before { content:''; position:absolute; inset:0; z-index:1; pointer-events:none;
-    background: rgba(255,255,255,{{ t_bg_a }}); backdrop-filter: blur({{ t_blur }}px); -webkit-backdrop-filter: blur({{ t_blur }}px);
-    border-radius: inherit; }
+    border-radius: inherit;
+    box-shadow: inset 0 0 0 {{ t_border }}px rgba(255,255,255,{{ t_border_a }});
+    }
   #{{ gid }} .grl-mg__thumb img { width:100%; height:100%; object-fit: cover; display:block; -webkit-user-drag:none; user-select:none; }
   #{{ gid }} .grl-mg__thumb--active { transform: scale({{ t_active_scale | divided_by: 100.0 }});
     box-shadow: inset 0 0 0 {{ t_active_w }}px {{ t_active_c }}, 0 3px 12px rgba(0,0,0,.14); }
@@ -124,9 +125,9 @@
   #{{ gid }} .grl-mg__chev--left svg { transform: rotate(180deg); }
 
   @media (max-width: 749px) {
-    #{{ gid }} { flex-direction: column-reverse; gap: 8px; padding: 0; align-items: stretch; }
+    #{{ gid }} { flex-direction: column-reverse; gap: 8px; padding: 0; align-items: stretch; --grl-thumb-w: 48px; --grl-thumb-gap: 6px; }
     #{{ gid }} .grl-mg__thumbcol { width: 100%; }
-    #{{ gid }} .grl-mg__thumbs { position: static; inset: auto; flex-direction: row; width:100%; overflow-x:auto; overflow-y:hidden; padding: 4px 0; justify-content: flex-start; }
+    #{{ gid }} .grl-mg__thumbs { position: static; inset: auto; flex-direction: row; width:100%; overflow-x:auto; overflow-y:hidden; padding: 4px 8px; justify-content: flex-start; gap: var(--grl-thumb-gap); }
     #{{ gid }} .grl-mg__stage { cursor: default; max-height: none; }
     #{{ gid }} .grl-mg__chev { display:none; }
   }
