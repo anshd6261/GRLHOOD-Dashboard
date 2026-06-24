@@ -1,0 +1,298 @@
+{%- comment -%}
+  GRL — Custom product media gallery (renders INSIDE the gallery block,
+  so it lands in the native media column — no layout breakage).
+  Uses data-grl-mid (NOT data-media-id) to stay decoupled from the
+  legacy __grlFI variant script. Params: block, product (closest.product)
+{%- endcomment -%}
+{%- liquid
+  assign s = block.settings
+  assign gid = 'grlmg-' | append: block.id | replace: ':', '-'
+
+  assign thumb_pos = s.grl_thumb_position | default: 'left'
+  assign thumb_valign = s.grl_thumb_valign | default: 'center'
+  assign gap = s.grl_gap | default: 12
+  assign max_h = s.grl_max_height | default: 0
+
+  assign ratio = s.grl_aspect | default: '3/3.75'
+  assign img_fit = s.grl_image_fit | default: 'contain'
+  assign main_radius = s.grl_main_radius | default: 16
+  assign main_border_w = s.grl_main_border_width | default: 0
+  assign main_border_c = s.grl_main_border_color | default: '#00000000'
+  assign main_bg = s.grl_main_bg | default: '#f4f4f4'
+  assign sh_blur = s.grl_shadow_blur | default: 0
+  assign sh_y = s.grl_shadow_y | default: 0
+  assign sh_color = s.grl_shadow_color | default: '#000000'
+  assign sh_op = s.grl_shadow_opacity | default: 0
+  assign fade_ms = s.grl_fade_duration | default: 280
+  assign fade_ease = s.grl_fade_easing | default: 'ease'
+
+  assign chev_on = s.grl_chevron_enable | default: true
+  assign chev_style = s.grl_chevron_style | default: 'chevron'
+  assign chev_size = s.grl_chevron_size | default: 42
+  assign chev_stroke = s.grl_chevron_stroke | default: 2
+  assign chev_icon = s.grl_chevron_icon_color | default: '#111111'
+  assign chev_bg = s.grl_chevron_bg | default: '#ffffff'
+  assign chev_bg_op = s.grl_chevron_bg_opacity | default: 72
+  assign chev_blur = s.grl_chevron_blur | default: 8
+  assign chev_sh_blur = s.grl_chevron_shadow_blur | default: 14
+  assign chev_sh_color = s.grl_chevron_shadow_color | default: '#000000'
+  assign chev_sh_op = s.grl_chevron_shadow_opacity | default: 12
+
+  assign thumb_w = s.grl_thumb_width | default: 64
+  assign thumb_aspect = s.grl_thumb_aspect | default: '1/1.18'
+  assign thumb_gap = s.grl_thumb_gap | default: 8
+  assign t_pad = s.grl_thumb_strip_padding | default: 4
+  assign thumb_radius = s.grl_thumb_radius | default: 10
+  assign t_border = s.grl_thumb_border | default: 1
+  assign t_border_op = s.grl_thumb_border_opacity | default: 30
+  assign t_bg_op = s.grl_thumb_bg_opacity | default: 10
+  assign t_blur = s.grl_thumb_blur | default: 12
+  assign t_active_c = s.grl_thumb_active_color | default: '#111111'
+  assign t_active_w = s.grl_thumb_active_width | default: 2
+  assign t_active_scale = s.grl_thumb_active_scale | default: 104
+  assign t_shadow_op = s.grl_thumb_shadow_opacity | default: 6
+
+  assign pt = s['padding-block-start'] | default: 0
+  assign pb = s['padding-block-end'] | default: 0
+  assign pl = s['padding-inline-start'] | default: 0
+  assign pr = s['padding-inline-end'] | default: 0
+
+  assign sh_a = sh_op | divided_by: 100.0
+  assign chev_bg_a = chev_bg_op | divided_by: 100.0
+  assign chev_sh_a = chev_sh_op | divided_by: 100.0
+  assign t_border_a = t_border_op | divided_by: 100.0
+  assign t_bg_a = t_bg_op | divided_by: 100.0
+  assign t_shadow_a = t_shadow_op | divided_by: 100.0
+
+  assign flex_dir = 'row'
+  if thumb_pos == 'right'
+    assign flex_dir = 'row-reverse'
+  elsif thumb_pos == 'bottom'
+    assign flex_dir = 'column-reverse'
+  endif
+
+  assign image_media = product.media | where: 'media_type', 'image'
+-%}
+
+<style>
+  #{{ gid }} { --grl-thumb-w: {{ thumb_w }}px; --grl-thumb-gap: {{ thumb_gap }}px; --grl-gap: {{ gap }}px;
+    display: flex; flex-direction: {{ flex_dir }}; gap: var(--grl-gap); width: 100%; box-sizing: border-box;
+    padding: {{ pt }}px {{ pr }}px {{ pb }}px {{ pl }}px; align-items: stretch;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
+  /* Thumbnail column — relative wrapper keeps the scroller matched to the stage height */
+  #{{ gid }} .grl-mg__thumbcol { flex-shrink: 0; position: relative;
+    {% if thumb_pos == 'bottom' %}width: 100%;{% else %}width: calc(var(--grl-thumb-w) + {{ t_pad | times: 2 }}px);{% endif %} }
+  #{{ gid }} .grl-mg__thumbs { display: flex; gap: var(--grl-thumb-gap); padding: {{ t_pad }}px; box-sizing: border-box;
+    -ms-overflow-style: none; scrollbar-width: none;
+    {% if thumb_pos == 'bottom' %}flex-direction: row; width: 100%; overflow-x: auto; overflow-y: hidden; justify-content: {{ thumb_valign | replace: 'flex-start','flex-start' }};{% else %}flex-direction: column; position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; justify-content: safe {{ thumb_valign }};{% endif %} }
+  #{{ gid }} .grl-mg__thumbs::-webkit-scrollbar { display: none; }
+  #{{ gid }} .grl-mg__thumb { flex-shrink: 0; width: var(--grl-thumb-w); aspect-ratio: {{ thumb_aspect }}; border-radius: {{ thumb_radius }}px;
+    overflow: hidden; cursor: pointer; position: relative; padding: 0; border: 0; background: transparent;
+    box-shadow: inset 0 0 0 {{ t_border }}px rgba(255,255,255,{{ t_border_a }}), 0 1px 5px rgba(0,0,0,{{ t_shadow_a }});
+    transition: transform .25s cubic-bezier(.22,1,.36,1), box-shadow .25s ease; }
+  #{{ gid }} .grl-mg__thumb::before { content:''; position:absolute; inset:0; z-index:1; pointer-events:none;
+    background: rgba(255,255,255,{{ t_bg_a }}); backdrop-filter: blur({{ t_blur }}px); -webkit-backdrop-filter: blur({{ t_blur }}px);
+    border-radius: inherit; }
+  #{{ gid }} .grl-mg__thumb img { width:100%; height:100%; object-fit: cover; display:block; -webkit-user-drag:none; user-select:none; }
+  #{{ gid }} .grl-mg__thumb--active { transform: scale({{ t_active_scale | divided_by: 100.0 }});
+    box-shadow: inset 0 0 0 {{ t_active_w }}px {{ t_active_c }}, 0 3px 12px rgba(0,0,0,.14); }
+
+  /* Stage */
+  #{{ gid }} .grl-mg__stage { flex:1; min-width:0; position:relative; border-radius: {{ main_radius }}px; overflow:hidden;
+    aspect-ratio: {{ ratio }}; {% if max_h > 0 %}max-height: {{ max_h }}px;{% endif %} background: {{ main_bg }};
+    width:100%; align-self: stretch; -webkit-user-select:none; user-select:none;
+    {% if main_border_w > 0 %}border: {{ main_border_w }}px solid {{ main_border_c }};{% endif %}
+    {% if sh_op > 0 %}box-shadow: 0 {{ sh_y }}px {{ sh_blur }}px {{ sh_color | color_modify: 'alpha', sh_a }};{% endif %}
+    {% if chev_on %}cursor: none;{% endif %} }
+  #{{ gid }} .grl-mg__slide { position:absolute; inset:0; width:100%; height:100%; opacity:0; transition: opacity {{ fade_ms }}ms {{ fade_ease }};
+    pointer-events:none; display:flex; align-items:center; justify-content:center; }
+  #{{ gid }} .grl-mg__slide img, #{{ gid }} .grl-mg__slide video, #{{ gid }} .grl-mg__slide iframe { width:100%; height:100%; object-fit: {{ img_fit }}; display:block; -webkit-user-drag:none; }
+  #{{ gid }} .grl-mg__slide--active { opacity:1; z-index:1; }
+
+  /* Chevron cursor */
+  #{{ gid }} .grl-mg__chev { position:absolute; z-index:5; top:0; left:0; width:{{ chev_size }}px; height:{{ chev_size }}px;
+    margin:-{{ chev_size | divided_by: 2 }}px 0 0 -{{ chev_size | divided_by: 2 }}px; pointer-events:none; opacity:0;
+    display:flex; align-items:center; justify-content:center; border-radius:50%;
+    background: {{ chev_bg | color_modify: 'alpha', chev_bg_a }};
+    {% if chev_blur > 0 %}backdrop-filter: blur({{ chev_blur }}px); -webkit-backdrop-filter: blur({{ chev_blur }}px);{% endif %}
+    box-shadow: 0 2px {{ chev_sh_blur }}px {{ chev_sh_color | color_modify: 'alpha', chev_sh_a }};
+    transition: opacity .22s ease, transform .14s cubic-bezier(.22,1,.36,1); will-change: transform; }
+  #{{ gid }} .grl-mg__chev--on { opacity:1; }
+  #{{ gid }} .grl-mg__chev svg { width:48%; height:48%; stroke:{{ chev_icon }}; stroke-width:{{ chev_stroke }}; fill:{% if chev_style == 'triangle' %}{{ chev_icon }}{% else %}none{% endif %};
+    stroke-linecap:round; stroke-linejoin:round; transition: transform .18s ease; }
+  #{{ gid }} .grl-mg__chev--left svg { transform: rotate(180deg); }
+
+  @media (max-width: 749px) {
+    #{{ gid }} { flex-direction: column-reverse; gap: 8px; padding: 0; align-items: stretch; }
+    #{{ gid }} .grl-mg__thumbcol { width: 100%; }
+    #{{ gid }} .grl-mg__thumbs { position: static; inset: auto; flex-direction: row; width:100%; overflow-x:auto; overflow-y:hidden; padding: 4px 0; justify-content: flex-start; }
+    #{{ gid }} .grl-mg__stage { cursor: default; max-height: none; }
+    #{{ gid }} .grl-mg__chev { display:none; }
+  }
+</style>
+
+<div id="{{ gid }}" data-grl-mg ondragstart="return false;">
+  {%- if image_media.size > 1 -%}
+  <div class="grl-mg__thumbcol">
+    <div class="grl-mg__thumbs" data-grl-thumbs>
+      {%- for media in image_media -%}
+        <button type="button" class="grl-mg__thumb{% if forloop.first %} grl-mg__thumb--active{% endif %}" data-grl-thumb data-grl-mid="{{ media.id }}" aria-label="View image {{ forloop.index }}">
+          <img src="{{ media | image_url: width: 160 }}" alt="{{ media.alt | escape }}" loading="lazy" width="80" height="94" draggable="false">
+        </button>
+      {%- endfor -%}
+    </div>
+  </div>
+  {%- endif -%}
+
+  <div class="grl-mg__stage" data-grl-stage>
+    {%- for media in product.media -%}
+      <div class="grl-mg__slide{% if forloop.first %} grl-mg__slide--active{% endif %}" data-grl-slide data-grl-mid="{{ media.id }}">
+        {%- if media.media_type == 'image' -%}
+          {%- if forloop.first -%}{%- assign ld = 'eager' -%}{%- else -%}{%- assign ld = 'lazy' -%}{%- endif -%}
+          <img src="{{ media | image_url: width: 1200 }}"
+            srcset="{{ media | image_url: width: 600 }} 600w, {{ media | image_url: width: 900 }} 900w, {{ media | image_url: width: 1200 }} 1200w, {{ media | image_url: width: 1600 }} 1600w"
+            sizes="(max-width:749px) 100vw, 50vw" alt="{{ media.alt | escape }}" loading="{{ ld }}" width="{{ media.width }}" height="{{ media.height }}" draggable="false">
+        {%- else -%}
+          {{ media | media_tag: image_size: '1200x' }}
+        {%- endif -%}
+      </div>
+    {%- endfor -%}
+    {%- if chev_on -%}
+      <div class="grl-mg__chev" data-grl-chev>
+        {%- case chev_style -%}
+          {%- when 'arrow' -%}<svg viewBox="0 0 24 24"><line x1="5" y1="12" x2="18" y2="12"></line><polyline points="12 6 18 12 12 18"></polyline></svg>
+          {%- when 'triangle' -%}<svg viewBox="0 0 24 24"><polygon points="8 5 18 12 8 19"></polygon></svg>
+          {%- when 'caret' -%}<svg viewBox="0 0 24 24"><polyline points="10 7 15 12 10 17"></polyline></svg>
+          {%- when 'chevron-thin' -%}<svg viewBox="0 0 24 24"><polyline points="9 6 15 12 9 18"></polyline></svg>
+          {%- else -%}<svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        {%- endcase -%}
+      </div>
+    {%- endif -%}
+  </div>
+</div>
+
+<script>
+(function(){
+  var root = document.getElementById('{{ gid }}');
+  if(!root || root.__grlInit) return; root.__grlInit = true;
+  window.__grlGal = true; // disable the standalone variant-filter snippet
+  var stage = root.querySelector('[data-grl-stage]');
+  var thumbsWrap = root.querySelector('[data-grl-thumbs]');
+  var chev = root.querySelector('[data-grl-chev]');
+  var allSlides = Array.prototype.slice.call(root.querySelectorAll('[data-grl-slide]'));
+  var allThumbs = thumbsWrap ? Array.prototype.slice.call(thumbsWrap.querySelectorAll('[data-grl-thumb]')) : [];
+  var MID = 'data-grl-mid';
+
+  // ---- Variant segment data ----
+  var MEDIA_ORDER = [{% for m in product.media %}"{{ m.id }}"{% unless forloop.last %},{% endunless %}{% endfor %}];
+  var VARIANTS = [
+    {% for v in product.variants -%}
+    { title: {{ v.title | json }}, media: {% if v.featured_media %}"{{ v.featured_media.id }}"{% else %}null{% endif %} }{% unless forloop.last %},{% endunless %}
+    {% endfor -%}
+  ];
+  var norm = function(x){ return (x==null?'':String(x)).trim().toLowerCase(); };
+  var marks = [];
+  VARIANTS.forEach(function(v){ if(!v.media) return; var i=MEDIA_ORDER.indexOf(v.media); if(i<0) return; marks.push({t:v.title,start:i}); });
+  marks.sort(function(a,b){ return a.start-b.start; });
+  if(marks.length) marks[0].start = 0;
+  var SEG = {};
+  marks.forEach(function(m,i){
+    var end = (i+1<marks.length) ? marks[i+1].start : MEDIA_ORDER.length;
+    var set = {}; MEDIA_ORDER.slice(m.start,end).forEach(function(x){ set[x]=1; });
+    SEG[norm(m.t)] = set;
+  });
+
+  // ---- State ----
+  var curKey = null;          // currently applied variant key (guards redundant resets)
+  var curSet = null;          // null = all visible
+  var visSlides = allSlides;
+  var visThumbs = allThumbs;
+  var idx = 0;
+  var isMobile = window.matchMedia('(max-width:749px)').matches;
+
+  function rebuildVisible(){
+    if(!curSet){ visSlides = allSlides.slice(); visThumbs = allThumbs.slice(); }
+    else {
+      visSlides = allSlides.filter(function(el){ return curSet[el.getAttribute(MID)]; });
+      visThumbs = allThumbs.filter(function(el){ return curSet[el.getAttribute(MID)]; });
+    }
+    allSlides.forEach(function(el){ el.style.display = (curSet && !curSet[el.getAttribute(MID)]) ? 'none' : ''; });
+    allThumbs.forEach(function(el){ el.style.display = (curSet && !curSet[el.getAttribute(MID)]) ? 'none' : ''; });
+  }
+
+  function show(i){
+    if(!visSlides.length) return;
+    if(i < 0) i = visSlides.length - 1;
+    if(i >= visSlides.length) i = 0;
+    idx = i;
+    visSlides.forEach(function(el,j){ el.classList.toggle('grl-mg__slide--active', j===i); });
+    visThumbs.forEach(function(el,j){ el.classList.toggle('grl-mg__thumb--active', j===i); });
+    var at = visThumbs[i];
+    if(at && at.scrollIntoView) at.scrollIntoView({ block:'nearest', inline:'nearest', behavior:'smooth' });
+  }
+
+  function setVariant(title){
+    var key = norm(title);
+    if(key === curKey) return;          // same variant — do NOT reset the image
+    curKey = key;
+    curSet = SEG[key] || null;
+    rebuildVisible();
+    show(0);
+  }
+
+  // ---- Thumbnail clicks ----
+  if(thumbsWrap){
+    thumbsWrap.addEventListener('click', function(e){
+      var t = e.target.closest('[data-grl-thumb]'); if(!t) return;
+      var id = t.getAttribute(MID);
+      for(var j=0;j<visSlides.length;j++){ if(visSlides[j].getAttribute(MID)===id){ show(j); break; } }
+    });
+  }
+
+  // ---- Chevron cursor + click nav ----
+  if(chev){
+    var raf=null, cx=0, cy=0, side=null, active=false;
+    function paint(){ chev.style.transform = 'translate('+cx+'px,'+cy+'px)'; if(active) raf=requestAnimationFrame(paint); }
+    stage.addEventListener('mouseenter', function(){ if(isMobile) return; chev.classList.add('grl-mg__chev--on'); active=true; paint(); });
+    stage.addEventListener('mouseleave', function(){ chev.classList.remove('grl-mg__chev--on'); active=false; side=null; if(raf) cancelAnimationFrame(raf); });
+    stage.addEventListener('mousemove', function(e){
+      if(isMobile) return;
+      var r = stage.getBoundingClientRect();
+      cx = e.clientX - r.left; cy = e.clientY - r.top;
+      var ns = (cx < r.width/2) ? 'left' : 'right';
+      if(ns !== side){ side = ns; chev.classList.toggle('grl-mg__chev--left', ns==='left'); }
+    });
+  }
+  stage.addEventListener('click', function(e){
+    if(isMobile || visSlides.length < 2) return;
+    var r = stage.getBoundingClientRect();
+    if((e.clientX - r.left) < r.width/2) show(idx-1); else show(idx+1);
+  });
+  // Stop the double-click selection / blue highlight overlay
+  stage.addEventListener('dblclick', function(e){ e.preventDefault(); });
+  stage.addEventListener('selectstart', function(e){ e.preventDefault(); });
+  stage.addEventListener('mousedown', function(e){ if(e.detail > 1) e.preventDefault(); });
+
+  // ---- Mobile swipe ----
+  var tsx=0;
+  stage.addEventListener('touchstart', function(e){ tsx = e.touches[0].clientX; }, {passive:true});
+  stage.addEventListener('touchend', function(e){
+    var dx = e.changedTouches[0].clientX - tsx;
+    if(Math.abs(dx) < 40 || visSlides.length < 2) return;
+    if(dx < 0) show(idx+1); else show(idx-1);
+  }, {passive:true});
+
+  // ---- Variant picker wiring ----
+  function syncVariant(){ var c = document.querySelector('input[name="grl_type"]:checked'); if(c) setVariant(c.value); }
+  document.addEventListener('change', function(e){ if(e.target && e.target.name==='grl_type') setTimeout(syncVariant, 20); }, true);
+  document.addEventListener('click', function(e){
+    var l = e.target && e.target.closest && e.target.closest('label.grl-variant-label');
+    if(l){ var inp = l.querySelector('input[name="grl_type"]'); if(inp) setTimeout(function(){ setVariant(inp.value); }, 30); }
+  }, true);
+  window.matchMedia('(max-width:749px)').addEventListener('change', function(e){ isMobile = e.matches; });
+
+  // ---- Init ----
+  syncVariant();
+})();
+</script>
