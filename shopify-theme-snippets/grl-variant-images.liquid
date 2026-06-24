@@ -1,0 +1,153 @@
+{%- comment -%}
+  GRL — Variant-based product media filtering
+  ------------------------------------------------------------------
+  Each variant has exactly ONE image assigned in Shopify (its featured
+  media). That assigned image acts as a BOUNDARY MARKER in the gallery.
+  A variant "owns" every image from its own marker up to (but not
+  including) the next variant's marker. The last variant owns everything
+  from its marker to the end of the gallery.
+
+  Example (3 variants):
+    pos 1  Double Armoured (marker) ─┐ DA
+    pos 2-4                          ─┘
+    pos 5  Glass Case (marker)       ─┐ Glass
+    pos 6-9                          ─┘
+    pos 10 Slim Snap Case (marker)   ─┐ Slim
+    pos 11-12                        ─┘
+
+  Selecting a variant (radio name="grl_type") shows only that variant's
+  segment and hides the rest, in both the main slideshow and the
+  thumbnails. Works for any number of variants. Single-variant products
+  are skipped entirely (no filtering needed).
+{%- endcomment -%}
+{%- if request.page_type == 'product' and product.variants.size > 1 -%}
+<script>
+(function () {
+  if (window.__grlVImg) return; window.__grlVImg = true;
+
+  // ---- Server-rendered data -------------------------------------------
+  // Gallery media IDs in display order (match data-media-id in the DOM)
+  var MEDIA_ORDER = [{% for m in product.media %}"{{ m.id }}"{% unless forloop.last %},{% endunless %}{% endfor %}];
+  // Variants in option order, each with its single assigned media id
+  var VARIANTS = [
+    {% for v in product.variants -%}
+    { title: {{ v.title | json }}, media: {% if v.featured_media %}"{{ v.featured_media.id }}"{% else %}null{% endif %} }{% unless forloop.last %},{% endunless %}
+    {% endfor -%}
+  ];
+
+  if (!MEDIA_ORDER.length || VARIANTS.length < 2) return;
+
+  // ---- Build per-variant segments from boundary markers ----------------
+  var marks = [];
+  VARIANTS.forEach(function (v) {
+    if (!v.media) return;
+    var idx = MEDIA_ORDER.indexOf(v.media);
+    if (idx < 0) return;
+    marks.push({ title: v.title, start: idx });
+  });
+  if (marks.length < 2) return; // nothing meaningful to filter
+  marks.sort(function (a, b) { return a.start - b.start; });
+  // Absorb any leading un-assigned images into the first variant
+  marks[0].start = 0;
+
+  var SEG = {};            // normalized title -> { set: {mediaId:1}, ids: [...] }
+  var norm = function (s) { return (s == null ? '' : String(s)).trim().toLowerCase(); };
+  marks.forEach(function (m, i) {
+    var end = (i + 1 < marks.length) ? marks[i + 1].start : MEDIA_ORDER.length;
+    var ids = MEDIA_ORDER.slice(m.start, end);
+    var set = {}; ids.forEach(function (x) { set[x] = 1; });
+    SEG[norm(m.title)] = { set: set, ids: ids };
+  });
+  var ORDER = marks.map(function (m) { return norm(m.title); });
+
+  // ---- DOM helpers -----------------------------------------------------
+  function scroller() {
+    return document.querySelector('slideshow-slides[ref="scroller"]')
+        || document.querySelector('slideshow-slides');
+  }
+  function selectedTitle() {
+    var c = document.querySelector('input[name="grl_type"]:checked');
+    return c ? norm(c.value) : ORDER[0];
+  }
+
+  function apply() {
+    var seg = SEG[selectedTitle()];
+    if (!seg) return;
+    var set = seg.set;
+
+    // 1) Main slideshow slides
+    var slides = document.querySelectorAll('slideshow-slide');
+    var firstVisible = null;
+    slides.forEach(function (slide) {
+      var pm = slide.querySelector('[data-media-id]');
+      var id = pm && pm.getAttribute('data-media-id');
+      var show = id ? !!set[id] : true; // unknown elements stay visible
+      slide.style.display = show ? '' : 'none';
+      slide.toggleAttribute('aria-hidden', !show);
+      if (show && !firstVisible) firstVisible = slide;
+    });
+
+    // 2) Thumbnails (same order as slides). Toggle by matching index.
+    var thumbs = document.querySelectorAll('.slideshow-controls__thumbnail');
+    if (thumbs.length === slides.length) {
+      slides.forEach(function (slide, i) {
+        thumbs[i].style.display = (slide.style.display === 'none') ? 'none' : '';
+      });
+    }
+
+    // 3) Bring the first image of the segment into view
+    if (firstVisible) scrollToSlide(firstVisible);
+  }
+
+  function scrollToSlide(slide) {
+    var sc = scroller();
+    if (!sc) return;
+    try {
+      var delta = slide.getBoundingClientRect().left - sc.getBoundingClientRect().left;
+      if (Math.abs(delta) > 1) sc.scrollLeft += delta;
+    } catch (e) {}
+  }
+
+  // ---- Wiring ----------------------------------------------------------
+  var raf;
+  function schedule() { cancelAnimationFrame(raf); raf = requestAnimationFrame(apply); }
+
+  // Re-filter when the variant changes (let theme logic run first)
+  document.addEventListener('change', function (e) {
+    if (e.target && e.target.name === 'grl_type') setTimeout(apply, 60);
+  });
+  // Some pickers fire clicks without change events
+  document.addEventListener('click', function (e) {
+    if (e.target && e.target.closest && e.target.closest('label.grl-variant-label')) {
+      setTimeout(apply, 80);
+    }
+  });
+
+  // Re-apply if the gallery re-renders its slides (variant media swap, etc.)
+  function watch() {
+    var sc = scroller();
+    if (!sc) return false;
+    new MutationObserver(schedule).observe(sc, { childList: true, subtree: true });
+    return true;
+  }
+
+  function init() {
+    apply();
+    if (!watch()) {
+      // gallery not ready yet — retry briefly
+      var tries = 0, t = setInterval(function () {
+        tries++;
+        if (watch() || tries > 20) { clearInterval(t); apply(); }
+      }, 150);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+  window.addEventListener('load', apply);
+})();
+</script>
+{%- endif -%}
