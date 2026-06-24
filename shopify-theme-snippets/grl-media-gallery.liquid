@@ -234,7 +234,8 @@
   #{{ gid }} .grl-mg__slide { position:absolute; inset:0; width:100%; height:100%; opacity:0;
     transition: opacity {{ fade_ms }}ms {{ fade_ease }}; pointer-events:none; display:flex; align-items:center; justify-content:center; }
   #{{ gid }} .grl-mg__slide img, #{{ gid }} .grl-mg__slide video, #{{ gid }} .grl-mg__slide iframe {
-    width:100%; height:100%; object-fit: var(--grl-fit); display:block; -webkit-user-drag:none; }
+    width:100% !important; height:100% !important; max-width:none !important; max-height:none !important;
+    object-fit: var(--grl-fit) !important; object-position:center center !important; display:block; -webkit-user-drag:none; }
   #{{ gid }} .grl-mg__slide--active { opacity:1; z-index:1; }
 
   /* chevron cursor (desktop) */
