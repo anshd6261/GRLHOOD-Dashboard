@@ -1,30 +1,87 @@
 {%- comment -%}
-  GRL — Custom product media gallery (renders INSIDE the gallery block,
-  so it lands in the native media column — no layout breakage).
-  Uses data-grl-mid (NOT data-media-id) to stay decoupled from the
-  legacy __grlFI variant script. Params: block, product (closest.product)
+  GRL — Custom product media gallery (renders INSIDE the gallery block).
+  Per-device controls: Desktop / Tablet / Mobile each get their own layout,
+  sizing, padding, background and navigation style (thumbnails / pager / none).
+  Uses data-grl-mid (NOT data-media-id) to stay decoupled from the legacy
+  __grlFI variant script. Params: block, product (closest.product)
 {%- endcomment -%}
 {%- liquid
   assign s = block.settings
   assign gid = 'grlmg-' | append: block.id | replace: ':', '-'
 
-  assign thumb_pos = s.grl_thumb_position | default: 'left'
-  assign thumb_valign = s.grl_thumb_valign | default: 'center'
-  assign gap = s.grl_gap | default: 12
-  assign max_h = s.grl_max_height | default: 0
+  # ---------- per-device helper values ----------
+  # Desktop
+  assign d_nav = s.grl_d_nav | default: 'thumbs'
+  assign d_pos = s.grl_d_pos | default: 'left'
+  assign d_valign = s.grl_d_valign | default: 'center'
+  assign d_thumb_w = s.grl_d_thumb_w | default: 64
+  assign d_thumb_gap = s.grl_d_thumb_gap | default: 8
+  assign d_thumb_aspect = s.grl_d_thumb_aspect | default: '1/1.18'
+  assign d_gap = s.grl_d_gap | default: 12
+  assign d_aspect = s.grl_d_aspect | default: '3/3.75'
+  assign d_fit = s.grl_d_fit | default: 'contain'
+  assign d_radius = s.grl_d_radius | default: 16
+  assign d_bg = s.grl_d_bg | default: '#f4f4f4'
+  assign d_maxh = s.grl_d_maxh | default: 0
+  assign d_pt = s.grl_d_pt | default: 0
+  assign d_pb = s.grl_d_pb | default: 0
+  assign d_pl = s.grl_d_pl | default: 0
+  assign d_pr = s.grl_d_pr | default: 0
 
-  assign ratio = s.grl_aspect | default: '3/3.75'
-  assign img_fit = s.grl_image_fit | default: 'contain'
-  assign main_radius = s.grl_main_radius | default: 16
-  assign main_border_w = s.grl_main_border_width | default: 0
-  assign main_border_c = s.grl_main_border_color | default: '#00000000'
-  assign main_bg = s.grl_main_bg | default: '#f4f4f4'
-  assign sh_blur = s.grl_shadow_blur | default: 0
-  assign sh_y = s.grl_shadow_y | default: 0
-  assign sh_color = s.grl_shadow_color | default: '#000000'
-  assign sh_op = s.grl_shadow_opacity | default: 0
+  # Tablet
+  assign t_nav = s.grl_t_nav | default: 'thumbs'
+  assign t_pos = s.grl_t_pos | default: 'left'
+  assign t_valign = s.grl_t_valign | default: 'center'
+  assign t_thumb_w = s.grl_t_thumb_w | default: 56
+  assign t_thumb_gap = s.grl_t_thumb_gap | default: 8
+  assign t_thumb_aspect = s.grl_t_thumb_aspect | default: '1/1.18'
+  assign t_gap = s.grl_t_gap | default: 10
+  assign t_aspect = s.grl_t_aspect | default: '3/3.75'
+  assign t_fit = s.grl_t_fit | default: 'contain'
+  assign t_radius = s.grl_t_radius | default: 16
+  assign t_bg = s.grl_t_bg | default: '#f4f4f4'
+  assign t_maxh = s.grl_t_maxh | default: 0
+  assign t_pt = s.grl_t_pt | default: 0
+  assign t_pb = s.grl_t_pb | default: 0
+  assign t_pl = s.grl_t_pl | default: 0
+  assign t_pr = s.grl_t_pr | default: 0
+
+  # Mobile
+  assign m_nav = s.grl_m_nav | default: 'pager'
+  assign m_pos = s.grl_m_pos | default: 'bottom'
+  assign m_valign = s.grl_m_valign | default: 'center'
+  assign m_thumb_w = s.grl_m_thumb_w | default: 46
+  assign m_thumb_gap = s.grl_m_thumb_gap | default: 6
+  assign m_thumb_aspect = s.grl_m_thumb_aspect | default: '1/1.18'
+  assign m_gap = s.grl_m_gap | default: 8
+  assign m_aspect = s.grl_m_aspect | default: '3/3.75'
+  assign m_fit = s.grl_m_fit | default: 'contain'
+  assign m_radius = s.grl_m_radius | default: 14
+  assign m_bg = s.grl_m_bg | default: '#ffffff'
+  assign m_maxh = s.grl_m_maxh | default: 0
+  assign m_pt = s.grl_m_pt | default: 0
+  assign m_pb = s.grl_m_pb | default: 0
+  assign m_pl = s.grl_m_pl | default: 0
+  assign m_pr = s.grl_m_pr | default: 0
+
+  # ---------- shared style ----------
   assign fade_ms = s.grl_fade_duration | default: 280
   assign fade_ease = s.grl_fade_easing | default: 'ease'
+  assign main_border_w = s.grl_main_border_width | default: 0
+  assign main_border_c = s.grl_main_border_color | default: '#000000'
+  assign sh_blur = s.grl_shadow_blur | default: 24
+  assign sh_y = s.grl_shadow_y | default: 10
+  assign sh_color = s.grl_shadow_color | default: '#000000'
+  assign sh_op = s.grl_shadow_opacity | default: 0
+
+  assign thumb_radius = s.grl_thumb_radius | default: 10
+  assign t_pad = s.grl_thumb_strip_padding | default: 4
+  assign t_border = s.grl_thumb_border | default: 1
+  assign t_border_op = s.grl_thumb_border_opacity | default: 30
+  assign t_active_c = s.grl_thumb_active_color | default: '#111111'
+  assign t_active_w = s.grl_thumb_active_width | default: 2
+  assign t_active_scale = s.grl_thumb_active_scale | default: 104
+  assign t_shadow_op = s.grl_thumb_shadow_opacity | default: 6
 
   assign chev_on = s.grl_chevron_enable | default: true
   assign chev_style = s.grl_chevron_style | default: 'chevron'
@@ -38,97 +95,170 @@
   assign chev_sh_color = s.grl_chevron_shadow_color | default: '#000000'
   assign chev_sh_op = s.grl_chevron_shadow_opacity | default: 12
 
-  assign thumb_w = s.grl_thumb_width | default: 64
-  assign thumb_aspect = s.grl_thumb_aspect | default: '1/1.18'
-  assign thumb_gap = s.grl_thumb_gap | default: 8
-  assign t_pad = s.grl_thumb_strip_padding | default: 4
-  assign thumb_radius = s.grl_thumb_radius | default: 10
-  assign t_border = s.grl_thumb_border | default: 1
-  assign t_border_op = s.grl_thumb_border_opacity | default: 30
-  assign t_bg_op = s.grl_thumb_bg_opacity | default: 10
-  assign t_blur = s.grl_thumb_blur | default: 12
-  assign t_active_c = s.grl_thumb_active_color | default: '#111111'
-  assign t_active_w = s.grl_thumb_active_width | default: 2
-  assign t_active_scale = s.grl_thumb_active_scale | default: 104
-  assign t_shadow_op = s.grl_thumb_shadow_opacity | default: 6
-
-  assign pt = s['padding-block-start'] | default: 0
-  assign pb = s['padding-block-end'] | default: 0
-  assign pl = s['padding-inline-start'] | default: 0
-  assign pr = s['padding-inline-end'] | default: 0
+  assign pg_size = s.grl_pager_size | default: 13
+  assign pg_color = s.grl_pager_color | default: '#111111'
+  assign pg_bg = s.grl_pager_bg | default: '#ffffff'
+  assign pg_bg_op = s.grl_pager_bg_opacity | default: 80
+  assign pg_blur = s.grl_pager_blur | default: 10
+  assign pg_radius = s.grl_pager_radius | default: 999
+  assign pg_offset = s.grl_pager_offset | default: 14
 
   assign sh_a = sh_op | divided_by: 100.0
+  assign t_border_a = t_border_op | divided_by: 100.0
+  assign t_shadow_a = t_shadow_op | divided_by: 100.0
   assign chev_bg_a = chev_bg_op | divided_by: 100.0
   assign chev_sh_a = chev_sh_op | divided_by: 100.0
-  assign t_border_a = t_border_op | divided_by: 100.0
-  assign t_bg_a = t_bg_op | divided_by: 100.0
-  assign t_shadow_a = t_shadow_op | divided_by: 100.0
+  assign pg_bg_a = pg_bg_op | divided_by: 100.0
 
-  assign flex_dir = 'row'
-  if thumb_pos == 'right'
-    assign flex_dir = 'row-reverse'
-  elsif thumb_pos == 'bottom'
-    assign flex_dir = 'column-reverse'
+  # root flex direction + thumb orientation per device
+  assign d_root = 'row'
+  if d_pos == 'right'
+    assign d_root = 'row-reverse'
+  elsif d_pos == 'bottom'
+    assign d_root = 'column-reverse'
+  endif
+  assign t_root = 'row'
+  if t_pos == 'right'
+    assign t_root = 'row-reverse'
+  elsif t_pos == 'bottom'
+    assign t_root = 'column-reverse'
+  endif
+  assign m_root = 'row'
+  if m_pos == 'right'
+    assign m_root = 'row-reverse'
+  elsif m_pos == 'bottom'
+    assign m_root = 'column-reverse'
+  endif
+
+  assign d_maxh_v = 'none'
+  if d_maxh > 0
+    assign d_maxh_v = d_maxh | append: 'px'
+  endif
+  assign t_maxh_v = 'none'
+  if t_maxh > 0
+    assign t_maxh_v = t_maxh | append: 'px'
+  endif
+  assign m_maxh_v = 'none'
+  if m_maxh > 0
+    assign m_maxh_v = m_maxh | append: 'px'
   endif
 
   assign image_media = product.media | where: 'media_type', 'image'
 -%}
 
 <style>
-  #{{ gid }} { --grl-thumb-w: {{ thumb_w }}px; --grl-thumb-gap: {{ thumb_gap }}px; --grl-gap: {{ gap }}px;
-    display: flex; flex-direction: {{ flex_dir }}; gap: var(--grl-gap); width: 100%; box-sizing: border-box;
-    padding: {{ pt }}px {{ pr }}px {{ pb }}px {{ pl }}px; align-items: stretch;
-    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  /* ---------- base structure ---------- */
+  #{{ gid }} { display:flex; gap: var(--grl-gap); width:100%; box-sizing:border-box;
+    flex-direction: var(--grl-root-dir); align-items:stretch;
+    padding: var(--grl-pt) var(--grl-pr) var(--grl-pb) var(--grl-pl);
+    -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
 
-  /* Thumbnail column — relative wrapper keeps the scroller matched to the stage height */
-  #{{ gid }} .grl-mg__thumbcol { flex-shrink: 0; position: relative;
-    {% if thumb_pos == 'bottom' %}width: 100%;{% else %}width: calc(var(--grl-thumb-w) + {{ t_pad | times: 2 }}px);{% endif %} }
-  #{{ gid }} .grl-mg__thumbs { display: flex; gap: var(--grl-thumb-gap); padding: {{ t_pad }}px; box-sizing: border-box;
-    -ms-overflow-style: none; scrollbar-width: none;
-    {% if thumb_pos == 'bottom' %}flex-direction: row; width: 100%; overflow-x: auto; overflow-y: hidden; justify-content: {{ thumb_valign | replace: 'flex-start','flex-start' }};{% else %}flex-direction: column; position: absolute; inset: 0; overflow-y: auto; overflow-x: hidden; justify-content: safe {{ thumb_valign }};{% endif %} }
-  #{{ gid }} .grl-mg__thumbs::-webkit-scrollbar { display: none; }
-  #{{ gid }} .grl-mg__thumb { flex-shrink: 0; width: var(--grl-thumb-w); aspect-ratio: {{ thumb_aspect }}; border-radius: {{ thumb_radius }}px;
-    overflow: hidden; cursor: pointer; position: relative; padding: 0; border: 0; background: transparent;
-    box-shadow: inset 0 0 0 {{ t_border }}px rgba(255,255,255,{{ t_border_a }}), 0 1px 5px rgba(0,0,0,{{ t_shadow_a }});
+  #{{ gid }} .grl-mg__thumbcol { flex-shrink:0; position:relative; }
+  #{{ gid }} .grl-mg__thumbs { display:flex; gap: var(--grl-thumb-gap); padding: {{ t_pad }}px; box-sizing:border-box;
+    -ms-overflow-style:none; scrollbar-width:none; }
+  #{{ gid }} .grl-mg__thumbs::-webkit-scrollbar { display:none; }
+  #{{ gid }} .grl-mg__thumb { flex-shrink:0; width: var(--grl-thumb-w); aspect-ratio: var(--grl-thumb-aspect);
+    border-radius: {{ thumb_radius }}px; overflow:hidden; cursor:pointer; position:relative; padding:0; border:0; background:transparent;
+    box-shadow: 0 1px 5px rgba(0,0,0,{{ t_shadow_a }});
     transition: transform .25s cubic-bezier(.22,1,.36,1), box-shadow .25s ease; }
   #{{ gid }} .grl-mg__thumb::before { content:''; position:absolute; inset:0; z-index:1; pointer-events:none;
-    border-radius: inherit;
-    box-shadow: inset 0 0 0 {{ t_border }}px rgba(255,255,255,{{ t_border_a }});
-    }
-  #{{ gid }} .grl-mg__thumb img { width:100%; height:100%; object-fit: cover; display:block; -webkit-user-drag:none; user-select:none; }
+    border-radius:inherit; box-shadow: inset 0 0 0 {{ t_border }}px rgba(255,255,255,{{ t_border_a }}); }
+  #{{ gid }} .grl-mg__thumb img { width:100%; height:100%; object-fit:cover; display:block; -webkit-user-drag:none; user-select:none; }
   #{{ gid }} .grl-mg__thumb--active { transform: scale({{ t_active_scale | divided_by: 100.0 }});
     box-shadow: inset 0 0 0 {{ t_active_w }}px {{ t_active_c }}, 0 3px 12px rgba(0,0,0,.14); }
 
-  /* Stage */
-  #{{ gid }} .grl-mg__stage { flex:1; min-width:0; position:relative; border-radius: {{ main_radius }}px; overflow:hidden;
-    aspect-ratio: {{ ratio }}; {% if max_h > 0 %}max-height: {{ max_h }}px;{% endif %} background: {{ main_bg }};
-    width:100%; align-self: stretch; -webkit-user-select:none; user-select:none;
+  /* stage */
+  #{{ gid }} .grl-mg__stage { flex:1; min-width:0; position:relative; overflow:hidden;
+    border-radius: var(--grl-main-radius); aspect-ratio: var(--grl-aspect); max-height: var(--grl-max-h);
+    background: var(--grl-main-bg); width:100%; align-self:stretch; -webkit-user-select:none; user-select:none;
     {% if main_border_w > 0 %}border: {{ main_border_w }}px solid {{ main_border_c }};{% endif %}
-    {% if sh_op > 0 %}box-shadow: 0 {{ sh_y }}px {{ sh_blur }}px {{ sh_color | color_modify: 'alpha', sh_a }};{% endif %}
-    {% if chev_on %}cursor: none;{% endif %} }
-  #{{ gid }} .grl-mg__slide { position:absolute; inset:0; width:100%; height:100%; opacity:0; transition: opacity {{ fade_ms }}ms {{ fade_ease }};
-    pointer-events:none; display:flex; align-items:center; justify-content:center; }
-  #{{ gid }} .grl-mg__slide img, #{{ gid }} .grl-mg__slide video, #{{ gid }} .grl-mg__slide iframe { width:100%; height:100%; object-fit: {{ img_fit }}; display:block; -webkit-user-drag:none; }
+    {% if sh_op > 0 %}box-shadow: 0 {{ sh_y }}px {{ sh_blur }}px {{ sh_color | color_modify: 'alpha', sh_a }};{% endif %} }
+  #{{ gid }} .grl-mg__slide { position:absolute; inset:0; width:100%; height:100%; opacity:0;
+    transition: opacity {{ fade_ms }}ms {{ fade_ease }}; pointer-events:none; display:flex; align-items:center; justify-content:center; }
+  #{{ gid }} .grl-mg__slide img, #{{ gid }} .grl-mg__slide video, #{{ gid }} .grl-mg__slide iframe {
+    width:100%; height:100%; object-fit: var(--grl-fit); display:block; -webkit-user-drag:none; }
   #{{ gid }} .grl-mg__slide--active { opacity:1; z-index:1; }
 
-  /* Chevron cursor */
+  /* chevron cursor */
   #{{ gid }} .grl-mg__chev { position:absolute; z-index:5; top:0; left:0; width:{{ chev_size }}px; height:{{ chev_size }}px;
     margin:-{{ chev_size | divided_by: 2 }}px 0 0 -{{ chev_size | divided_by: 2 }}px; pointer-events:none; opacity:0;
     display:flex; align-items:center; justify-content:center; border-radius:50%;
     background: {{ chev_bg | color_modify: 'alpha', chev_bg_a }};
     {% if chev_blur > 0 %}backdrop-filter: blur({{ chev_blur }}px); -webkit-backdrop-filter: blur({{ chev_blur }}px);{% endif %}
     box-shadow: 0 2px {{ chev_sh_blur }}px {{ chev_sh_color | color_modify: 'alpha', chev_sh_a }};
-    transition: opacity .22s ease, transform .14s cubic-bezier(.22,1,.36,1); will-change: transform; }
+    transition: opacity .22s ease, transform .14s cubic-bezier(.22,1,.36,1); will-change:transform; }
   #{{ gid }} .grl-mg__chev--on { opacity:1; }
-  #{{ gid }} .grl-mg__chev svg { width:48%; height:48%; stroke:{{ chev_icon }}; stroke-width:{{ chev_stroke }}; fill:{% if chev_style == 'triangle' %}{{ chev_icon }}{% else %}none{% endif %};
-    stroke-linecap:round; stroke-linejoin:round; transition: transform .18s ease; }
+  #{{ gid }} .grl-mg__chev svg { width:48%; height:48%; stroke:{{ chev_icon }}; stroke-width:{{ chev_stroke }};
+    fill:{% if chev_style == 'triangle' %}{{ chev_icon }}{% else %}none{% endif %}; stroke-linecap:round; stroke-linejoin:round;
+    transition: transform .18s ease; }
   #{{ gid }} .grl-mg__chev--left svg { transform: rotate(180deg); }
 
-  @media (max-width: 749px) {
-    #{{ gid }} { flex-direction: column-reverse; gap: 8px; padding: 0; align-items: stretch; --grl-thumb-w: 48px; --grl-thumb-gap: 6px; }
-    #{{ gid }} .grl-mg__thumbcol { width: 100%; }
-    #{{ gid }} .grl-mg__thumbs { position: static; inset: auto; flex-direction: row; width:100%; overflow-x:auto; overflow-y:hidden; padding: 4px 8px; justify-content: flex-start; gap: var(--grl-thumb-gap); }
-    #{{ gid }} .grl-mg__stage { cursor: default; max-height: none; }
+  /* pager  ‹ 1 / 3 › */
+  #{{ gid }} .grl-mg__pager { position:absolute; z-index:4; left:50%; bottom:{{ pg_offset }}px; transform:translateX(-50%);
+    display:none; align-items:center; gap:6px; padding:5px 8px; border-radius:{{ pg_radius }}px;
+    background:{{ pg_bg | color_modify: 'alpha', pg_bg_a }};
+    {% if pg_blur > 0 %}backdrop-filter: blur({{ pg_blur }}px); -webkit-backdrop-filter: blur({{ pg_blur }}px);{% endif %}
+    box-shadow:0 2px 12px rgba(0,0,0,.12); -webkit-user-select:none; user-select:none;
+    font-size:{{ pg_size }}px; line-height:1; color:{{ pg_color }};
+    font-family:inherit; font-variant-numeric:tabular-nums; }
+  #{{ gid }} .grl-mg__pager--hidden { display:none !important; }
+  #{{ gid }} .grl-mg__pg-btn { display:flex; align-items:center; justify-content:center; width:{{ pg_size | plus: 9 }}px;
+    height:{{ pg_size | plus: 9 }}px; padding:0; margin:0; border:0; background:transparent; cursor:pointer; border-radius:50%;
+    color:{{ pg_color }}; -webkit-tap-highlight-color:transparent; transition:opacity .15s ease, transform .15s ease; }
+  #{{ gid }} .grl-mg__pg-btn:active { transform:scale(.86); }
+  #{{ gid }} .grl-mg__pg-btn svg { width:{{ pg_size | plus: 2 }}px; height:{{ pg_size | plus: 2 }}px; stroke:currentColor;
+    stroke-width:2.2; fill:none; stroke-linecap:round; stroke-linejoin:round; }
+  #{{ gid }} .grl-mg__pg-count { min-width:34px; text-align:center; font-weight:600; letter-spacing:.3px; }
+  #{{ gid }} .grl-mg__pg-count em { font-style:normal; opacity:.5; margin:0 2px; }
+
+  /* ---------- DESKTOP (base, applies ≥1200 after overrides) ---------- */
+  #{{ gid }} {
+    --grl-root-dir: {{ d_root }};
+    --grl-gap: {{ d_gap }}px; --grl-thumb-w: {{ d_thumb_w }}px; --grl-thumb-gap: {{ d_thumb_gap }}px;
+    --grl-thumb-aspect: {{ d_thumb_aspect }}; --grl-thumb-valign: {{ d_valign }};
+    --grl-aspect: {{ d_aspect }}; --grl-fit: {{ d_fit }}; --grl-main-radius: {{ d_radius }}px;
+    --grl-main-bg: {{ d_bg }}; --grl-max-h: {{ d_maxh_v }};
+    --grl-pt: {{ d_pt }}px; --grl-pb: {{ d_pb }}px; --grl-pl: {{ d_pl }}px; --grl-pr: {{ d_pr }}px; }
+  #{{ gid }} .grl-mg__thumbcol { display:{% if d_nav == 'thumbs' %}block{% else %}none{% endif %};
+    {% if d_pos == 'bottom' %}width:100%;{% else %}width:calc(var(--grl-thumb-w) + {{ t_pad | times: 2 }}px);{% endif %} }
+  #{{ gid }} .grl-mg__thumbs {
+    {% if d_pos == 'bottom' %}flex-direction:row; position:static; inset:auto; width:100%; overflow-x:auto; overflow-y:hidden; justify-content:safe center;{% else %}flex-direction:column; position:absolute; inset:0; overflow-y:auto; overflow-x:hidden; justify-content:safe {{ d_valign }};{% endif %} }
+  #{{ gid }} .grl-mg__pager { display:{% if d_nav == 'pager' %}flex{% else %}none{% endif %}; }
+  #{{ gid }} .grl-mg__stage { cursor:{% if chev_on %}none{% else %}default{% endif %}; }
+
+  /* ---------- TABLET ---------- */
+  @media (min-width:750px) and (max-width:1199px) {
+    #{{ gid }} {
+      --grl-root-dir: {{ t_root }};
+      --grl-gap: {{ t_gap }}px; --grl-thumb-w: {{ t_thumb_w }}px; --grl-thumb-gap: {{ t_thumb_gap }}px;
+      --grl-thumb-aspect: {{ t_thumb_aspect }}; --grl-thumb-valign: {{ t_valign }};
+      --grl-aspect: {{ t_aspect }}; --grl-fit: {{ t_fit }}; --grl-main-radius: {{ t_radius }}px;
+      --grl-main-bg: {{ t_bg }}; --grl-max-h: {{ t_maxh_v }};
+      --grl-pt: {{ t_pt }}px; --grl-pb: {{ t_pb }}px; --grl-pl: {{ t_pl }}px; --grl-pr: {{ t_pr }}px; }
+    #{{ gid }} .grl-mg__thumbcol { display:{% if t_nav == 'thumbs' %}block{% else %}none{% endif %};
+      {% if t_pos == 'bottom' %}width:100%;{% else %}width:calc(var(--grl-thumb-w) + {{ t_pad | times: 2 }}px);{% endif %} }
+    #{{ gid }} .grl-mg__thumbs {
+      {% if t_pos == 'bottom' %}flex-direction:row; position:static; inset:auto; width:100%; overflow-x:auto; overflow-y:hidden; justify-content:safe center;{% else %}flex-direction:column; position:absolute; inset:0; overflow-y:auto; overflow-x:hidden; justify-content:safe {{ t_valign }};{% endif %} }
+    #{{ gid }} .grl-mg__pager { display:{% if t_nav == 'pager' %}flex{% else %}none{% endif %}; }
+    #{{ gid }} .grl-mg__stage { cursor:{% if chev_on %}none{% else %}default{% endif %}; }
+  }
+
+  /* ---------- MOBILE ---------- */
+  @media (max-width:749px) {
+    #{{ gid }} {
+      --grl-root-dir: {{ m_root }};
+      --grl-gap: {{ m_gap }}px; --grl-thumb-w: {{ m_thumb_w }}px; --grl-thumb-gap: {{ m_thumb_gap }}px;
+      --grl-thumb-aspect: {{ m_thumb_aspect }}; --grl-thumb-valign: {{ m_valign }};
+      --grl-aspect: {{ m_aspect }}; --grl-fit: {{ m_fit }}; --grl-main-radius: {{ m_radius }}px;
+      --grl-main-bg: {{ m_bg }}; --grl-max-h: {{ m_maxh_v }};
+      --grl-pt: {{ m_pt }}px; --grl-pb: {{ m_pb }}px; --grl-pl: {{ m_pl }}px; --grl-pr: {{ m_pr }}px;
+      align-items:stretch; }
+    #{{ gid }} .grl-mg__thumbcol { display:{% if m_nav == 'thumbs' %}block{% else %}none{% endif %};
+      {% if m_pos == 'bottom' %}width:100%;{% else %}width:calc(var(--grl-thumb-w) + {{ t_pad | times: 2 }}px);{% endif %} }
+    #{{ gid }} .grl-mg__thumbs {
+      {% if m_pos == 'bottom' %}flex-direction:row; position:static; inset:auto; width:100%; overflow-x:auto; overflow-y:hidden; justify-content:safe center;{% else %}flex-direction:column; position:absolute; inset:0; overflow-y:auto; overflow-x:hidden; justify-content:safe {{ m_valign }};{% endif %} }
+    #{{ gid }} .grl-mg__pager { display:{% if m_nav == 'pager' %}flex{% else %}none{% endif %}; }
+    #{{ gid }} .grl-mg__stage { cursor:default; }
     #{{ gid }} .grl-mg__chev { display:none; }
   }
 </style>
@@ -159,6 +289,7 @@
         {%- endif -%}
       </div>
     {%- endfor -%}
+
     {%- if chev_on -%}
       <div class="grl-mg__chev" data-grl-chev>
         {%- case chev_style -%}
@@ -170,6 +301,12 @@
         {%- endcase -%}
       </div>
     {%- endif -%}
+
+    <div class="grl-mg__pager" data-grl-pager>
+      <button type="button" class="grl-mg__pg-btn" data-grl-prev aria-label="Previous image"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg></button>
+      <span class="grl-mg__pg-count"><span data-grl-cur>1</span><em>/</em><span data-grl-tot>1</span></span>
+      <button type="button" class="grl-mg__pg-btn" data-grl-next aria-label="Next image"><svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg></button>
+    </div>
   </div>
 </div>
 
@@ -181,6 +318,9 @@
   var stage = root.querySelector('[data-grl-stage]');
   var thumbsWrap = root.querySelector('[data-grl-thumbs]');
   var chev = root.querySelector('[data-grl-chev]');
+  var pager = root.querySelector('[data-grl-pager]');
+  var pgCur = root.querySelector('[data-grl-cur]');
+  var pgTot = root.querySelector('[data-grl-tot]');
   var allSlides = Array.prototype.slice.call(root.querySelectorAll('[data-grl-slide]'));
   var allThumbs = thumbsWrap ? Array.prototype.slice.call(thumbsWrap.querySelectorAll('[data-grl-thumb]')) : [];
   var MID = 'data-grl-mid';
@@ -205,8 +345,8 @@
   });
 
   // ---- State ----
-  var curKey = null;          // currently applied variant key (guards redundant resets)
-  var curSet = null;          // null = all visible
+  var curKey = null;
+  var curSet = null;
   var visSlides = allSlides;
   var visThumbs = allThumbs;
   var idx = 0;
@@ -220,6 +360,7 @@
     }
     allSlides.forEach(function(el){ el.style.display = (curSet && !curSet[el.getAttribute(MID)]) ? 'none' : ''; });
     allThumbs.forEach(function(el){ el.style.display = (curSet && !curSet[el.getAttribute(MID)]) ? 'none' : ''; });
+    if(pager) pager.classList.toggle('grl-mg__pager--hidden', visSlides.length < 2);
   }
 
   function show(i){
@@ -229,13 +370,15 @@
     idx = i;
     visSlides.forEach(function(el,j){ el.classList.toggle('grl-mg__slide--active', j===i); });
     visThumbs.forEach(function(el,j){ el.classList.toggle('grl-mg__thumb--active', j===i); });
+    if(pgCur) pgCur.textContent = (i+1);
+    if(pgTot) pgTot.textContent = visSlides.length;
     var at = visThumbs[i];
     if(at && at.scrollIntoView) at.scrollIntoView({ block:'nearest', inline:'nearest', behavior:'smooth' });
   }
 
   function setVariant(title){
     var key = norm(title);
-    if(key === curKey) return;          // same variant — do NOT reset the image
+    if(key === curKey) return;
     curKey = key;
     curSet = SEG[key] || null;
     rebuildVisible();
@@ -249,6 +392,14 @@
       var id = t.getAttribute(MID);
       for(var j=0;j<visSlides.length;j++){ if(visSlides[j].getAttribute(MID)===id){ show(j); break; } }
     });
+  }
+
+  // ---- Pager ----
+  if(pager){
+    var prev = pager.querySelector('[data-grl-prev]');
+    var next = pager.querySelector('[data-grl-next]');
+    if(prev) prev.addEventListener('click', function(e){ e.stopPropagation(); show(idx-1); });
+    if(next) next.addEventListener('click', function(e){ e.stopPropagation(); show(idx+1); });
   }
 
   // ---- Chevron cursor + click nav ----
@@ -267,20 +418,21 @@
   }
   stage.addEventListener('click', function(e){
     if(isMobile || visSlides.length < 2) return;
+    if(e.target.closest('[data-grl-pager]')) return;
     var r = stage.getBoundingClientRect();
     if((e.clientX - r.left) < r.width/2) show(idx-1); else show(idx+1);
   });
-  // Stop the double-click selection / blue highlight overlay
   stage.addEventListener('dblclick', function(e){ e.preventDefault(); });
   stage.addEventListener('selectstart', function(e){ e.preventDefault(); });
   stage.addEventListener('mousedown', function(e){ if(e.detail > 1) e.preventDefault(); });
 
   // ---- Mobile swipe ----
-  var tsx=0;
-  stage.addEventListener('touchstart', function(e){ tsx = e.touches[0].clientX; }, {passive:true});
+  var tsx=0, tsy=0;
+  stage.addEventListener('touchstart', function(e){ tsx = e.touches[0].clientX; tsy = e.touches[0].clientY; }, {passive:true});
   stage.addEventListener('touchend', function(e){
     var dx = e.changedTouches[0].clientX - tsx;
-    if(Math.abs(dx) < 40 || visSlides.length < 2) return;
+    var dy = e.changedTouches[0].clientY - tsy;
+    if(Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy) || visSlides.length < 2) return;
     if(dx < 0) show(idx+1); else show(idx-1);
   }, {passive:true});
 
@@ -294,6 +446,8 @@
   window.matchMedia('(max-width:749px)').addEventListener('change', function(e){ isMobile = e.matches; });
 
   // ---- Init ----
+  rebuildVisible();
+  show(0);
   syncVariant();
 })();
 </script>
