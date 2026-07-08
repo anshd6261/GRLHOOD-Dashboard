@@ -564,10 +564,17 @@ html, body {
 }
 
 /* Payment Badges - Restricted to Pink/Black */
-.badge-prepaid, .badge-cod { 
-  background: rgba(227, 207, 216, 0.08); 
-  border: 1px solid rgba(227, 207, 216, 0.15); 
-  color: rgba(245, 245, 245, 0.9); 
+.badge-prepaid, .badge-cod {
+  background: rgba(227, 207, 216, 0.08);
+  border: 1px solid rgba(227, 207, 216, 0.15);
+  color: rgba(245, 245, 245, 0.9);
+}
+
+/* Partially Paid - amber accent to stand out */
+.badge-partial {
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid rgba(251, 191, 36, 0.25);
+  color: #fbbf24;
 }
 
 /* ═══════════════════════════════════════════

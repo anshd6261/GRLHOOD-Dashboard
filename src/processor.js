@@ -103,12 +103,18 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
 
         // Determine payment method — Shopify tags are the source of truth
         const tags = (order.tags || []).map(t => t.toLowerCase());
+        // Normalized tags (strip spaces/underscores/hyphens) for robust matching
+        const normTags = tags.map(t => t.replace(/[\s_-]/g, ''));
         let payment = 'Cash on Delivery';
 
         if (tags.includes('prepaid')) {
             payment = 'Prepaid';
+        } else if (normTags.includes('partiallypaid') || normTags.includes('partial') || tags.includes('partially paid')) {
+            payment = 'Partially Paid';
         } else if (tags.includes('cod')) {
             payment = 'Cash on Delivery';
+        } else if (order.displayFinancialStatus === 'PARTIALLY_PAID') {
+            payment = 'Partially Paid';
         } else {
             // Fallback to gateway detection if no tags
             const gateways = (order.paymentGatewayNames || []).join(' ').toLowerCase();
@@ -121,8 +127,17 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
             }
         }
 
-        // --- Shiprocket Sense RTO Risk ---
-        const senseResult = senseRiskMap[orderId] || senseRiskMap[displayOrderId] || null;
+        // --- RTO Risk from Shopify tags (HIGH_RISK / MEDIUM_RISK) ---
+        // Risk now comes directly from order tags, not Shiprocket Sense.
+        let tagRiskLevel = 'Low';
+        let tagRiskScore = 10;
+        if (normTags.some(t => t.includes('highrisk'))) {
+            tagRiskLevel = 'High';
+            tagRiskScore = 85;
+        } else if (normTags.some(t => t.includes('mediumrisk') || t.includes('midiumrisk'))) {
+            tagRiskLevel = 'Medium';
+            tagRiskScore = 50;
+        }
 
         // Process line items
         const orderRows = [];
@@ -283,14 +298,12 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
                     fulfillmentStatus: order.displayFulfillmentStatus || 'UNFULFILLED',
                     tags: order.tags || [],
                     createdAt: order.createdAt,
-                    // Shiprocket Sense RTO Risk Data
-                    // model_probability is confidence in the prediction — invert for low risk so higher % = higher risk
-                    aiRiskScore: senseResult ? calculateRtoPercentage(senseResult) : 0,
-                    aiRiskLevel: senseResult ? mapRiskLevel(senseResult.risk) : 'Unknown',
-                    aiRiskReasons: senseResult ? [
-                        ...senseResult.reasons,
-                        ...(senseResult.riskTags || []).map(t => t.reason),
-                    ].filter(Boolean) : ['RTO check unavailable'],
+                    // RTO Risk from Shopify order tags (HIGH_RISK / MEDIUM_RISK)
+                    aiRiskScore: tagRiskScore,
+                    aiRiskLevel: tagRiskLevel,
+                    aiRiskReasons: tagRiskLevel === 'Low'
+                        ? ['No risk tag on order']
+                        : [`Tagged ${tagRiskLevel.toUpperCase()}_RISK in Shopify`],
                 });
             }
         }

@@ -970,16 +970,15 @@ function App() {
 
                                   {/* Tags: Payment + Repeat */}
                                   <div className="flex items-center gap-1.5 mt-2.5">
-                                    <span className={`text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider ${group.payment === 'Prepaid' ? 'badge-prepaid' : 'badge-cod'}`}>
+                                    <span className={`text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider ${group.payment === 'Prepaid' ? 'badge-prepaid' : group.payment === 'Partially Paid' ? 'badge-partial' : 'badge-cod'}`}>
                                       {group.payment || 'Prepaid'}
                                     </span>
-                                    {group.items[0].aiRiskLevel && (
+                                    {group.items[0].aiRiskLevel && group.items[0].aiRiskLevel !== 'Low' && group.items[0].aiRiskLevel !== 'Unknown' && (
                                       <span
                                         onClick={(e) => { e.stopPropagation(); setDetailModalOrder({ ...group.items[0], allItems: group.items }); }}
                                         className={`cursor-pointer text-[9px] uppercase font-black px-2.5 py-0.5 rounded-full tracking-wider hover:brightness-125 transition-all ${
                                           group.items[0].aiRiskLevel === 'High' ? 'bg-[rgba(255,20,147,0.15)] border border-[rgba(255,20,147,0.3)] text-[#ff1493] drop-shadow-[0_0_8px_rgba(255,20,147,0.4)]' :
-                                          group.items[0].aiRiskLevel === 'Medium' ? 'bg-[rgba(227,207,216,0.1)] border border-[rgba(227,207,216,0.2)] text-[#e3cfd8]' :
-                                          'bg-[rgba(245,245,245,0.05)] border border-[rgba(245,245,245,0.1)] text-[rgba(245,245,245,0.5)]'
+                                          'bg-[rgba(227,207,216,0.1)] border border-[rgba(227,207,216,0.2)] text-[#e3cfd8]'
                                         }`}
                                       >
                                         RTO: {group.items[0].aiRiskLevel}
