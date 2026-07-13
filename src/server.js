@@ -720,9 +720,14 @@ app.post('/api/rapidshyp/resolve-shipments', async (req, res) => {
 
 // Ship — create the order(s) on iThink. The waybill (AWB) is returned immediately.
 // Frontend sends full order objects (address + items + payment) under `orders`.
+// Courier: by default iThink's own recommendation engine assigns the courier.
+// Pass `logistics` (e.g. "xpressbees", "dtdc") to force a specific courier —
+// used for manual re-ship after a serviceability failure.
+// Failed shipments are auto-diagnosed (pincode serviceability + courier
+// alternatives) so the UI can offer a manual courier picker.
 app.post('/api/rapidshyp/assign-batch', async (req, res) => {
     try {
-        const { orders, orderIds } = req.body;
+        const { orders, orderIds, logistics } = req.body;
         if (!orders?.length) {
             return res.status(400).json({
                 error: 'Missing order data. iThink needs full order details (address + items) to ship. Re-run from the wizard.',
@@ -730,12 +735,40 @@ app.post('/api/rapidshyp/assign-batch', async (req, res) => {
             });
         }
 
-        console.log(`[API] iThink ship: creating ${orders.length} order(s)`);
-        const result = await ithink.createOrders(orders);
+        console.log(`[API] iThink ship: creating ${orders.length} order(s)${logistics ? ` via ${logistics}` : ' (auto courier)'}`);
+        const result = await ithink.createOrders(orders, logistics ? { logistics } : {});
+
+        // Diagnose failures: what's wrong + which couriers ARE available
+        const failures = result.results.filter(r => !r.success && r.pincode);
+        for (const f of failures.slice(0, 15)) { // cap to avoid hammering the API
+            try {
+                f.diagnosis = await ithink.diagnoseServiceability({
+                    pincode: f.pincode,
+                    paymentMethod: f.paymentMethod,
+                    mrp: f.mrp,
+                });
+            } catch (dErr) {
+                console.warn(`[API] diagnose failed for #${f.orderId}:`, dErr.message);
+            }
+        }
+
         res.json(result);
     } catch (e) {
         console.error('[API] iThink ship error:', e.response?.data || e.message);
         res.status(500).json({ error: e.message });
+    }
+});
+
+// Diagnose a pincode: serviceability + available couriers with rates/TAT.
+app.post('/api/rapidshyp/diagnose', async (req, res) => {
+    try {
+        const { pincode, payment, paymentMethod, mrp } = req.body;
+        if (!pincode) return res.status(400).json({ error: 'No pincode provided' });
+        const method = paymentMethod || (String(payment || '').toLowerCase().includes('prepaid') ? 'prepaid' : 'cod');
+        const result = await ithink.diagnoseServiceability({ pincode, paymentMethod: method, mrp: mrp || 0 });
+        res.json({ success: true, ...result });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
@@ -744,9 +777,15 @@ app.post('/api/rapidshyp/schedule-pickup', async (req, res) => {
     res.json({ success: true, scheduled: 0, message: 'iThink schedules pickup automatically at order creation' });
 });
 
-// Wallet — iThink V3 has no public wallet-balance endpoint. Report unavailable gracefully.
+// Wallet — attempts iThink wallet endpoints; the public API does not document
+// one, so this degrades gracefully with a dashboard link when unavailable.
 app.get('/api/rapidshyp/wallet', async (req, res) => {
-    res.json({ success: false, balance: null, message: 'Wallet balance not available via iThink API' });
+    try {
+        const result = await ithink.getWalletBalance();
+        res.json(result);
+    } catch (e) {
+        res.json({ success: false, balance: null, message: e.message });
+    }
 });
 
 // Track a shipment by AWB

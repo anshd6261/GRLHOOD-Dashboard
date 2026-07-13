@@ -4,7 +4,7 @@ import {
   X, ShieldCheck, Smartphone, ClipboardCheck, Download, Truck,
   FileText, CheckCircle, AlertTriangle, ChevronDown, ChevronUp,
   Phone, MessageSquare, Trash2, RefreshCw, ArrowRight, ArrowLeft,
-  Package, Users, ExternalLink, Calendar
+  Package, Users, ExternalLink, Calendar, UploadCloud
 } from 'lucide-react';
 import axios from 'axios';
 
@@ -203,27 +203,49 @@ const CsvRow = React.memo(function CsvRow({ r, i, isSupplier, onCategory, onMode
   );
 });
 
-export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, isSupplier }) {
-  const [step, setStep] = useState(0);
-  const [done, setDone] = useState(new Set());
+export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, isSupplier, resume }) {
+  const [step, setStep] = useState(resume?.step || 0);
+  const [done, setDone] = useState(() => new Set(resume?.doneSteps || []));
   const [workingOrders, setWorkingOrders] = useState([]);
   const [expandedIds, setExpandedIds] = useState(new Set());
   const [cancellingId, setCancellingId] = useState(null);
   const [walletBalance, setWalletBalance] = useState(null);
+  const [walletInfo, setWalletInfo] = useState(null); // { message, dashboardUrl } when balance unavailable
   const [walletLoading, setWalletLoading] = useState(false);
-  const [approveResult, setApproveResult] = useState(null);
+  const [approveResult, setApproveResult] = useState(resume?.approveResult || null);
   const [approveLoading, setApproveLoading] = useState(false);
-  const [shipResults, setShipResults] = useState(null);
+  const [shipResults, setShipResults] = useState(resume?.shipResults || null);
   const [shipLoading, setShipLoading] = useState(false);
-  const [labelResult, setLabelResult] = useState(null);
+  const [labelResult, setLabelResult] = useState(resume?.labelResult || null);
   const [labelLoading, setLabelLoading] = useState(false);
-  const [dlStatus, setDlStatus] = useState(null);
+  const [dlStatus, setDlStatus] = useState(resume?.dlStatus === 'done' ? 'done' : null);
+  const [nbeUploaded, setNbeUploaded] = useState(resume?.nbeUploaded || false);
   const [toast, setToast] = useState(null);
   const [verifiedIds, setVerifiedIds] = useState(new Set());
   const [approveProgress, setApproveProgress] = useState(null); // { done, total }
   const [shipProgress, setShipProgress] = useState(null);
   const [nbeUploadedIds] = useState(() => { try { return new Set(JSON.parse(localStorage.getItem('nbe_uploaded_ids') || '[]')); } catch { return new Set(); } });
   const [labelProgress, setLabelProgress] = useState(null);
+  const [retryCouriers, setRetryCouriers] = useState({}); // orderId -> selected courier for manual re-ship
+  const [retryingId, setRetryingId] = useState(null);
+
+  // ═══ Fulfillment Run Persistence (History tab reads these) ═══
+  const runIdRef = React.useRef(resume?.id || `run_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`);
+  const saveRun = useCallback((patch = {}) => {
+    try {
+      const runs = JSON.parse(localStorage.getItem('fulfillment_runs') || '[]');
+      const idx = runs.findIndex(r => r.id === runIdRef.current);
+      const existing = idx > -1 ? runs[idx] : {
+        id: runIdRef.current,
+        batchName: `${getOrdinalDate()} Order`,
+        startedAt: new Date().toISOString(),
+      };
+      const updated = { ...existing, ...patch, updatedAt: new Date().toISOString() };
+      if (idx > -1) runs[idx] = updated; else runs.unshift(updated);
+      // Keep the last 25 runs (workingOrders payloads are heavy)
+      localStorage.setItem('fulfillment_runs', JSON.stringify(runs.slice(0, 25)));
+    } catch (e) { console.warn('saveRun failed:', e.message); }
+  }, []);
 
   // ═══ Action History Logger ═══
   const logAction = useCallback((action, details = {}) => {
@@ -242,6 +264,12 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   }, []);
 
   useEffect(() => {
+    // Resuming a saved run: restore the exact CSV rows (post-edit/delete) so the
+    // ship step only touches the orders that were in the approved CSV.
+    if (resume?.workingOrders?.length) {
+      setWorkingOrders(resume.workingOrders);
+      return;
+    }
     setWorkingOrders(orders.map(o => {
       const saved = localStorage.getItem(`model_override_${o.orderId}_${o.sku}`);
       return { ...o, model: saved || o.model || '' };
@@ -272,6 +300,35 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   const markDone = (s) => setDone(prev => new Set([...prev, s]));
   const goNext = () => { markDone(step); setStep(s => Math.min(s + 1, STEPS.length - 1)); };
   const goBack = () => setStep(s => Math.max(s - 1, 0));
+
+  // Persist run state whenever meaningful progress happens (enables Resume from History)
+  useEffect(() => {
+    if (!workingOrders.length) return;
+    const groupsById = {};
+    workingOrders.forEach(o => { groupsById[o.orderId] = o.payment; });
+    const orderTotals = {};
+    workingOrders.forEach(o => { if (o.orderTotal) orderTotals[o.orderId] = o.orderTotal; });
+    let prepaidValue = 0, codValue = 0;
+    Object.entries(orderTotals).forEach(([id, total]) => {
+      if (groupsById[id] === 'Prepaid') prepaidValue += total; else codValue += total;
+    });
+    saveRun({
+      step,
+      doneSteps: [...done],
+      completed: step === STEPS.length - 1,
+      workingOrders,
+      orderCount: [...new Set(workingOrders.map(o => o.orderId))].length,
+      unitCount: workingOrders.length,
+      prepaidValue: Math.round(prepaidValue),
+      codValue: Math.round(codValue),
+      shipResults,
+      labelResult: labelResult ? { label_pdf_url: labelResult.label_pdf_url || labelResult.labelUrl, dropboxPath: labelResult.dropboxPath } : null,
+      dlStatus,
+      nbeUploaded,
+      approveResult: approveResult ? { approved: approveResult.approved, alreadyApproved: approveResult.alreadyApproved } : null,
+      errors: (shipResults?.results || []).filter(r => !r.success).map(r => ({ orderId: r.orderId, message: r.message, issue: r.diagnosis?.issue })),
+    });
+  }, [step, done, workingOrders, shipResults, labelResult, dlStatus, nbeUploaded]);
 
   const handleModelUpdate = useCallback((i, val) => {
     setWorkingOrders(prev => {
@@ -529,7 +586,8 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   );
 
   // ═══ STEP 4: Download ═══
-  const handleDownload = async () => {
+  // Two modes: CSV only (download + Dropbox backup), or CSV + NBE portal order upload.
+  const handleDownload = async (withNbe) => {
     setDlStatus('dl');
     try {
       // Download supplier CSV
@@ -543,30 +601,36 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
         const u2 = window.URL.createObjectURL(new Blob([resF.data], { type: 'text/csv' }));
         const a2 = document.createElement('a'); a2.href = u2; a2.download = resF.headers['x-filename'] || 'Financial.csv'; a2.click();
       }
-      // Upload to Dropbox + NBE Portal in parallel
+      // Dropbox backup always; NBE portal order only when requested
       setDlStatus('dbx');
-      const [dbxRes, nbeRes] = await Promise.allSettled([
+      const jobs = [
         axios.post(`${API_URL}/dropbox/upload`, { orders: workingOrders }).catch(e => { console.warn('Dropbox upload failed:', e.message); return { data: { success: false, error: e.message } }; }),
-        axios.post(`${API_URL}/nbe/upload-order`, { rows: workingOrders }, { timeout: 120000 }).catch(e => {
+      ];
+      if (withNbe) {
+        jobs.push(axios.post(`${API_URL}/nbe/upload-order`, { rows: workingOrders }, { timeout: 120000 }).catch(e => {
           const payload = e.response?.data || { success: false, error: e.message };
           console.warn('NBE upload failed:', payload);
           return { data: { ...payload, success: false } };
-        })
-      ]);
-      const nbeOk = nbeRes.status === 'fulfilled' && nbeRes.value?.data?.success;
-      const nbeErr = !nbeOk && (nbeRes.value?.data?.error || nbeRes.reason?.message || '');
+        }));
+      }
+      const [dbxRes, nbeRes] = await Promise.allSettled(jobs);
+      const nbeOk = withNbe && nbeRes?.status === 'fulfilled' && nbeRes.value?.data?.success;
+      const nbeErr = withNbe && !nbeOk && (nbeRes?.value?.data?.error || nbeRes?.reason?.message || '');
       setDlStatus('done');
+      setNbeUploaded(!!nbeOk);
       if (nbeErr) console.error('[NBE] Upload error details:', nbeRes.value?.data);
       // Track orders uploaded to NBE Portal
       if (nbeOk) {
         try {
-          const nbeUploaded = JSON.parse(localStorage.getItem('nbe_uploaded_ids') || '[]');
-          uniqueIds.forEach(id => { if (!nbeUploaded.includes(id)) nbeUploaded.push(id); });
-          localStorage.setItem('nbe_uploaded_ids', JSON.stringify(nbeUploaded));
+          const nbeIds = JSON.parse(localStorage.getItem('nbe_uploaded_ids') || '[]');
+          uniqueIds.forEach(id => { if (!nbeIds.includes(id)) nbeIds.push(id); });
+          localStorage.setItem('nbe_uploaded_ids', JSON.stringify(nbeIds));
         } catch {}
       }
-      setToast({ msg: nbeOk ? 'CSVs downloaded, backed up & NBE order created' : `CSVs downloaded & backed up${nbeErr ? ` (NBE: ${nbeErr})` : ''}` });
-      logAction('download_csv', { orders: uniqueIds.length, units: workingOrders.length, nbeOk, dropboxOk: dbxRes.status === 'fulfilled' });
+      setToast({ msg: nbeOk ? 'CSVs downloaded, backed up & NBE order created'
+        : withNbe ? `CSVs downloaded & backed up${nbeErr ? ` (NBE failed: ${nbeErr})` : ''}`
+        : 'CSVs downloaded & backed up to Dropbox' });
+      logAction('download_csv', { orders: uniqueIds.length, units: workingOrders.length, withNbe: !!withNbe, nbeOk: !!nbeOk, dropboxOk: dbxRes.status === 'fulfilled' });
     } catch (e) { setDlStatus('err'); setToast({ msg: `Download failed: ${e.message}`, err: true }); }
   };
 
@@ -578,15 +642,33 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           <div><div className="text-3xl font-black text-white">{workingOrders.length}</div><div className="text-[10px] text-[rgba(245,245,245,0.3)] uppercase tracking-wider mt-1">units</div></div>
         </div>
         {dlStatus === 'done' ? (
-          <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }}><CheckCircle size={32} className="mx-auto text-emerald-400" /><p className="text-sm font-bold text-emerald-400 mt-2">Downloaded & Backed Up</p></motion.div>
+          <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }}>
+            <CheckCircle size={32} className="mx-auto text-emerald-400" />
+            <p className="text-sm font-bold text-emerald-400 mt-2">Downloaded & Backed Up{nbeUploaded ? ' · NBE Order Created' : ''}</p>
+            {!nbeUploaded && (
+              <button onClick={() => handleDownload(true)} className="glass-btn px-5 py-2 rounded-xl text-xs font-bold mt-3 inline-flex items-center gap-2 text-amber-400 border-amber-400/20">
+                <UploadCloud size={12} /> Upload to NBE Portal Now
+              </button>
+            )}
+          </motion.div>
+        ) : (dlStatus === 'dl' || dlStatus === 'dbx') ? (
+          <div className="flex items-center justify-center gap-2 text-sm font-bold text-[#e3cfd8]">
+            <RefreshCw size={14} className="animate-spin" />
+            {dlStatus === 'dl' ? 'Downloading...' : 'Backing up to Dropbox...'}
+          </div>
         ) : (
-          <button onClick={handleDownload} disabled={dlStatus === 'dl' || dlStatus === 'dbx'}
-            className="glass-btn-accent px-8 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5 mx-auto">
-            {dlStatus === 'dl' ? <><RefreshCw size={14} className="animate-spin" /> Downloading...</> :
-             dlStatus === 'dbx' ? <><RefreshCw size={14} className="animate-spin" /> Uploading to Dropbox...</> :
-             <><Download size={14} /> Download CSV{!isSupplier ? 's' : ''}</>}
-          </button>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button onClick={() => handleDownload(false)}
+              className="glass-btn px-6 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5">
+              <Download size={14} /> Download CSV Only
+            </button>
+            <button onClick={() => handleDownload(true)}
+              className="glass-btn-accent px-6 py-3 rounded-xl text-sm font-bold flex items-center gap-2.5">
+              <Download size={14} /> Download CSV + NBE Order Upload
+            </button>
+          </div>
         )}
+        <p className="text-[10px] text-[rgba(245,245,245,0.25)]">Both options back up the CSVs to Dropbox. NBE upload also places the order on the supplier portal.</p>
       </div>
     </div>
   );
@@ -594,8 +676,12 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
   // ═══ STEP 5: Bulk Ship ═══
   const fetchWallet = async () => {
     setWalletLoading(true);
-    try { const r = await axios.get(`${API_URL}/rapidshyp/wallet`); setWalletBalance(r.data?.balance); }
-    catch { setWalletBalance(null); }
+    try {
+      const r = await axios.get(`${API_URL}/rapidshyp/wallet`);
+      setWalletBalance(r.data?.success ? r.data.balance : null);
+      setWalletInfo(r.data?.success ? null : { message: r.data?.message, dashboardUrl: r.data?.dashboardUrl });
+    }
+    catch { setWalletBalance(null); setWalletInfo({ message: 'Wallet check failed' }); }
     finally { setWalletLoading(false); }
   };
   useEffect(() => { if ((step === 4 || step === 5) && walletBalance === null) fetchWallet(); }, [step]);
@@ -708,6 +794,36 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
     setShipLoading(false);
   };
 
+  // Re-ship a single failed order with a manually chosen courier
+  // (e.g. pincode unserviceable by recommended courier → pick Xpressbees/DTDC/etc.)
+  const handleRetryShip = async (orderId, courier) => {
+    if (!courier) { setToast({ msg: 'Pick a courier first', err: true }); return; }
+    setRetryingId(orderId);
+    try {
+      const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, {
+        orders: [buildShipPayload(orderId)],
+        logistics: courier.toLowerCase(),
+      });
+      const result = (r.data?.results || [])[0];
+      setShipResults(prev => {
+        const results = (prev?.results || []).map(x => x.orderId === orderId ? { ...result, retriedWith: courier } : x);
+        return { ...prev, results };
+      });
+      if (result?.success && result.awb) {
+        try {
+          const m = JSON.parse(localStorage.getItem('awbMap') || '{}');
+          m[orderId] = result.awb;
+          localStorage.setItem('awbMap', JSON.stringify(m));
+        } catch {}
+        setToast({ msg: `#${orderId} shipped via ${courier} · AWB ${result.awb}` });
+      } else {
+        setToast({ msg: `#${orderId} still failed: ${result?.message || 'unknown'}`, err: true });
+      }
+    } catch (e) {
+      setToast({ msg: `Retry failed: ${e.response?.data?.error || e.message}`, err: true });
+    } finally { setRetryingId(null); }
+  };
+
   const estCost = uniqueIds.length * 85;
   const rechargeNeeded = walletBalance !== null ? Math.max(0, estCost - walletBalance + 500) : estCost;
   const rechargeMsg = encodeURIComponent(`Hey, we need a wallet recharge for iThink Logistics.\n\nToday's Order: ${uniqueIds.length} orders\nEstimated Shipping: Rs${estCost}\nCurrent Balance: Rs${walletBalance !== null ? walletBalance : 'N/A'}\nPlease recharge: Rs${rechargeNeeded}\n\nThanks`);
@@ -783,12 +899,22 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
         </div>
         <div className="flex justify-between items-center">
           <span className="text-xs text-[rgba(245,245,245,0.4)] flex items-center gap-2">
-            Wallet <button onClick={fetchWallet} disabled={walletLoading} className="glass-btn p-1 rounded-md"><RefreshCw size={9} className={walletLoading?'animate-spin':''} /></button>
+            iThink Wallet <button onClick={fetchWallet} disabled={walletLoading} className="glass-btn p-1 rounded-md"><RefreshCw size={9} className={walletLoading?'animate-spin':''} /></button>
           </span>
-          <span className={`text-base font-black ${walletBalance !== null && walletBalance < 0 ? 'text-[#ff1493]' : 'text-white'}`}>
-            {walletBalance !== null ? `Rs${walletBalance}` : '...'}
-          </span>
+          {walletBalance !== null ? (
+            <span className={`text-base font-black ${walletBalance < 0 ? 'text-[#ff1493]' : 'text-white'}`}>Rs{walletBalance}</span>
+          ) : walletLoading ? (
+            <span className="text-base font-black text-white">...</span>
+          ) : (
+            <a href={walletInfo?.dashboardUrl || 'https://my.ithinklogistics.com/'} target="_blank" rel="noopener noreferrer"
+              className="text-[11px] font-bold text-[#e3cfd8] underline underline-offset-2 hover:brightness-125">
+              Check on iThink Dashboard ↗
+            </a>
+          )}
         </div>
+        {walletBalance === null && !walletLoading && (
+          <p className="text-[9px] text-[rgba(245,245,245,0.25)] -mt-2">{walletInfo?.message || 'iThink API does not expose wallet balance'}</p>
+        )}
         {walletBalance !== null && walletBalance < estCost && (
           <a href={`https://wa.me/?text=${rechargeMsg}`} target="_blank" rel="noopener noreferrer"
             className="glass-btn w-full py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-2 text-amber-400 border-amber-400/20">
@@ -811,18 +937,50 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       {shipResults ? (
         <div className="glass-card-sm p-3 space-y-2">
           <div className="flex items-center gap-2"><CheckCircle size={13} className="text-emerald-400" /><span className="text-xs font-bold text-emerald-400">{shipResults.results?.filter(r=>r.success).length}/{shipResults.results?.length} assigned</span></div>
-          <div className="max-h-40 overflow-y-auto space-y-1">
+          <div className="max-h-72 overflow-y-auto space-y-1">
             {shipResults.results?.map((r,i) => (
-              <div key={i} className={`flex items-center justify-between text-[10px] px-2 py-1 rounded-lg ${r.success?'bg-[rgba(52,211,153,0.05)]':'bg-[rgba(255,20,147,0.05)]'}`}>
-                <span className="font-bold text-white">#{r.orderId}</span>
-                {r.success ? <span className="text-emerald-400 font-mono">{r.awb||'OK'}</span> : <span className="text-[#ff1493]">{r.message}</span>}
-              </div>
+              r.success ? (
+                <div key={i} className="flex items-center justify-between text-[10px] px-2 py-1 rounded-lg bg-[rgba(52,211,153,0.05)]">
+                  <span className="font-bold text-white">#{r.orderId}</span>
+                  <span className="flex items-center gap-2">
+                    {r.courier && <span className="text-[9px] uppercase font-bold text-[rgba(245,245,245,0.4)]">{r.courier}{r.retriedWith ? ' (manual)' : ''}</span>}
+                    <span className="text-emerald-400 font-mono">{r.awb||'OK'}</span>
+                  </span>
+                </div>
+              ) : (
+                <div key={i} className="text-[10px] px-2 py-1.5 rounded-lg bg-[rgba(255,20,147,0.05)] space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-white">#{r.orderId}</span>
+                    <span className="text-[#ff1493]">{r.message}</span>
+                  </div>
+                  {r.diagnosis?.issue && (
+                    <div className="text-[9px] text-amber-400 flex items-center gap-1"><AlertTriangle size={9} /> {r.diagnosis.issue}</div>
+                  )}
+                  {r.diagnosis?.couriers?.filter(c => c.serviceable).length > 0 ? (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <select value={retryCouriers[r.orderId] || ''} onChange={e => setRetryCouriers(p => ({ ...p, [r.orderId]: e.target.value }))}
+                        className="glass-input text-[9px] px-2 py-1 rounded-lg bg-[rgba(0,0,0,0.4)] text-white border border-[rgba(255,255,255,0.1)]">
+                        <option value="">Pick courier...</option>
+                        {r.diagnosis.couriers.filter(c => c.serviceable).map((c, ci) => (
+                          <option key={ci} value={c.name}>{c.name}{c.serviceType ? ` (${c.serviceType})` : ''}{c.rate ? ` · Rs${c.rate}` : ''}{c.tat ? ` · ${c.tat}d` : ''}</option>
+                        ))}
+                      </select>
+                      <button onClick={() => handleRetryShip(r.orderId, retryCouriers[r.orderId])} disabled={retryingId === r.orderId || !retryCouriers[r.orderId]}
+                        className="glass-btn px-2.5 py-1 rounded-lg text-[9px] font-bold text-emerald-400 border-emerald-400/20 disabled:opacity-40 flex items-center gap-1">
+                        {retryingId === r.orderId ? <RefreshCw size={9} className="animate-spin" /> : <Truck size={9} />} Ship via selected
+                      </button>
+                    </div>
+                  ) : r.diagnosis && (
+                    <div className="text-[9px] text-[rgba(245,245,245,0.35)]">No alternative courier services this pincode{r.diagnosis.pincode ? ` (${r.diagnosis.pincode})` : ''}. Contact the customer for an alternate address.</div>
+                  )}
+                </div>
+              )
             ))}
           </div>
         </div>
       ) : !shipLoading && (
         <button onClick={handleShip} disabled={approveLoading} className="glass-btn-accent w-full py-3 rounded-xl text-sm font-bold flex items-center justify-center gap-2">
-          <Truck size={13} /> Confirm & Ship All
+          <Truck size={13} /> Confirm & Ship All ({uniqueIds.length} orders from CSV)
         </button>
       )}
     </div>

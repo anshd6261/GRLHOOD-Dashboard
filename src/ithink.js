@@ -25,11 +25,15 @@ const ITHINK_BASE = (process.env.ITHINK_API_BASE || 'https://my.ithinklogistics.
 const PICKUP_ADDRESS_ID = (process.env.ITHINK_PICKUP_ADDRESS_ID || '119349').trim();
 const RETURN_ADDRESS_ID = (process.env.ITHINK_RETURN_ADDRESS_ID || PICKUP_ADDRESS_ID).trim();
 
-// Courier selection. Leave ITHINK_LOGISTICS blank for iThink auto-assignment,
-// or set a specific courier (delhivery, xpressbees, ekart, bluedart, dtdc...).
-// 'auto' = pick the cheapest serviceable courier via rate/check per order.
-const LOGISTICS = (process.env.ITHINK_LOGISTICS || 'delhivery').trim();
-const SERVICE_TYPE = (process.env.ITHINK_SERVICE_TYPE || '').trim(); // air | surface | ground (optional)
+// Courier selection. Default 'auto' = omit `logistics` from order/add.json so
+// iThink's own courier recommendation engine assigns the best courier per
+// shipment (docs: logistics is OPTIONAL). Set a specific courier name
+// (delhivery, bluedart, xpressbees, ecom, ekart...) to force one.
+const LOGISTICS = (process.env.ITHINK_LOGISTICS || 'auto').trim();
+const SERVICE_TYPE = (process.env.ITHINK_SERVICE_TYPE || '').trim(); // air | surface (bluedart/delhivery only)
+
+// Warehouse origin pincode — used for rate/check.json (courier recommendation + diagnosis).
+const FROM_PINCODE = (process.env.ITHINK_FROM_PINCODE || '201301').trim();
 
 // Default parcel dimensions/weight for GRLHOOD products (phone cases & grips — small/light).
 const DEFAULT_WEIGHT_KG = (process.env.ITHINK_DEFAULT_WEIGHT_KG || '0.3').trim();
@@ -148,7 +152,13 @@ const computeTotal = (order) => {
 const buildShipment = (order, overrides = {}) => {
     const ship = order.shippingDetails || {};
     const total = computeTotal(order);
-    const cod = isCOD(order.payment ?? order.payment_mode);
+    const paymentStr = String(order.payment ?? order.payment_mode ?? '').toLowerCase();
+    const isPartial = paymentStr.includes('partial');
+    const cod = isPartial || isCOD(order.payment ?? order.payment_mode);
+    // Partially Paid: amount already collected goes to advance_amount,
+    // outstanding balance is collected on delivery (cod_amount).
+    const advance = isPartial ? Math.min(parseFloat(order.amountReceived) || 0, total) : 0;
+    const codAmount = cod ? Math.max(0, total - advance) : 0;
     const orderRef = String(order.orderId ?? order.order ?? order.id ?? '').replace('#', '');
 
     return {
@@ -180,9 +190,10 @@ const buildShipment = (order, overrides = {}) => {
         total_discount: '0',
         first_attemp_discount: '0',
         cod_charges: '0',
-        advance_amount: '0',
-        cod_amount: cod ? String(total) : '0',
-        payment_mode: cod ? 'COD' : 'Prepaid',
+        advance_amount: String(advance),
+        cod_amount: String(codAmount),
+        // Docs: allowed values "cod" or "Prepaid" (default: cod)
+        payment_mode: cod ? 'cod' : 'Prepaid',
         return_address_id: RETURN_ADDRESS_ID,
     };
 };
@@ -192,32 +203,117 @@ const buildShipment = (order, overrides = {}) => {
 // ──────────────────────────────────────────────────────────────────────────
 
 /**
- * Pick the cheapest serviceable courier for an order (used when LOGISTICS='auto').
- * Returns a courier name (lowercase) or null.
+ * Get iThink's courier options for a destination via rate/check.json.
+ * Returns ALL couriers on the lane with serviceability flags, rate and TAT —
+ * sorted cheapest-first among serviceable options.
+ *
+ * @returns {{ success, couriers: Array<{name, serviceType, serviceable, cod, prepaid, rate, tat, zone}>, expectedDelivery, message }}
  */
-const pickCheapestCourier = async (order) => {
+const recommendCouriers = async ({ toPincode, paymentMethod = 'cod', mrp = 0, weightKg, length, width, height }) => {
     try {
-        const ship = order.shippingDetails || {};
-        const cod = isCOD(order.payment);
+        const wantCod = String(paymentMethod).toLowerCase() === 'cod';
         const data = await post('/rate/check.json', {
-            from_pincode: PICKUP_ADDRESS_ID ? undefined : undefined, // origin derived from warehouse pin below
-            to_pincode: String(ship.zip || ''),
-            shipping_length_cms: DEFAULT_LENGTH_CM,
-            shipping_width_cms: DEFAULT_WIDTH_CM,
-            shipping_height_cms: DEFAULT_HEIGHT_CM,
-            shipping_weight_kg: DEFAULT_WEIGHT_KG,
+            from_pincode: FROM_PINCODE,
+            to_pincode: String(toPincode || ''),
+            shipping_length_cms: String(length || DEFAULT_LENGTH_CM),
+            shipping_width_cms: String(width || DEFAULT_WIDTH_CM),
+            shipping_height_cms: String(height || DEFAULT_HEIGHT_CM),
+            shipping_weight_kg: String(weightKg || DEFAULT_WEIGHT_KG),
             order_type: 'forward',
-            payment_method: cod ? 'cod' : 'prepaid',
-            product_mrp: String(computeTotal(order)),
-            from_pincode_actual: undefined,
+            payment_method: wantCod ? 'cod' : 'prepaid',
+            product_mrp: String(mrp || 0),
         });
-        const options = (data?.data || []).filter(o => (cod ? o.cod === 'Y' : o.prepaid === 'Y'));
-        options.sort((a, b) => (parseFloat(a.rate) || 1e9) - (parseFloat(b.rate) || 1e9));
-        return options[0]?.logistic_name ? String(options[0].logistic_name).toLowerCase() : null;
+        const raw = Array.isArray(data?.data) ? data.data : [];
+        const couriers = raw.map(o => ({
+            name: String(o.logistic_name || ''),
+            serviceType: o.service_type || '',
+            serviceable: wantCod ? o.cod === 'Y' : o.prepaid === 'Y',
+            cod: o.cod === 'Y',
+            prepaid: o.prepaid === 'Y',
+            pickup: o.pickup === 'Y',
+            rate: parseFloat(o.rate) || null,
+            tat: o.delivery_tat || '',
+            zone: o.logistics_zone || '',
+        }));
+        // Serviceable first, cheapest first within each bucket
+        couriers.sort((a, b) => (b.serviceable - a.serviceable) || ((a.rate ?? 1e9) - (b.rate ?? 1e9)));
+        return {
+            success: String(data?.status || '').toLowerCase() === 'success',
+            couriers,
+            expectedDelivery: data?.expected_delivery_date || '',
+            zone: data?.zone || '',
+        };
     } catch (e) {
-        console.warn('[ITHINK] pickCheapestCourier failed:', e.message);
-        return null;
+        console.warn('[ITHINK] recommendCouriers failed:', e.message);
+        return { success: false, couriers: [], message: e.message };
     }
+};
+
+/**
+ * Diagnose why a shipment failed / whether a pincode is serviceable, and what
+ * courier alternatives exist. Combines pincode/check + rate/check.
+ *
+ * @returns {{ pincode, serviceable, issue, couriers, expectedDelivery }}
+ */
+const diagnoseServiceability = async ({ pincode, paymentMethod = 'cod', mrp = 0 }) => {
+    const pin = String(pincode || '').trim();
+    if (!/^\d{6}$/.test(pin)) {
+        return { pincode: pin, serviceable: false, issue: `Invalid pincode "${pin}" — must be 6 digits`, couriers: [] };
+    }
+
+    const [pinRes, rateRes] = await Promise.all([
+        checkPincode(pin),
+        recommendCouriers({ toPincode: pin, paymentMethod, mrp }),
+    ]);
+
+    const couriers = rateRes.couriers || [];
+    const available = couriers.filter(c => c.serviceable);
+    const wantCod = String(paymentMethod).toLowerCase() === 'cod';
+
+    let issue = null;
+    if (!pinRes.success || !pinRes.data) {
+        issue = `Pincode ${pin} is not serviceable by any courier`;
+    } else if (available.length === 0 && couriers.length > 0) {
+        issue = wantCod
+            ? `Pincode ${pin} has no COD-serviceable courier (prepaid may work)`
+            : `Pincode ${pin} has no prepaid-serviceable courier`;
+    } else if (available.length === 0) {
+        issue = `No courier services pincode ${pin} from warehouse ${FROM_PINCODE}`;
+    }
+
+    return {
+        pincode: pin,
+        serviceable: available.length > 0,
+        issue,
+        couriers,
+        availableCouriers: available.map(c => c.name),
+        expectedDelivery: rateRes.expectedDelivery || '',
+    };
+};
+
+/**
+ * Wallet balance. NOTE: iThink Logistics does NOT expose a wallet-balance
+ * endpoint in its public API (verified against docs v1/v2/v3 and by probing
+ * the API). We attempt known endpoint patterns in case one is enabled for
+ * this account; otherwise we report unavailable with a dashboard link.
+ */
+const getWalletBalance = async () => {
+    const candidates = ['/wallet/balance.json', '/wallet/get.json', '/account/balance.json'];
+    for (const path of candidates) {
+        try {
+            const data = await post(path, {}, 15000);
+            const bal = data?.data?.balance ?? data?.balance ?? data?.data?.wallet_balance ?? data?.wallet_balance;
+            if (bal !== undefined && bal !== null && data && String(data?.status || '').toLowerCase() === 'success') {
+                return { success: true, balance: parseFloat(bal), source: path };
+            }
+        } catch { /* try next */ }
+    }
+    return {
+        success: false,
+        balance: null,
+        message: 'iThink API does not expose wallet balance — check my.ithinklogistics.com dashboard',
+        dashboardUrl: 'https://my.ithinklogistics.com/',
+    };
 };
 
 /**
@@ -228,7 +324,8 @@ const pickCheapestCourier = async (order) => {
  * @returns {{ results: Array<{orderId, success, awb, courier, trackingUrl, message}> }}
  */
 const createOrders = async (orders, options = {}) => {
-    const logistics = (options.logistics || LOGISTICS).trim();
+    const logistics = (options.logistics || LOGISTICS).trim().toLowerCase();
+    const useRecommendation = !logistics || logistics === 'auto' || logistics === 'recommended';
     const results = [];
     const BATCH = 10; // iThink: max 10 shipments per request
 
@@ -239,11 +336,15 @@ const createOrders = async (orders, options = {}) => {
         const payload = {
             shipments,
             pickup_address_id: PICKUP_ADDRESS_ID,
+            order_type: 'forward',
         };
-        // Courier: omit for auto-assignment, else set chosen courier.
-        if (logistics && logistics !== 'auto') payload.logistics = logistics;
-        if (SERVICE_TYPE) payload.s_type = SERVICE_TYPE;
-        payload.order_type = '';
+        // Courier: omit `logistics` entirely for iThink's own recommendation
+        // engine to assign the courier; set it only to force a specific one
+        // (e.g. manual re-ship after a serviceability failure).
+        if (!useRecommendation) {
+            payload.logistics = logistics;
+            if (SERVICE_TYPE && ['bluedart', 'delhivery'].includes(logistics)) payload.s_type = SERVICE_TYPE;
+        }
 
         try {
             const data = await post('/order/add.json', payload, 90000);
@@ -264,7 +365,7 @@ const createOrders = async (orders, options = {}) => {
                         success: true,
                         awb: String(entry.waybill),
                         shipmentId: String(entry.waybill), // waybill IS the shipment id for iThink
-                        courier: entry.logistic_name || logistics || '',
+                        courier: entry.logistic_name || (useRecommendation ? '' : logistics),
                         trackingUrl: entry.tracking_url || '',
                         message: 'Created',
                     });
@@ -273,21 +374,34 @@ const createOrders = async (orders, options = {}) => {
                         orderId: orderRef,
                         success: false,
                         message: entry?.remark || data?.html_message || data?.status || 'Order creation failed',
+                        // Context for downstream diagnosis (pincode serviceability etc.)
+                        pincode: shipments[idx]?.pin || '',
+                        paymentMethod: shipments[idx]?.payment_mode || 'cod',
+                        mrp: shipments[idx]?.total_amount || '0',
+                        courierTried: useRecommendation ? 'auto (iThink recommendation)' : logistics,
                     });
                 }
             });
         } catch (e) {
             const msg = e.response?.data?.html_message || e.response?.data?.status || e.message;
             console.error('[ITHINK] createOrders batch failed:', msg);
-            batch.forEach(order => {
+            batch.forEach((order, idx) => {
                 const orderRef = String(order.orderId ?? order.id ?? '').replace('#', '');
-                results.push({ orderId: orderRef, success: false, message: typeof msg === 'string' ? msg : JSON.stringify(msg) });
+                results.push({
+                    orderId: orderRef,
+                    success: false,
+                    message: typeof msg === 'string' ? msg : JSON.stringify(msg),
+                    pincode: shipments[idx]?.pin || '',
+                    paymentMethod: shipments[idx]?.payment_mode || 'cod',
+                    mrp: shipments[idx]?.total_amount || '0',
+                    courierTried: useRecommendation ? 'auto (iThink recommendation)' : logistics,
+                });
             });
         }
     }
 
     const ok = results.filter(r => r.success).length;
-    console.log(`[ITHINK] createOrders: ${ok}/${orders.length} shipped`);
+    console.log(`[ITHINK] createOrders: ${ok}/${orders.length} shipped${useRecommendation ? ' (courier: iThink recommendation)' : ` (courier: ${logistics})`}`);
     return { results };
 };
 
@@ -433,6 +547,7 @@ const getWarehouses = async (warehouseId) => {
 module.exports = {
     ITHINK_BASE,
     PICKUP_ADDRESS_ID,
+    FROM_PINCODE,
     getCreds,
     buildShipment,
     createOrders,
@@ -444,6 +559,8 @@ module.exports = {
     checkPincode,
     getRate,
     getWarehouses,
-    pickCheapestCourier,
+    recommendCouriers,
+    diagnoseServiceability,
+    getWalletBalance,
     isCOD,
 };

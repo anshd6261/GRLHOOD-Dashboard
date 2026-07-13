@@ -7,7 +7,7 @@ import {
   UploadCloud, ChevronDown, ChevronUp, Box, MessageSquare,
   Trash2, ExternalLink, Calendar, CheckSquare,
   AlertTriangle, Edit3, X, Settings, LayoutDashboard, ClipboardCheck,
-  TrendingUp, Phone, XOctagon, Truck, FileText, LogOut
+  TrendingUp, Phone, XOctagon, Truck, FileText, LogOut, History
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import DottedBackground from './components/DottedBackground';
@@ -19,6 +19,7 @@ import ShipOrdersModal from './components/ShipOrdersModal';
 import FulfillOrdersWizard from './components/FulfillOrdersWizard';
 import Login from './Login';
 import SEODashboard from './pages/SEODashboard';
+import FulfillmentHistory from './pages/FulfillmentHistory';
 import { useAuth } from './AuthContext';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -230,6 +231,7 @@ function App() {
   const [shippingOrders, setShippingOrders] = useState(null);
   const [showFulfillWizard, setShowFulfillWizard] = useState(false);
   const [wizardOrders, setWizardOrders] = useState(null);
+  const [wizardResume, setWizardResume] = useState(null); // saved run to resume from History tab
   const justSelectedRef = useRef(false);
 
   // Accordion
@@ -621,6 +623,7 @@ function App() {
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'fulfill', label: 'Fulfill', icon: ClipboardCheck },
+    { id: 'history', label: 'History', icon: History },
     { id: 'finance', label: 'Finance', icon: TrendingUp },
     { id: 'seo', label: 'SEO', icon: Search },
   ];
@@ -1182,6 +1185,18 @@ function App() {
               </motion.div>
             )}
 
+            {/* ═══ HISTORY TAB ═══ */}
+            {activeTab === 'history' && (
+              <motion.div key="history" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                <FulfillmentHistory
+                  onResume={(run) => {
+                    setWizardResume(run);
+                    setShowFulfillWizard(true);
+                  }}
+                />
+              </motion.div>
+            )}
+
             {/* ═══ SEO TAB ═══ */}
             {activeTab === 'seo' && (
               <motion.div key="seo" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
@@ -1256,10 +1271,11 @@ function App() {
       </AnimatePresence>
 
       <AnimatePresence>
-        {showFulfillWizard && data?.orders && (
+        {showFulfillWizard && (data?.orders || wizardResume) && (
           <FulfillOrdersWizard
-            orders={wizardOrders || data.orders}
-            onClose={() => { setShowFulfillWizard(false); setWizardOrders(null); }}
+            orders={wizardOrders || data?.orders || []}
+            resume={wizardResume}
+            onClose={() => { setShowFulfillWizard(false); setWizardOrders(null); setWizardResume(null); }}
             onOrdersUpdate={(updatedOrders) => setData(prev => ({ ...prev, orders: updatedOrders }))}
             isSupplier={user?.role === 'supplier'}
           />
