@@ -738,9 +738,9 @@ app.post('/api/rapidshyp/assign-batch', async (req, res) => {
         console.log(`[API] iThink ship: creating ${orders.length} order(s)${logistics ? ` via ${logistics}` : ' (auto courier)'}`);
         const result = await ithink.createOrders(orders, logistics ? { logistics } : {});
 
-        // Diagnose failures: what's wrong + which couriers ARE available
+        // Diagnose failures in parallel: what's wrong + which couriers ARE available
         const failures = result.results.filter(r => !r.success && r.pincode);
-        for (const f of failures.slice(0, 15)) { // cap to avoid hammering the API
+        await Promise.all(failures.slice(0, 15).map(async f => { // cap to avoid hammering the API
             try {
                 f.diagnosis = await ithink.diagnoseServiceability({
                     pincode: f.pincode,
@@ -750,7 +750,7 @@ app.post('/api/rapidshyp/assign-batch', async (req, res) => {
             } catch (dErr) {
                 console.warn(`[API] diagnose failed for #${f.orderId}:`, dErr.message);
             }
-        }
+        }));
 
         res.json(result);
     } catch (e) {

@@ -126,13 +126,17 @@ export default function ShipOrdersModal({ orders, onClose, onSuccess }) {
         grouped[cleanId].items.push({ model: o.model, category: o.category, sku: o.sku, price: o.price, quantity: 1 });
       });
 
+      // Ship in batches of 10 (iThink's max shipments per API call)
       const allAssignResults = [];
-      for (const cleanId of Object.keys(grouped)) {
+      const idsToShip = Object.keys(grouped);
+      for (let i = 0; i < idsToShip.length; i += 10) {
+        const chunk = idsToShip.slice(i, i + 10);
         try {
-          const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, { orders: [grouped[cleanId]] });
+          const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, { orders: chunk.map(id => grouped[id]) }, { timeout: 180000 });
           allAssignResults.push(...(r.data?.results || []));
         } catch (e) {
-          allAssignResults.push({ orderId: cleanId, success: false, message: e.response?.data?.error || e.message });
+          const msg = e.response?.data?.error || e.message;
+          chunk.forEach(id => allAssignResults.push({ orderId: id, success: false, message: msg }));
         }
       }
       const assignRes = { data: { success: allAssignResults.some(r => r.success), results: allAssignResults } };
