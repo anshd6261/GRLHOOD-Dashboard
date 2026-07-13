@@ -194,6 +194,11 @@ const buildShipment = (order, overrides = {}) => {
         cod_amount: String(codAmount),
         // Docs: allowed values "cod" or "Prepaid" (default: cod)
         payment_mode: cod ? 'cod' : 'Prepaid',
+        // iThink requires these three fields to be PRESENT (verified live;
+        // docs wrongly mark them optional). Empty values are accepted.
+        eway_bill_number: '',
+        gst_number: process.env.ITHINK_GST_NUMBER || '',
+        reseller_name: '',
         return_address_id: RETURN_ADDRESS_ID,
     };
 };
