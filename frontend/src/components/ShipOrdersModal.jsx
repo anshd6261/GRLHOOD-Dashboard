@@ -120,6 +120,7 @@ export default function ShipOrdersModal({ orders, onClose, onSuccess }) {
             payment: o.payment,
             createdAt: o.createdAt,
             orderTotal: o.orderTotal ?? null,
+            amountReceived: o.amountReceived ?? 0,
             items: [],
           };
         }
