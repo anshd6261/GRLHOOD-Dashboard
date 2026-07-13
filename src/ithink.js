@@ -161,6 +161,16 @@ const buildShipment = (order, overrides = {}) => {
     const codAmount = cod ? Math.max(0, total - advance) : 0;
     const orderRef = String(order.orderId ?? order.order ?? order.id ?? '').replace('#', '');
 
+    // iThink validates: total_amount === Σ(product_price×qty) + shipping_charges − total_discount
+    // (verified live: "Invalid order total Amount (Calculated by System: X, Entered by User: Y)").
+    // Shopify's orderTotal includes shipping and discounts while product prices are
+    // pre-discount unit prices — balance the difference into the right field.
+    const products = buildProducts(order);
+    const productsSum = products.reduce((s, p) => s + (parseFloat(p.product_price) || 0) * (parseInt(p.product_quantity, 10) || 1), 0);
+    const delta = Math.round((total - productsSum) * 100) / 100;
+    const shippingCharges = delta > 0 ? delta : 0;
+    const totalDiscount = delta < 0 ? -delta : 0;
+
     return {
         order: orderRef,
         sub_order: '',
@@ -179,15 +189,15 @@ const buildShipment = (order, overrides = {}) => {
         alt_phone: '',
         email: ship.email || order.email || '',
         is_billing_same_as_shipping: 'yes',
-        products: buildProducts(order),
+        products,
         shipment_length: String(overrides.length || DEFAULT_LENGTH_CM),
         shipment_width: String(overrides.width || DEFAULT_WIDTH_CM),
         shipment_height: String(overrides.height || DEFAULT_HEIGHT_CM),
         weight: String(overrides.weight || DEFAULT_WEIGHT_KG),
-        shipping_charges: '0',
+        shipping_charges: String(shippingCharges),
         giftwrap_charges: '0',
         transaction_charges: '0',
-        total_discount: '0',
+        total_discount: String(totalDiscount),
         first_attemp_discount: '0',
         cod_charges: '0',
         advance_amount: String(advance),

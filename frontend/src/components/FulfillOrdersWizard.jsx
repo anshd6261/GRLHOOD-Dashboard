@@ -801,19 +801,18 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
     setShipLoading(false);
   };
 
-  // Re-ship a single failed order with a manually chosen courier
-  // (e.g. pincode unserviceable by recommended courier → pick Xpressbees/DTDC/etc.)
+  // Re-ship a single failed order. With `courier` set, forces that courier
+  // (pincode unserviceable → pick Xpressbees/DTDC/etc.); without it, retries
+  // via iThink's auto recommendation.
   const handleRetryShip = async (orderId, courier) => {
-    if (!courier) { setToast({ msg: 'Pick a courier first', err: true }); return; }
     setRetryingId(orderId);
     try {
-      const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, {
-        orders: [buildShipPayload(orderId)],
-        logistics: courier.toLowerCase(),
-      });
+      const payload = { orders: [buildShipPayload(orderId)] };
+      if (courier) payload.logistics = courier.toLowerCase();
+      const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, payload, { timeout: 180000 });
       const result = (r.data?.results || [])[0];
       setShipResults(prev => {
-        const results = (prev?.results || []).map(x => x.orderId === orderId ? { ...result, retriedWith: courier } : x);
+        const results = (prev?.results || []).map(x => x.orderId === orderId ? { ...result, retriedWith: courier || 'auto' } : x);
         return { ...prev, results };
       });
       if (result?.success && result.awb) {
@@ -822,13 +821,44 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
           m[orderId] = result.awb;
           localStorage.setItem('awbMap', JSON.stringify(m));
         } catch {}
-        setToast({ msg: `#${orderId} shipped via ${courier} · AWB ${result.awb}` });
+        setToast({ msg: `#${orderId} shipped${courier ? ` via ${courier}` : ''} · AWB ${result.awb}` });
       } else {
         setToast({ msg: `#${orderId} still failed: ${result?.message || 'unknown'}`, err: true });
       }
     } catch (e) {
       setToast({ msg: `Retry failed: ${e.response?.data?.error || e.message}`, err: true });
     } finally { setRetryingId(null); }
+  };
+
+  // Retry ALL failed orders in one go (auto courier, batches of 10)
+  const handleRetryAllFailed = async () => {
+    const failedIds = (shipResults?.results || []).filter(r => !r.success).map(r => r.orderId);
+    if (!failedIds.length) return;
+    setShipLoading(true);
+    setShipProgress({ done: 0, total: failedIds.length, status: `Retrying ${failedIds.length} failed orders...` });
+    let awbMap = {};
+    try { awbMap = JSON.parse(localStorage.getItem('awbMap') || '{}'); } catch {}
+    const retried = {};
+    for (let i = 0; i < failedIds.length; i += 10) {
+      const chunk = failedIds.slice(i, i + 10);
+      try {
+        const r = await axios.post(`${API_URL}/rapidshyp/assign-batch`, { orders: chunk.map(buildShipPayload) }, { timeout: 180000 });
+        (r.data?.results || []).forEach(rr => {
+          retried[rr.orderId] = { ...rr, retriedWith: 'auto' };
+          if (rr.success && rr.awb) awbMap[rr.orderId] = rr.awb;
+        });
+        localStorage.setItem('awbMap', JSON.stringify(awbMap));
+      } catch (e) {
+        const msg = e.response?.data?.error || e.message;
+        chunk.forEach(id => { retried[id] = { orderId: id, success: false, message: msg }; });
+      }
+      setShipProgress({ done: Math.min(i + 10, failedIds.length), total: failedIds.length, status: `${Object.values(retried).filter(x => x.success).length} recovered` });
+    }
+    setShipResults(prev => ({ ...prev, results: (prev?.results || []).map(x => retried[x.orderId] || x) }));
+    const ok = Object.values(retried).filter(x => x.success).length;
+    setToast({ msg: `Retry: ${ok}/${failedIds.length} recovered`, err: ok === 0 });
+    setShipProgress(null);
+    setShipLoading(false);
   };
 
   const estCost = uniqueIds.length * 85;
@@ -943,7 +973,15 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
 
       {shipResults ? (
         <div className="glass-card-sm p-3 space-y-2">
-          <div className="flex items-center gap-2"><CheckCircle size={13} className="text-emerald-400" /><span className="text-xs font-bold text-emerald-400">{shipResults.results?.filter(r=>r.success).length}/{shipResults.results?.length} assigned</span></div>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2"><CheckCircle size={13} className="text-emerald-400" /><span className="text-xs font-bold text-emerald-400">{shipResults.results?.filter(r=>r.success).length}/{shipResults.results?.length} assigned</span></div>
+            {shipResults.results?.some(r => !r.success) && (
+              <button onClick={handleRetryAllFailed} disabled={shipLoading || retryingId}
+                className="glass-btn px-3 py-1.5 rounded-lg text-[10px] font-bold flex items-center gap-1.5 text-amber-400 border-amber-400/20 disabled:opacity-40">
+                <RefreshCw size={10} className={shipLoading ? 'animate-spin' : ''} /> Retry All Failed ({shipResults.results.filter(r => !r.success).length})
+              </button>
+            )}
+          </div>
           <div className="max-h-72 overflow-y-auto space-y-1">
             {shipResults.results?.map((r,i) => (
               r.success ? (
@@ -963,23 +1001,30 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
                   {r.diagnosis?.issue && (
                     <div className="text-[9px] text-amber-400 flex items-center gap-1"><AlertTriangle size={9} /> {r.diagnosis.issue}</div>
                   )}
-                  {r.diagnosis?.couriers?.filter(c => c.serviceable).length > 0 ? (
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <select value={retryCouriers[r.orderId] || ''} onChange={e => setRetryCouriers(p => ({ ...p, [r.orderId]: e.target.value }))}
-                        className="glass-input text-[9px] px-2 py-1 rounded-lg bg-[rgba(0,0,0,0.4)] text-white border border-[rgba(255,255,255,0.1)]">
-                        <option value="">Pick courier...</option>
-                        {r.diagnosis.couriers.filter(c => c.serviceable).map((c, ci) => (
-                          <option key={ci} value={c.name}>{c.name}{c.serviceType ? ` (${c.serviceType})` : ''}{c.rate ? ` · Rs${c.rate}` : ''}{c.tat ? ` · ${c.tat}d` : ''}</option>
-                        ))}
-                      </select>
-                      <button onClick={() => handleRetryShip(r.orderId, retryCouriers[r.orderId])} disabled={retryingId === r.orderId || !retryCouriers[r.orderId]}
-                        className="glass-btn px-2.5 py-1 rounded-lg text-[9px] font-bold text-emerald-400 border-emerald-400/20 disabled:opacity-40 flex items-center gap-1">
-                        {retryingId === r.orderId ? <RefreshCw size={9} className="animate-spin" /> : <Truck size={9} />} Ship via selected
-                      </button>
-                    </div>
-                  ) : r.diagnosis && (
-                    <div className="text-[9px] text-[rgba(245,245,245,0.35)]">No alternative courier services this pincode{r.diagnosis.pincode ? ` (${r.diagnosis.pincode})` : ''}. Contact the customer for an alternate address.</div>
-                  )}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button onClick={() => handleRetryShip(r.orderId)} disabled={retryingId === r.orderId || shipLoading}
+                      className="glass-btn px-2.5 py-1 rounded-lg text-[9px] font-bold text-amber-400 border-amber-400/20 disabled:opacity-40 flex items-center gap-1">
+                      {retryingId === r.orderId ? <RefreshCw size={9} className="animate-spin" /> : <RefreshCw size={9} />} Retry
+                    </button>
+                    {r.diagnosis?.couriers?.filter(c => c.serviceable).length > 0 && (
+                      <>
+                        <select value={retryCouriers[r.orderId] || ''} onChange={e => setRetryCouriers(p => ({ ...p, [r.orderId]: e.target.value }))}
+                          className="glass-input text-[9px] px-2 py-1 rounded-lg bg-[rgba(0,0,0,0.4)] text-white border border-[rgba(255,255,255,0.1)]">
+                          <option value="">Pick courier...</option>
+                          {r.diagnosis.couriers.filter(c => c.serviceable).map((c, ci) => (
+                            <option key={ci} value={c.name}>{c.name}{c.serviceType ? ` (${c.serviceType})` : ''}{c.rate ? ` · Rs${c.rate}` : ''}{c.tat ? ` · ${c.tat}d` : ''}</option>
+                          ))}
+                        </select>
+                        <button onClick={() => handleRetryShip(r.orderId, retryCouriers[r.orderId])} disabled={retryingId === r.orderId || !retryCouriers[r.orderId]}
+                          className="glass-btn px-2.5 py-1 rounded-lg text-[9px] font-bold text-emerald-400 border-emerald-400/20 disabled:opacity-40 flex items-center gap-1">
+                          {retryingId === r.orderId ? <RefreshCw size={9} className="animate-spin" /> : <Truck size={9} />} Ship via selected
+                        </button>
+                      </>
+                    )}
+                    {r.diagnosis && !r.diagnosis.couriers?.some(c => c.serviceable) && (
+                      <span className="text-[9px] text-[rgba(245,245,245,0.35)]">No alternative courier services this pincode{r.diagnosis.pincode ? ` (${r.diagnosis.pincode})` : ''}.</span>
+                    )}
+                  </div>
                 </div>
               )
             ))}
