@@ -756,6 +756,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       payment: g.payment,
       createdAt: g.createdAt,
       orderTotal: g.items?.[0]?.orderTotal ?? null,
+      amountReceived: g.items?.[0]?.amountReceived ?? 0,
       items: (g.items || []).map(it => ({ model: it.model, category: it.category, sku: it.sku, price: it.price, quantity: 1 })),
     };
   };
