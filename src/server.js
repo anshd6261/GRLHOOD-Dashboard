@@ -833,28 +833,30 @@ app.get('/api/rapidshyp/warehouses', async (req, res) => {
     }
 });
 
-// Helper: print labels by AWB + upload PDF to Dropbox.
+// Helper: print labels by AWB + upload PDF(s) to Dropbox.
+// >100 AWBs produce multiple PDFs (iThink caps 100/call) — all are uploaded.
 async function printLabelsToDropbox(awbList) {
     const awbs = (awbList || []).filter(Boolean).map(String);
     if (awbs.length === 0) return { success: false, error: 'No AWB numbers provided' };
 
     const labelResult = await ithink.printLabel(awbs);
     if (!labelResult.success) {
-        return { success: false, error: labelResult.message || 'Label generation failed' };
+        return { success: false, error: labelResult.message || 'Label generation failed', labelUrls: labelResult.labelUrls || [] };
     }
-    const labelUrl = labelResult.labelUrl;
+    const labelUrls = labelResult.labelUrls || [labelResult.labelUrl].filter(Boolean);
 
     let dropboxPath = null;
-    if (labelUrl) {
-        try {
-            const { uploadOrderPayload } = require('./dropbox');
-            dropboxPath = await uploadOrderPayload(labelUrl, null, null);
-            console.log(`[API] Labels uploaded to Dropbox: ${dropboxPath}`);
-        } catch (dbxErr) {
-            console.warn('[API] Dropbox label upload failed (non-blocking):', dbxErr.message);
+    try {
+        const { uploadOrderPayload } = require('./dropbox');
+        for (let i = 0; i < labelUrls.length; i++) {
+            const suffix = labelUrls.length > 1 ? ` Part ${i + 1}` : '';
+            dropboxPath = await uploadOrderPayload(labelUrls[i], null, null, suffix);
         }
+        console.log(`[API] ${labelUrls.length} label PDF(s) uploaded to Dropbox: ${dropboxPath}`);
+    } catch (dbxErr) {
+        console.warn('[API] Dropbox label upload failed (non-blocking):', dbxErr.message);
     }
-    return { success: true, labelUrl, label_pdf_url: labelUrl, dropboxPath };
+    return { success: true, labelUrl: labelUrls[0], label_pdf_url: labelUrls[0], labelUrls, dropboxPath };
 }
 
 // Bulk Generate Labels (by AWB) + Upload to Dropbox

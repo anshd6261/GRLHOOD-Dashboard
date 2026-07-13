@@ -418,21 +418,41 @@ const printLabel = async (awbNumbers, pageSize = 'A4') => {
         const awbs = (Array.isArray(awbNumbers) ? awbNumbers : [awbNumbers]).filter(Boolean).map(String);
         if (awbs.length === 0) return { success: false, message: 'No AWB numbers provided' };
 
-        const data = await post('/shipping/label.json', {
-            awb_numbers: awbs.join(','),
-            page_size: pageSize,
-            display_cod_prepaid: '',
-            display_shipper_mobile: '',
-            display_shipper_address: '',
-        });
+        // iThink allows max 100 AWBs per label call — chunk larger batches
+        // into multiple PDFs.
+        const labelUrls = [];
+        for (let i = 0; i < awbs.length; i += 100) {
+            const chunk = awbs.slice(i, i + 100);
+            const data = await post('/shipping/label.json', {
+                awb_numbers: chunk.join(','),
+                page_size: pageSize,
+                display_cod_prepaid: '',
+                display_shipper_mobile: '',
+                display_shipper_address: '',
+            }, 120000);
 
-        const labelUrl = data?.file_name || '';
-        const ok = String(data?.status || '').toLowerCase() === 'success' && labelUrl;
-        if (!ok) {
-            return { success: false, message: data?.html_message || data?.status || 'Label generation failed' };
+            const url = data?.file_name || '';
+            const ok = String(data?.status || '').toLowerCase() === 'success' && url;
+            if (!ok) {
+                return {
+                    success: false,
+                    message: data?.html_message || data?.status || 'Label generation failed',
+                    labelUrls, // any parts that DID succeed
+                };
+            }
+            labelUrls.push(url);
         }
-        console.log(`[ITHINK] Label generated for ${awbs.length} AWB(s): ${labelUrl}`);
-        return { success: true, labelUrl, label_url: labelUrl, label_pdf_url: labelUrl, labelUrl, data: { ...data, label_pdf_url: labelUrl, label_url: labelUrl } };
+
+        console.log(`[ITHINK] Labels generated for ${awbs.length} AWB(s) in ${labelUrls.length} PDF(s)`);
+        const first = labelUrls[0];
+        return {
+            success: true,
+            labelUrl: first,
+            label_url: first,
+            label_pdf_url: first,
+            labelUrls,
+            data: { status: 'success', label_pdf_url: first, label_url: first, labelUrls },
+        };
     } catch (e) {
         const msg = e.response?.data?.html_message || e.message;
         console.error('[ITHINK] printLabel failed:', msg);

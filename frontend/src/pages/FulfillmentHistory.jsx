@@ -88,18 +88,21 @@ export default function FulfillmentHistory({ onResume }) {
   };
 
   const downloadLabels = async (run) => {
-    const url = run.labelResult?.label_pdf_url;
-    if (!url) return;
-    const fileName = `${run.batchName || 'Order'} - Labels.pdf`;
-    try {
-      const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(fileName)}`;
-      const pr = await fetch(proxyUrl);
-      if (!pr.ok) throw new Error('proxy failed');
-      const bl = new Blob([await pr.arrayBuffer()], { type: 'application/pdf' });
-      const bu = URL.createObjectURL(bl);
-      const a = document.createElement('a'); a.href = bu; a.download = fileName; a.click();
-      setTimeout(() => URL.revokeObjectURL(bu), 1000);
-    } catch { window.open(url, '_blank'); }
+    const urls = (run.labelResult?.labelUrls?.length ? run.labelResult.labelUrls : [run.labelResult?.label_pdf_url]).filter(Boolean);
+    if (!urls.length) return;
+    for (let i = 0; i < urls.length; i++) {
+      const url = urls[i];
+      const fileName = `${run.batchName || 'Order'} - Labels${urls.length > 1 ? ` Part ${i + 1}` : ''}.pdf`;
+      try {
+        const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(fileName)}`;
+        const pr = await fetch(proxyUrl);
+        if (!pr.ok) throw new Error('proxy failed');
+        const bl = new Blob([await pr.arrayBuffer()], { type: 'application/pdf' });
+        const bu = URL.createObjectURL(bl);
+        const a = document.createElement('a'); a.href = bu; a.download = fileName; a.click();
+        setTimeout(() => URL.revokeObjectURL(bu), 1000);
+      } catch { window.open(url, '_blank'); }
+    }
   };
 
   if (runs.length === 0) {
