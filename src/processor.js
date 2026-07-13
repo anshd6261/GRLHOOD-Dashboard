@@ -295,6 +295,7 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
                     price: price,
                     payment: payment,
                     orderTotal: order.currentTotalPriceSet?.shopMoney?.amount ? parseFloat(order.currentTotalPriceSet.shopMoney.amount) : null,
+                    amountReceived: order.totalReceivedSet?.shopMoney?.amount ? parseFloat(order.totalReceivedSet.shopMoney.amount) : 0,
                     fulfillmentStatus: order.displayFulfillmentStatus || 'UNFULFILLED',
                     tags: order.tags || [],
                     createdAt: order.createdAt,
