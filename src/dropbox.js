@@ -118,7 +118,7 @@ const cleanDuplicateFolders = async (token, monthPath, dateLabel) => {
     return false; // No existing folders
 };
 
-const uploadOrderPayload = async (pdfUrl, standardCsvContent, financialCsvContent) => {
+const uploadOrderPayload = async (pdfUrl, standardCsvContent, financialCsvContent, labelSuffix = '') => {
     // Get a fresh access token every time (they only last 4 hours)
     const token = await getAccessToken();
 
@@ -153,7 +153,7 @@ const uploadOrderPayload = async (pdfUrl, standardCsvContent, financialCsvConten
     // Upload PDF Labels (if provided) — uses mode:'overwrite' so only this file is replaced
     if (pdfUrl) {
         const pdfRes = await axios.get(pdfUrl, { responseType: 'arraybuffer' });
-        await uploadFile(token, `${folderPath}/${dateLabel} Labels.pdf`, Buffer.from(pdfRes.data));
+        await uploadFile(token, `${folderPath}/${dateLabel} Labels${labelSuffix}.pdf`, Buffer.from(pdfRes.data));
     }
 
     console.log(`[DROPBOX] ✅ All uploads complete → ${folderPath}`);

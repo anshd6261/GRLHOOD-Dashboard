@@ -322,7 +322,7 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
       prepaidValue: Math.round(prepaidValue),
       codValue: Math.round(codValue),
       shipResults,
-      labelResult: labelResult ? { label_pdf_url: labelResult.label_pdf_url || labelResult.labelUrl, dropboxPath: labelResult.dropboxPath } : null,
+      labelResult: labelResult ? { label_pdf_url: labelResult.label_pdf_url || labelResult.labelUrl, labelUrls: labelResult.labelUrls || [], dropboxPath: labelResult.dropboxPath } : null,
       dlStatus,
       nbeUploaded,
       approveResult: approveResult ? { approved: approveResult.approved, alreadyApproved: approveResult.alreadyApproved } : null,
@@ -1007,12 +1007,14 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
 
       if (!awbs.length) { setToast({ msg: 'No shipped orders for labels', err: true }); setLabelLoading(false); return; }
       setLabelProgress({ done: 1, total: 3, status: `Generating ${awbs.length} labels...` });
-      const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-dropbox`, { awbs });
+      const r = await axios.post(`${API_URL}/rapidshyp/bulk-labels-dropbox`, { awbs }, { timeout: 300000 });
       setLabelProgress({ done: 2, total: 3, status: 'Downloading PDF...' });
       setLabelResult(r.data);
-      const url = r.data?.label_pdf_url || r.data?.labelUrl;
-      if (url) {
-        const labelFileName = `${getOrdinalDate()} - Labels.pdf`;
+      // >100 AWBs → multiple PDF parts; download each
+      const urls = (r.data?.labelUrls?.length ? r.data.labelUrls : [r.data?.label_pdf_url || r.data?.labelUrl]).filter(Boolean);
+      for (let ui = 0; ui < urls.length; ui++) {
+        const url = urls[ui];
+        const labelFileName = `${getOrdinalDate()} - Labels${urls.length > 1 ? ` Part ${ui + 1}` : ''}.pdf`;
         try { const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(labelFileName)}`; const pr = await fetch(proxyUrl); if (!pr.ok) throw new Error('fail'); const bl = new Blob([await pr.arrayBuffer()], { type: 'application/pdf' }); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = labelFileName; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(bu), 1000); } catch { window.open(url, '_blank'); }
       }
       setLabelProgress({ done: 3, total: 3, status: 'Done' });
@@ -1038,9 +1040,13 @@ export default function FulfillOrdersWizard({ orders, onClose, onOrdersUpdate, i
             <CheckCircle size={40} className="mx-auto text-emerald-400" />
             <p className="text-sm font-bold text-white">labels ready</p>
             {labelUrl && <button onClick={async () => {
-              const labelFileName = `${getOrdinalDate()} - Labels.pdf`;
-              try { const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(labelUrl)}&filename=${encodeURIComponent(labelFileName)}`; const pr = await fetch(proxyUrl); if (!pr.ok) throw new Error('fail'); const bl = new Blob([await pr.arrayBuffer()], { type: 'application/pdf' }); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = labelFileName; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(bu), 1000); } catch { window.open(labelUrl, '_blank'); }
-            }} className="glass-btn-accent px-5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2"><Download size={12} /> Download PDF</button>}
+              const urls = (labelResult?.labelUrls?.length ? labelResult.labelUrls : [labelUrl]).filter(Boolean);
+              for (let ui = 0; ui < urls.length; ui++) {
+                const u = urls[ui];
+                const labelFileName = `${getOrdinalDate()} - Labels${urls.length > 1 ? ` Part ${ui + 1}` : ''}.pdf`;
+                try { const proxyUrl = `${API_URL}/proxy-pdf?url=${encodeURIComponent(u)}&filename=${encodeURIComponent(labelFileName)}`; const pr = await fetch(proxyUrl); if (!pr.ok) throw new Error('fail'); const bl = new Blob([await pr.arrayBuffer()], { type: 'application/pdf' }); const bu = URL.createObjectURL(bl); const a = document.createElement('a'); a.href = bu; a.download = labelFileName; document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(() => URL.revokeObjectURL(bu), 1000); } catch { window.open(u, '_blank'); }
+              }
+            }} className="glass-btn-accent px-5 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-2"><Download size={12} /> Download PDF{labelResult?.labelUrls?.length > 1 ? `s (${labelResult.labelUrls.length})` : ''}</button>}
             {labelResult.dropboxPath && <p className="text-[9px] text-[rgba(245,245,245,0.2)]">Dropbox: {labelResult.dropboxPath}</p>}
           </motion.div>
         ) : (
