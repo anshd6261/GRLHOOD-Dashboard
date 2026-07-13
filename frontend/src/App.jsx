@@ -876,8 +876,12 @@ function App() {
                         const source = selectedOrders.size > 0
                           ? groupedFilteredOrders.filter(g => selectedOrders.has(g.orderId))
                           : groupedFilteredOrders;
-                        const totalValue = source.reduce((s, g) => s + (g.orderTotal || g.items.reduce((a, i) => a + (i.price || 0), 0)), 0);
+                        const groupValue = (g) => g.orderTotal || g.items.reduce((a, i) => a + (i.price || 0), 0);
+                        const totalValue = source.reduce((s, g) => s + groupValue(g), 0);
                         const totalCogs = source.reduce((s, g) => s + g.totalCogs, 0);
+                        const prepaidValue = source.reduce((s, g) => s + (g.payment === 'Prepaid' ? groupValue(g) : 0), 0);
+                        const codValue = source.reduce((s, g) => s + (g.payment === 'Cash on Delivery' ? groupValue(g) : 0), 0);
+                        const partialValue = source.reduce((s, g) => s + (g.payment === 'Partially Paid' ? groupValue(g) : 0), 0);
                         return (
                           <SpotlightCard className="p-5 relative overflow-hidden">
                             <div className="absolute -top-10 -right-10 w-24 h-24 bg-[rgba(227,207,216,0.04)] blur-3xl rounded-full" />
@@ -888,6 +892,11 @@ function App() {
                               <div className="p-1.5 rounded-lg bg-[rgba(227,207,216,0.06)]"><IndianRupee size={14} className="text-[#e3cfd8]" /></div>
                             </div>
                             <div className="text-2xl font-black text-white tracking-tight">₹{totalValue.toLocaleString('en-IN')}</div>
+                            <div className="flex items-center gap-3 mt-1.5 text-[10px] font-semibold flex-wrap">
+                              <span className="text-[#e3cfd8]">Prepaid ₹{prepaidValue.toLocaleString('en-IN')}</span>
+                              <span className="text-[rgba(245,245,245,0.5)]">COD ₹{codValue.toLocaleString('en-IN')}</span>
+                              {partialValue > 0 && <span className="text-[#fbbf24]">Partial ₹{partialValue.toLocaleString('en-IN')}</span>}
+                            </div>
                             <div className="text-[10px] text-[rgba(245,245,245,0.3)] mt-1">COGS: ₹{totalCogs.toLocaleString('en-IN')}</div>
                           </SpotlightCard>
                         );
