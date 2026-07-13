@@ -337,17 +337,21 @@ const createOrders = async (orders, options = {}) => {
             shipments,
             pickup_address_id: PICKUP_ADDRESS_ID,
             order_type: 'forward',
+            // iThink rejects requests where s_type is absent ("The Shipment
+            // Service Type field must be present") even though the docs mark
+            // it optional — verified live. An empty string passes validation
+            // and lets the recommendation engine pick the mode.
+            s_type: SERVICE_TYPE || '',
         };
         // Courier: omit `logistics` entirely for iThink's own recommendation
         // engine to assign the courier; set it only to force a specific one
         // (e.g. manual re-ship after a serviceability failure).
         if (!useRecommendation) {
             payload.logistics = logistics;
-            if (SERVICE_TYPE && ['bluedart', 'delhivery'].includes(logistics)) payload.s_type = SERVICE_TYPE;
         }
 
         try {
-            const data = await post('/order/add.json', payload, 90000);
+            const data = await post('/order/add.json', payload, 150000);
             // Response: data.data is an object keyed "1","2"... matching shipment order
             const resultMap = data?.data || {};
             const entries = Object.values(resultMap);
