@@ -25,6 +25,7 @@ const { syncPayUApi } = require('./sync_payu');
 const { uploadOrderPayload } = require('./dropbox');
 const analytics = require('./analytics');
 const seo = require('./seo');
+const { mountCloud } = require('./cloud_relay');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -1321,6 +1322,9 @@ app.post('/api/seo/execute-all', async (req, res) => {
         res.status(500).json({ success: false, error: e.message });
     }
 });
+
+// Cloud relay + control website (must be registered BEFORE the SPA catch-all)
+mountCloud(app);
 
 // 10. Catch-All for Frontend
 app.get(/.*/, (req, res) => {

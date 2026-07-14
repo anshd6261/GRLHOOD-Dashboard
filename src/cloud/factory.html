@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GRLHOOD Factory · Cloud</title>
+<style>
+  :root{
+    --ink:#0b0b0d; --ink2:#3a3a42; --mut:#7b7b86;
+    --line:rgba(20,20,25,.10); --line2:rgba(20,20,25,.06);
+    --glass:rgba(255,255,255,.55); --glass2:rgba(255,255,255,.38);
+    --shadow:0 20px 60px -20px rgba(20,20,40,.28);
+    --accent:#0b0b0d; --ok:#0f9d63; --err:#d33a3a;
+    --radius:22px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --ink:#f4f4f7; --ink2:#c9c9d2; --mut:#8b8b96;
+      --line:rgba(255,255,255,.12); --line2:rgba(255,255,255,.06);
+      --glass:rgba(28,28,34,.55); --glass2:rgba(40,40,48,.42);
+      --shadow:0 24px 70px -24px rgba(0,0,0,.7);
+      --accent:#f4f4f7; --ok:#3fdd9a; --err:#ff6a6a;
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; color:var(--ink); font-size:14px; -webkit-font-smoothing:antialiased;
+    font-family:"SF Pro Display",-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,system-ui,sans-serif;
+    background:
+      radial-gradient(1200px 800px at 12% -8%, rgba(180,170,255,.28), transparent 55%),
+      radial-gradient(1000px 700px at 108% 8%, rgba(255,180,214,.26), transparent 52%),
+      radial-gradient(900px 900px at 50% 120%, rgba(160,220,255,.24), transparent 55%),
+      linear-gradient(180deg,#f3f3f6 0%, #e9e9ef 100%);
+    background-attachment:fixed;
+  }
+  @media (prefers-color-scheme: dark){
+    body{ background:
+      radial-gradient(1200px 800px at 12% -8%, rgba(90,80,170,.36), transparent 55%),
+      radial-gradient(1000px 700px at 108% 8%, rgba(150,60,110,.30), transparent 52%),
+      radial-gradient(900px 900px at 50% 120%, rgba(40,90,140,.30), transparent 55%),
+      linear-gradient(180deg,#111114 0%, #0a0a0c 100%);
+    }
+  }
+  .wrap{max-width:1160px; margin:0 auto; padding:26px 20px 60px}
+
+  /* ---- glass primitives ---- */
+  .glass{
+    background:var(--glass);
+    -webkit-backdrop-filter:blur(26px) saturate(160%);
+    backdrop-filter:blur(26px) saturate(160%);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+  }
+  .glass-soft{ background:var(--glass2); border:1px solid var(--line2); border-radius:16px;
+    -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); }
+
+  /* ---- top bar ---- */
+  header{ display:flex; align-items:center; gap:14px; padding:14px 18px; margin-bottom:20px; }
+  .logo{ font-weight:700; letter-spacing:.26em; font-size:16px; }
+  .logo small{ display:block; letter-spacing:.32em; font-weight:600; font-size:9px; color:var(--mut); margin-top:2px; }
+  .spacer{ flex:1 }
+  .status{ display:inline-flex; align-items:center; gap:8px; font-size:12px; font-weight:600; color:var(--ink2);
+    padding:7px 13px; border-radius:999px; }
+  .dot{ width:9px; height:9px; border-radius:50%; background:#c3c3cc; box-shadow:0 0 0 0 rgba(15,157,99,.5); }
+  .dot.on{ background:var(--ok); animation:pulse 2.2s infinite; }
+  .dot.off{ background:var(--err); }
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(15,157,99,.5)}70%{box-shadow:0 0 0 8px rgba(15,157,99,0)}100%{box-shadow:0 0 0 0 rgba(15,157,99,0)}}
+
+  .grid{ display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); gap:20px; align-items:start; }
+  @media (max-width:900px){ .grid{ grid-template-columns:1fr } }
+
+  .card{ padding:22px; margin-bottom:20px; }
+  .card h3{ margin:0 0 4px; font-size:12px; letter-spacing:.16em; text-transform:uppercase; color:var(--mut); font-weight:700; }
+  .card .hint{ color:var(--mut); font-size:12px; margin:0 0 16px; }
+
+  label.fld{ display:block; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--mut); font-weight:700; margin:0 0 7px; }
+  input[type=text], input[type=number], input[type=password]{
+    width:100%; background:rgba(255,255,255,.5); color:var(--ink); border:1px solid var(--line);
+    border-radius:13px; padding:12px 14px; font-size:14px; outline:none; transition:.15s;
+    -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px);
+  }
+  @media (prefers-color-scheme: dark){ input[type=text],input[type=number],input[type=password]{ background:rgba(255,255,255,.06) } }
+  input:focus{ border-color:var(--accent); box-shadow:0 0 0 4px rgba(120,120,140,.14); }
+
+  .pills{ display:flex; flex-wrap:wrap; gap:8px; }
+  .pill{ padding:8px 14px; border-radius:999px; border:1px solid var(--line); cursor:pointer;
+    color:var(--ink2); background:rgba(255,255,255,.4); font-weight:600; font-size:12.5px; transition:.14s;
+    -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); user-select:none; }
+  @media (prefers-color-scheme: dark){ .pill{ background:rgba(255,255,255,.05) } }
+  .pill:hover{ border-color:var(--accent); }
+  .pill.on{ background:var(--accent); border-color:var(--accent); color:var(--glass); }
+  @media (prefers-color-scheme: dark){ .pill.on{ color:#0b0b0d } }
+
+  .views{ max-height:210px; overflow:auto; margin-top:4px; padding-right:4px; }
+  .views label{ display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:12px; cursor:pointer; color:var(--ink2); font-size:13px; }
+  .views label:hover{ background:rgba(255,255,255,.4); }
+  @media (prefers-color-scheme: dark){ .views label:hover{ background:rgba(255,255,255,.05) } }
+  .views input{ width:17px; height:17px; accent-color:var(--accent); }
+
+  .row{ display:flex; gap:12px; flex-wrap:wrap; align-items:end; }
+  .row > div{ flex:1; min-width:90px; }
+
+  button.btn{ border:1px solid var(--line); background:rgba(255,255,255,.5); color:var(--ink);
+    border-radius:14px; padding:12px 18px; font-size:13.5px; font-weight:650; cursor:pointer; transition:.15s;
+    -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); }
+  @media (prefers-color-scheme: dark){ button.btn{ background:rgba(255,255,255,.06) } }
+  button.btn:hover{ transform:translateY(-1px); box-shadow:0 10px 24px -12px rgba(20,20,40,.4); }
+  button.btn:disabled{ opacity:.4; cursor:not-allowed; transform:none; box-shadow:none; }
+  button.primary{ background:var(--accent); color:var(--glass); border-color:var(--accent); }
+  @media (prefers-color-scheme: dark){ button.primary{ color:#0b0b0d } }
+  .actions{ display:flex; gap:12px; margin-top:6px; }
+  .actions button{ flex:1; padding:15px; font-size:14px; }
+
+  /* previews */
+  .pv-head{ display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+  .pv-head h3{ margin:0; }
+  .pv-count{ font-size:11px; color:var(--mut); font-weight:700; }
+  #previews{ display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:14px; }
+  figure{ margin:0; border-radius:16px; overflow:hidden; position:relative; }
+  figure img{ width:100%; display:block; aspect-ratio:4/5; object-fit:cover; background:rgba(0,0,0,.05); }
+  figure figcaption{ position:absolute; left:0; right:0; bottom:0; padding:8px 10px; font-size:10.5px; font-weight:600;
+    color:#fff; background:linear-gradient(0deg, rgba(0,0,0,.62), transparent); }
+  .pv-empty{ grid-column:1/-1; text-align:center; color:var(--mut); font-size:13px; padding:44px 0; }
+  .pv-empty svg{ opacity:.35; margin-bottom:10px }
+  .shimmer{ aspect-ratio:4/5; border-radius:16px; background:linear-gradient(100deg, rgba(255,255,255,.35) 30%, rgba(255,255,255,.6) 50%, rgba(255,255,255,.35) 70%);
+    background-size:200% 100%; animation:sh 1.3s infinite; }
+  @media (prefers-color-scheme: dark){ .shimmer{ background:linear-gradient(100deg, rgba(255,255,255,.05) 30%, rgba(255,255,255,.12) 50%, rgba(255,255,255,.05) 70%); background-size:200% 100% } }
+  @keyframes sh{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+  /* log */
+  #log{ font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:11.5px; line-height:1.7; max-height:180px; overflow:auto;
+    color:var(--ink2); padding:14px 16px; }
+  #log .ok{ color:var(--ok) } #log .err{ color:var(--err) } #log .muted{ color:var(--mut) }
+  .banner{ display:none; padding:13px 16px; border-radius:14px; font-weight:650; font-size:13px; margin-bottom:16px; }
+
+  .conn{ display:flex; gap:10px; align-items:end; flex-wrap:wrap; }
+  .conn > div{ flex:1; min-width:140px }
+  .doc{ font-size:12px; color:var(--mut); margin-top:10px }
+  .doc b{ color:var(--ink2) }
+  .foot{ text-align:center; color:var(--mut); font-size:11px; margin-top:26px; letter-spacing:.04em }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="glass">
+    <div class="logo">GRLHOOD<small>FACTORY · CLOUD</small></div>
+    <div class="spacer"></div>
+    <div class="status glass-soft"><span class="dot" id="dot"></span><span id="statusTxt">connecting…</span></div>
+  </header>
+
+  <div id="banner" class="banner glass"></div>
+
+  <div class="grid">
+    <!-- LEFT: controls -->
+    <div>
+      <section class="card glass">
+        <h3>Connection</h3>
+        <p class="hint">Enter the same token your Photoshop panel uses. Both must match to pair.</p>
+        <div class="conn">
+          <div>
+            <label class="fld" for="token">Access token</label>
+            <input type="password" id="token" placeholder="token" autocomplete="off">
+          </div>
+          <button class="btn primary" id="btnConn">Connect</button>
+        </div>
+        <div class="doc" id="docLine">Photoshop document: <b>—</b></div>
+      </section>
+
+      <section class="card glass">
+        <h3>Product</h3>
+        <p class="hint">A draft is cloned from your Template Case and published to Shopify.</p>
+        <label class="fld" for="title">Product name</label>
+        <input type="text" id="title" placeholder="e.g. Midnight Bloom">
+
+        <div style="margin-top:18px"><label class="fld">Case colors → tags</label><div class="pills" id="colorPills"></div></div>
+        <div style="margin-top:18px"><label class="fld">Design style</label><div class="pills" id="stylePills"></div></div>
+        <div style="margin-top:18px"><label class="fld">Collection (optional)</label><div class="pills" id="collPills"></div></div>
+
+        <div class="row" style="margin-top:20px">
+          <div><label class="fld">Format</label>
+            <input type="text" id="fmt" value="webp"></div>
+          <div><label class="fld">Max KB</label><input type="number" id="maxKB" value="50"></div>
+          <div><label class="fld">Max px</label><input type="number" id="maxW" value="1080"></div>
+        </div>
+      </section>
+
+      <section class="card glass">
+        <h3>Views from Photoshop</h3>
+        <p class="hint">Layer comps in the open document — order Armoured → Glass → Slim → MagSafe.</p>
+        <div class="row" style="margin-bottom:6px">
+          <button class="btn" id="btnAll" style="flex:0">All</button>
+          <button class="btn" id="btnNone" style="flex:0">None</button>
+          <button class="btn" id="btnRescan" style="flex:0">↻ Rescan</button>
+        </div>
+        <div class="views glass-soft" id="views"><div class="pv-empty">no views yet — connect the panel</div></div>
+      </section>
+
+      <div class="actions">
+        <button class="btn" id="btnRender" disabled>Render previews</button>
+        <button class="btn primary" id="btnCreate" disabled>⚡ Create draft product</button>
+      </div>
+    </div>
+
+    <!-- RIGHT: previews + log -->
+    <div>
+      <section class="card glass">
+        <div class="pv-head"><h3>Live case previews</h3><span class="pv-count" id="pvCount"></span></div>
+        <div id="previews">
+          <div class="pv-empty">
+            <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8.5" cy="8.5" r="1.6"/><path d="M21 15l-5-5L5 21"/></svg>
+            <div>Previews rendered in Photoshop appear here</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card glass">
+        <h3>Activity</h3>
+        <div id="log" class="glass-soft"><div class="muted">waiting…</div></div>
+      </section>
+    </div>
+  </div>
+
+  <div class="foot">GRLHOOD Factory · controls the Photoshop panel on your Mac in real time</div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const S = { base:'', token:'', id:null, panelOnline:false, connected:false, polling:false, vocab:null, rendering:false };
+
+/* ---------- ui helpers ---------- */
+function log(msg, cls){
+  const l = $('log');
+  if (l.firstChild && l.firstChild.classList && l.firstChild.classList.contains('muted') && l.children.length===1 && l.textContent==='waiting…') l.innerHTML='';
+  const d = document.createElement('div'); if (cls) d.className = cls; d.textContent = msg;
+  l.appendChild(d); l.scrollTop = l.scrollHeight;
+}
+function banner(msg, kind){
+  const b = $('banner'); b.textContent = msg; b.style.display='block';
+  b.style.color = kind==='err' ? 'var(--err)' : kind==='ok' ? 'var(--ok)' : 'var(--ink)';
+}
+function setStatus(){
+  const on = S.connected && S.panelOnline;
+  $('dot').className = 'dot ' + (S.connected ? (S.panelOnline ? 'on':'off') : '');
+  $('statusTxt').textContent = !S.connected ? 'disconnected'
+    : (S.panelOnline ? 'panel online' : 'panel offline — open Photoshop + connect the panel');
+  $('btnRender').disabled = !on || S.rendering;
+  $('btnCreate').disabled = !on || S.rendering;
+}
+function makePills(container, list, single){
+  const box = $(container); box.innerHTML='';
+  (list||[]).forEach(name => {
+    const d = document.createElement('div'); d.className='pill'; d.dataset.name=name; d.textContent=name;
+    d.onclick = () => { if (single) [...box.children].forEach(x=>{ if(x!==d) x.classList.remove('on'); }); d.classList.toggle('on'); };
+    box.appendChild(d);
+  });
+}
+const pillsOn = id => [...$(id).children].filter(x=>x.classList.contains('on')).map(x=>x.dataset.name);
+
+function renderViews(names){
+  const box = $('views'); box.innerHTML='';
+  if (!names || !names.length){ box.innerHTML='<div class="pv-empty">no layer comps found in the open document</div>'; return; }
+  names.forEach(n => {
+    const l = document.createElement('label');
+    l.innerHTML = `<input type="checkbox" checked><span>${n}</span>`;
+    l.querySelector('span').textContent = n;
+    box.appendChild(l);
+  });
+}
+const selectedViews = () => [...$('views').querySelectorAll('label')].filter(l=>l.querySelector('input').checked).map(l=>l.querySelector('span').textContent);
+
+/* ---------- transport (HTTP long-poll) ---------- */
+async function api(path, body){
+  const r = await fetch('/factory-api/'+path, { method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(Object.assign({ token:S.token, role:'controller', id:S.id }, body||{})) });
+  return { status:r.status, data: await r.json().catch(()=>({})) };
+}
+async function send(msg){ if (S.connected) await api('emit', { messages:[msg] }); }
+
+async function connect(){
+  S.token = $('token').value.trim();
+  localStorage.setItem('grl_factory_token', S.token);
+  banner('connecting…');
+  const { status, data } = await api('hello', { role:'controller' });
+  if (status===401){ S.connected=false; setStatus(); banner('Wrong token — check it matches the panel.', 'err'); return; }
+  S.id = data.id; S.connected = true; S.panelOnline = !!data.panelOnline;
+  $('banner').style.display='none';
+  setStatus(); log('connected to relay', 'ok');
+  if (!S.polling) pollLoop();
+  requestState();
+}
+function requestState(){ if (S.panelOnline) send({ t:'getState' }); }
+
+async function pollLoop(){
+  S.polling = true;
+  while (S.connected){
+    let res;
+    try { res = await api('poll', {}); }
+    catch(e){ await sleep(1500); continue; }
+    if (res.status===409){ await connect(); return; }
+    if (res.status===401){ S.connected=false; setStatus(); banner('token rejected','err'); break; }
+    const msgs = (res.data && res.data.messages) || [];
+    for (const m of msgs) handle(m);
+  }
+  S.polling = false;
+}
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+
+/* ---------- message handlers (from panel via relay) ---------- */
+function handle(m){
+  switch(m.t){
+    case 'panelStatus':
+      S.panelOnline = !!m.online; setStatus();
+      if (m.online){ log('panel came online','ok'); requestState(); }
+      else log('panel went offline','muted');
+      break;
+    case 'state':
+      S.vocab = m.vocab || {};
+      $('docLine').innerHTML = 'Photoshop document: <b>'+(m.docName || '—')+'</b>';
+      makePills('colorPills', (m.vocab&&m.vocab.colors)||[], false);
+      makePills('stylePills', (m.vocab&&m.vocab.styles)||[], true);
+      makePills('collPills', (m.vocab&&m.vocab.colls)||[], true);
+      renderViews(m.comps||[]);
+      log('synced with Photoshop · '+((m.comps||[]).length)+' views','muted');
+      break;
+    case 'preview': addPreview(m.name, m.dataUrl); break;
+    case 'previewDone':
+      S.rendering=false; setStatus();
+      $('pvCount').textContent = (m.count||0)+' rendered';
+      clearShimmers(); log('previews rendered','ok');
+      break;
+    case 'log': log(m.msg, m.level || ''); break;
+    case 'progress': banner(m.label || 'working…'); break;
+    case 'result':
+      S.rendering=false; setStatus();
+      if (m.ok){ banner('✅ Draft created: '+(m.title||'')+(m.sku?(' · SKU '+m.sku):''), 'ok');
+        log('✅ draft product created'+(m.adminUrl?(' → '+m.adminUrl):''),'ok');
+        if (m.adminUrl){ const a=document.createElement('div'); a.innerHTML='<a href="'+m.adminUrl+'" target="_blank" style="color:var(--ok)">open in Shopify admin →</a>'; $('log').appendChild(a); }
+      } else { banner('✗ '+(m.error||'failed'), 'err'); log('FAILED: '+(m.error||''),'err'); }
+      break;
+  }
+}
+
+/* ---------- previews ---------- */
+const pvMap = {};
+function clearPreviews(){ $('previews').innerHTML=''; for (const k in pvMap) delete pvMap[k]; }
+function shimmerGrid(names){
+  clearPreviews();
+  names.forEach(n => { const d=document.createElement('div'); d.className='shimmer'; d.dataset.name=n; $('previews').appendChild(d); });
+}
+function clearShimmers(){ [...$('previews').querySelectorAll('.shimmer')].forEach(s=>s.remove());
+  if (!$('previews').children.length) $('previews').innerHTML='<div class="pv-empty">no previews</div>'; }
+function addPreview(name, dataUrl){
+  const grid = $('previews');
+  const sh = [...grid.querySelectorAll('.shimmer')].find(s=>s.dataset.name===name);
+  const fig = document.createElement('figure'); fig.className='glass-soft';
+  const img = document.createElement('img'); img.src=dataUrl; img.alt=name;
+  const cap = document.createElement('figcaption'); cap.textContent=name;
+  fig.appendChild(img); fig.appendChild(cap);
+  if (sh) grid.replaceChild(fig, sh); else grid.appendChild(fig);
+  pvMap[name]=true;
+}
+
+/* ---------- actions ---------- */
+$('btnConn').onclick = connect;
+$('token').addEventListener('keydown', e=>{ if(e.key==='Enter') connect(); });
+$('btnAll').onclick = ()=>[...$('views').querySelectorAll('input')].forEach(c=>c.checked=true);
+$('btnNone').onclick = ()=>[...$('views').querySelectorAll('input')].forEach(c=>c.checked=false);
+$('btnRescan').onclick = ()=>{ send({ t:'getState' }); log('rescan requested','muted'); };
+$('btnRender').onclick = ()=>{
+  const comps = selectedViews(); if (!comps.length){ banner('Tick at least one view','err'); return; }
+  S.rendering=true; setStatus(); $('pvCount').textContent='rendering…'; banner('rendering previews in Photoshop…');
+  shimmerGrid(comps.slice(0,8));
+  send({ t:'render', comps });
+};
+$('btnCreate').onclick = ()=>{
+  const title = $('title').value.trim(); if(!title){ banner('Enter a product name','err'); $('title').focus(); return; }
+  const comps = selectedViews(); if (!comps.length){ banner('Tick at least one view','err'); return; }
+  S.rendering=true; setStatus(); banner('creating “'+title+'” — exporting + publishing…');
+  send({ t:'create', title, comps,
+    colors:pillsOn('colorPills'), styles:pillsOn('stylePills'), colls:pillsOn('collPills'),
+    fmt:$('fmt').value.trim()||'webp', maxKB:+$('maxKB').value||50, maxW:+$('maxW').value||1080 });
+};
+
+/* ---------- boot ---------- */
+(function(){
+  const saved = localStorage.getItem('grl_factory_token');
+  if (saved){ $('token').value = saved; }
+  setStatus();
+  // auto-connect if a token is remembered
+  if (saved) connect();
+})();
+</script>
+</body>
+</html>
