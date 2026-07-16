@@ -214,6 +214,25 @@ const buildShipment = (order, overrides = {}) => {
 };
 
 /**
+ * List synced STORE order ids (Shopify platform) in a date range.
+ * Returns { success, orderIds: [shopifyOrderId, ...] }
+ */
+const storeOrderList = async (startDate, endDate, platformId = '2') => {
+    try {
+        const data = await post('/store/get-order-list.json', {
+            platform_id: platformId,
+            start_date: startDate,
+            end_date: endDate,
+        }, 60000);
+        const ids = Array.isArray(data?.data) ? data.data.map(String) : [];
+        return { success: String(data?.status || '').toLowerCase() === 'success', orderIds: ids };
+    } catch (e) {
+        console.warn('[ITHINK] storeOrderList failed:', e.message);
+        return { success: false, orderIds: [], message: e.message };
+    }
+};
+
+/**
  * Fetch synced STORE orders (Shopify channel integration) by Shopify numeric
  * order id. GRLHOOD's Shopify store is connected to iThink, so orders auto-
  * sync into iThink's Store Orders — shipping should attach to those instead
@@ -708,9 +727,11 @@ module.exports = {
     PICKUP_ADDRESS_ID,
     FROM_PINCODE,
     getCreds,
+    postRaw: post,
     buildShipment,
     buildShipmentFromStore,
     getStoreOrderDetails,
+    storeOrderList,
     createOrders,
     printLabel,
     printManifest,
