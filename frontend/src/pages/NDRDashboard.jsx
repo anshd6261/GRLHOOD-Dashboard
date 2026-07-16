@@ -32,31 +32,8 @@ const DATE_FILTERS = [
 
 const PAGE_SIZE = 24;
 
-/* ── date helpers ── */
-const relevantDate = (o) => {
-  const d = (o.bucket === 'orders' || o.bucket === 'ready') ? o.orderDate : (o.statusDateTime || o.orderDate);
-  const dt = new Date(d);
-  return isNaN(dt.getTime()) ? new Date(0) : dt;
-};
-const istNow = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-
-const inDateFilter = (o, filter, customRange) => {
-  const d = relevantDate(o);
-  const now = istNow();
-  if (filter === 'custom') {
-    const [start, end] = customRange || [];
-    if (!start) return true;
-    const from = new Date(start); from.setHours(0, 0, 0, 0);
-    const to = new Date(end || start); to.setHours(23, 59, 59, 999);
-    return d >= from && d <= to;
-  }
-  if (filter === 'today') return sameDay(d, now);
-  if (filter === 'yesterday') { const y = new Date(now.getTime() - 864e5); return sameDay(d, y); }
-  if (filter === '7d') return now - d <= 7 * 864e5;
-  if (filter === '30d') return now - d <= 30 * 864e5;
-  return true;
-};
+/* ── date helpers (tested in tests/boardDates.test.mjs) ── */
+import { relevantDate, istNow, inDateFilter, sortByDate } from '../utils/boardDates';
 
 const fmtDT = (v) => {
   if (!v) return '—';
@@ -512,7 +489,7 @@ export default function NDRDashboard() {
 
   const visible = useMemo(() => {
     const s = deferredSearch.toLowerCase().trim();
-    return dateFiltered
+    const filtered = dateFiltered
       .filter(o => {
         if (tab === 'overview') return true;
         if (tab === 'action') return o.bucket === 'ndr' || actions[o.awb];
@@ -522,8 +499,8 @@ export default function NDRDashboard() {
         o.orderNumber?.toLowerCase().includes(s) ||
         o.awb?.includes(s) ||
         o.customer?.phone?.includes(s) ||
-        o.customer?.name?.toLowerCase().includes(s))
-      .sort((a, b) => sortDesc ? relevantDate(b) - relevantDate(a) : relevantDate(a) - relevantDate(b));
+        o.customer?.name?.toLowerCase().includes(s));
+    return sortByDate(filtered, sortDesc);
   }, [dateFiltered, tab, actions, deferredSearch, sortDesc]);
 
   const counts = useMemo(() => {
