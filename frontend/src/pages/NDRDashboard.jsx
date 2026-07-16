@@ -33,18 +33,19 @@ const DATE_FILTERS = [
 const PAGE_SIZE = 24;
 
 /* ── date helpers (tested in tests/boardDates.test.mjs) ── */
-import { relevantDate, istNow, inDateFilter, sortByDate } from '../utils/boardDates';
+import { relevantDate, istNow, inDateFilter, sortByDate, parseDate } from '../utils/boardDates';
 
+// parseDate handles iThink's "YYYY-MM-DD HH:MM:SS" (breaks native Safari parsing)
 const fmtDT = (v) => {
   if (!v) return '—';
-  const d = new Date(v);
-  if (isNaN(d.getTime())) return v;
+  const d = parseDate(v);
+  if (d.getTime() === 0) return String(v);
   return d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 };
 const fmtD = (v) => {
   if (!v) return '—';
-  const d = new Date(v);
-  if (isNaN(d.getTime())) return v;
+  const d = parseDate(v);
+  if (d.getTime() === 0) return String(v);
   return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 };
 
@@ -148,7 +149,7 @@ const BoardCard = React.memo(function BoardCard({ o, actionEntry, onAction, onWa
           {o.bucket === 'delivered' && (
             <span className="px-2 py-1 rounded-lg bg-[rgba(52,211,153,0.06)] border border-[rgba(52,211,153,0.18)]">
               <span className="text-[8px] uppercase font-black tracking-wider text-emerald-400 mr-1.5">Delivered</span>
-              <span className="text-[10px] font-mono text-emerald-300">{fmtDT(o.statusDateTime)}</span>
+              <span className="text-[10px] font-mono text-emerald-300">{fmtDT(o.deliveredAt || o.statusDateTime)}</span>
             </span>
           )}
         </div>
@@ -254,7 +255,7 @@ const BoardCard = React.memo(function BoardCard({ o, actionEntry, onAction, onWa
 
       {o.bucket === 'delivered' && (
         <div className="px-4 pb-3 flex items-center gap-1.5 text-[10px] text-emerald-400">
-          <CheckCircle size={11} /> Delivered {fmtDT(o.statusDateTime)}{o.attemptCount > 1 ? ` · took ${o.attemptCount} attempts` : ''}
+          <CheckCircle size={11} /> Delivered {fmtDT(o.deliveredAt || o.statusDateTime)}{o.attemptCount > 1 ? ` · took ${o.attemptCount} attempts` : ''}
         </div>
       )}
 
@@ -278,8 +279,8 @@ function Overview({ orders, onJump }) {
     const by = (b) => orders.filter(o => o.bucket === b);
     const ndr = by('ndr'), rto = by('rto'), delivered = by('delivered'), transit = by('transit'), ready = by('ready'), manifested = by('manifested');
     const closed = delivered.length + rto.length; // journeys that ended
-    const newNdr48 = ndr.filter(o => o.ndrDate && (now - new Date(o.ndrDate)) <= 48 * 3600e3);
-    const newRto48 = rto.filter(o => o.rtoInitiatedAt && (now - new Date(o.rtoInitiatedAt)) <= 48 * 3600e3);
+    const newNdr48 = ndr.filter(o => o.ndrDate && (now - parseDate(o.ndrDate)) <= 48 * 3600e3 && parseDate(o.ndrDate).getTime() > 0);
+    const newRto48 = rto.filter(o => o.rtoInitiatedAt && (now - parseDate(o.rtoInitiatedAt)) <= 48 * 3600e3 && parseDate(o.rtoInitiatedAt).getTime() > 0);
     const codAtRisk = ndr.reduce((s, o) => s + (o.isCod ? o.totalAmount : 0), 0) + rto.reduce((s, o) => s + (o.isCod ? o.totalAmount : 0), 0);
 
     // Per-courier breakdown
