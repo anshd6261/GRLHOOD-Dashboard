@@ -305,6 +305,32 @@ export default function NDRDashboard() {
                   </div>
                 </div>
 
+                {/* ── Dates strip: ORDER / NDR / RTO dates, clearly labeled ── */}
+                <div className="mt-3 flex items-center gap-2 flex-wrap">
+                  <span className="px-2 py-1 rounded-lg bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.06)]">
+                    <span className="text-[8px] uppercase font-black tracking-wider text-[rgba(245,245,245,0.3)] mr-1.5">Order Date</span>
+                    <span className="text-[10px] font-mono text-[rgba(245,245,245,0.75)]">{fmtD(o.orderDate)}</span>
+                  </span>
+                  {(o.bucket === 'ndr' || (o.ndrDate && o.bucket === 'rto')) && o.ndrDate && (
+                    <span className="px-2 py-1 rounded-lg bg-[rgba(255,20,147,0.06)] border border-[rgba(255,20,147,0.18)]">
+                      <span className="text-[8px] uppercase font-black tracking-wider text-[#ff1493] mr-1.5">NDR Date</span>
+                      <span className="text-[10px] font-mono text-[#ff9ecb]">{fmtDT(o.ndrDate)}</span>
+                    </span>
+                  )}
+                  {o.bucket === 'rto' && o.rtoInitiatedAt && (
+                    <span className="px-2 py-1 rounded-lg bg-[rgba(251,146,60,0.06)] border border-[rgba(251,146,60,0.2)]">
+                      <span className="text-[8px] uppercase font-black tracking-wider text-orange-400 mr-1.5">RTO Initiated</span>
+                      <span className="text-[10px] font-mono text-orange-300">{fmtDT(o.rtoInitiatedAt)}</span>
+                    </span>
+                  )}
+                  {o.bucket === 'delivered' && (
+                    <span className="px-2 py-1 rounded-lg bg-[rgba(52,211,153,0.06)] border border-[rgba(52,211,153,0.18)]">
+                      <span className="text-[8px] uppercase font-black tracking-wider text-emerald-400 mr-1.5">Delivered</span>
+                      <span className="text-[10px] font-mono text-emerald-300">{fmtDT(o.statusDateTime)}</span>
+                    </span>
+                  )}
+                </div>
+
                 {/* ── NDR reason banner ── */}
                 {isNdr && (
                   <div className="mt-3 rounded-xl px-3 py-2.5 bg-[rgba(255,20,147,0.07)] border border-[rgba(255,20,147,0.18)]">

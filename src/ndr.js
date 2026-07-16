@@ -107,6 +107,12 @@ const buildBoard = async (days = 30, refresh = false) => {
         const status = t?.current_status || '';
         const bucket = awb ? bucketFor(status) : 'orders';
         const last = t?.last_scan_details || {};
+        // Scan history: when did RTO start / when was the (last) NDR attempt
+        const scans = Array.isArray(t?.scan_details) ? t.scan_details : [];
+        const rtoInitiatedAt = scans.filter(s => /^rto/i.test(String(s?.status || '')))
+            .map(s => s.status_date_time).filter(Boolean).sort()[0] || '';
+        const ndrAt = scans.filter(s => /^undelivered$/i.test(String(s?.status || '')))
+            .map(s => s.status_date_time).filter(Boolean).sort().pop() || '';
         const isPartial = String(d.payment_mode || '').toLowerCase().includes('partial');
         const isCod = isPartial || String(d.payment_mode || '').toLowerCase() === 'cod';
 
@@ -122,6 +128,8 @@ const buildBoard = async (days = 30, refresh = false) => {
             bucket,
             ndrReason: last.reason || '',
             ndrRemark: last.remark || '',
+            ndrDate: ndrAt || (bucket === 'ndr' ? last.status_date_time || '' : ''),
+            rtoInitiatedAt: rtoInitiatedAt || (bucket === 'rto' ? last.status_date_time || '' : ''),
             attemptCount: parseInt(t?.ofd_count, 10) || 0,
             edd: [t?.expected_delivery_date, t?.promise_delivery_date].find(v => v && !v.startsWith('0000')) || '',
             customer: {
