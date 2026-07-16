@@ -3,7 +3,7 @@
  * Runs the EXACT module the UI uses (frontend/src/utils/boardDates.js).
  * Run with: TZ=Asia/Kolkata node tests/boardDates.test.mjs
  */
-import { relevantDate, inDateFilter, sortByDate, sameDay } from '../frontend/src/utils/boardDates.js';
+import { relevantDate, inDateFilter, sortByDate, sameDay, parseDate } from '../frontend/src/utils/boardDates.js';
 
 let pass = 0, fail = 0;
 const t = (name, cond) => {
@@ -100,7 +100,36 @@ t('sort asc: oldest valid next (10 Jul)', asc[1].bucket === 'delivered');
 t('sort asc: newest last', asc[4].bucket === 'ndr');
 t('sort: original array untouched', unsorted[0].bucket === 'delivered');
 
-/* ── 10. cross-midnight IST sanity: "today" at 00:10 IST ── */
+/* ── 10. THE REPORTED BUG: RTO initiated 8 Jul, still moving (last scan today)
+        must NOT appear under "Today" — judged by RTO-initiated date ── */
+const movingRto = { bucket: 'rto', orderDate: '2026-07-05', statusDateTime: '2026-07-15 11:00:00', rtoInitiatedAt: '2026-07-08 14:00:00' };
+t('BUG: moving RTO judged by initiated date (8 Jul)', relevantDate(movingRto).getDate() === 8);
+t('BUG: moving RTO NOT in Today', !inDateFilter(movingRto, 'today', null, NOW));
+t('BUG: moving RTO NOT in yesterday', !inDateFilter(movingRto, 'yesterday', null, NOW));
+t('BUG: moving RTO IS in its own single-date filter (8 Jul)', inDateFilter(movingRto, 'custom', [new Date('2026-07-08T12:00:00'), null], NOW));
+t('BUG: moving RTO IS in 30d', inDateFilter(movingRto, '30d', null, NOW));
+t('RTO without scan history falls back to last scan', relevantDate({ bucket: 'rto', orderDate: '2026-07-05', statusDateTime: '2026-07-12 10:00:00' }).getDate() === 12);
+
+/* NDR judged by the failed-attempt scan, not any later scan */
+const ndrLaterScan = { bucket: 'ndr', orderDate: '2026-07-01', statusDateTime: '2026-07-15 09:00:00', ndrDate: '2026-07-13 17:30:00' };
+t('NDR judged by NDR date (13 Jul), not last scan', relevantDate(ndrLaterScan).getDate() === 13);
+t('NDR with later scan NOT in Today', !inDateFilter(ndrLaterScan, 'today', null, NOW));
+
+/* Delivered judged by the delivery scan */
+const delv = { bucket: 'delivered', orderDate: '2026-06-20', statusDateTime: '2026-07-14 20:00:00', deliveredAt: '2026-07-14 19:45:00' };
+t('delivered judged by deliveredAt', relevantDate(delv).getHours() === 19);
+
+/* ── 11. Safari/iOS parsing: iThink's "YYYY-MM-DD HH:MM:SS" space format ── */
+t('parseDate handles space format', parseDate('2026-07-14 12:54:00').getDate() === 14 && parseDate('2026-07-14 12:54:00').getHours() === 12);
+t('parseDate handles ISO T format', parseDate('2026-07-14T12:54:00').getDate() === 14);
+t('parseDate handles date-only', parseDate('2026-07-14').getTime() > 0);
+t('parseDate: 0000-00-00 → epoch', parseDate('0000-00-00').getTime() === 0);
+t('parseDate: empty → epoch', parseDate('').getTime() === 0);
+t('parseDate: garbage → epoch', parseDate('not-a-date').getTime() === 0);
+t('parseDate: Date object passthrough', parseDate(new Date('2026-07-14T10:00:00')).getDate() === 14);
+t('epoch dates excluded from every window', !inDateFilter({ bucket: 'transit', orderDate: 'garbage', statusDateTime: '' }, '30d', null, NOW));
+
+/* ── 12. cross-midnight IST sanity: "today" at 00:10 IST ── */
 const MIDNIGHT = new Date('2026-07-15T00:10:00');
 t('midnight: scan at 00:05 today matches today', inDateFilter(mk('delivered', '2026-06-01', '2026-07-15 00:05:00'), 'today', null, MIDNIGHT));
 t('midnight: scan 23:55 yesterday is yesterday not today', !inDateFilter(mk('delivered', '2026-06-01', '2026-07-14 23:55:00'), 'today', null, MIDNIGHT) && inDateFilter(mk('delivered', '2026-06-01', '2026-07-14 23:55:00'), 'yesterday', null, MIDNIGHT));

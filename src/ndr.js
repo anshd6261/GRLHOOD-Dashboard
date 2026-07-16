@@ -189,6 +189,8 @@ const buildBoard = async (days = WINDOW_DAYS, refresh = false) => {
             .map(s => s.status_date_time).filter(Boolean).sort()[0] || '';
         const ndrAt = scans.filter(s => /^undelivered$/i.test(String(s?.status || '')))
             .map(s => s.status_date_time).filter(Boolean).sort().pop() || '';
+        const deliveredAt = scans.filter(s => /^delivered$/i.test(String(s?.status || '')))
+            .map(s => s.status_date_time).filter(Boolean).sort().pop() || '';
         const isPartial = String(d.payment_mode || '').toLowerCase().includes('partial');
         const isCod = isPartial || String(d.payment_mode || '').toLowerCase() === 'cod';
 
@@ -206,6 +208,7 @@ const buildBoard = async (days = WINDOW_DAYS, refresh = false) => {
             ndrRemark: last.remark || '',
             ndrDate: ndrAt || (bucket === 'ndr' ? last.status_date_time || '' : ''),
             rtoInitiatedAt: rtoInitiatedAt || (bucket === 'rto' ? last.status_date_time || '' : ''),
+            deliveredAt: deliveredAt || (bucket === 'delivered' ? last.status_date_time || '' : ''),
             attemptCount: parseInt(t?.ofd_count, 10) || 0,
             edd: [t?.expected_delivery_date, t?.promise_delivery_date].find(v => v && !v.startsWith('0000')) || '',
             customer: {
