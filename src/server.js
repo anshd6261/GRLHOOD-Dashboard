@@ -743,6 +743,14 @@ app.post('/api/rapidshyp/assign-batch', async (req, res) => {
         console.log(`[API] iThink ship: creating ${orders.length} order(s)${logistics ? ` via ${logistics}` : ' (auto courier)'}`);
         const result = await ithink.createOrders(orders, logistics ? { logistics } : {});
 
+        // Record orderNumber→AWB so the NDR board tracks these shipments even
+        // if the store order's awb_no backfill lags.
+        try {
+            const map = {};
+            result.results.forEach(r => { if (r.success && r.awb) map[r.orderId] = r.awb; });
+            if (Object.keys(map).length) require('./ndr').registerAwbs(map);
+        } catch { /* non-blocking */ }
+
         // Diagnose failures in parallel: what's wrong + which couriers ARE available
         const failures = result.results.filter(r => !r.success && r.pincode);
         await Promise.all(failures.slice(0, 15).map(async f => { // cap to avoid hammering the API
@@ -911,6 +919,17 @@ app.get('/api/ndr/board', async (req, res) => {
         res.json(board);
     } catch (e) {
         console.error('[API] NDR board error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Seed orderNumber→AWB mappings (admin browser's awbMap) so standalone-created
+// shipments get tracked on the board even without store awb_no backfill.
+app.post('/api/ndr/awb-map', (req, res) => {
+    try {
+        const result = ndr.registerAwbs(req.body?.map || {});
+        res.json({ success: true, ...result });
+    } catch (e) {
         res.status(500).json({ success: false, error: e.message });
     }
 });

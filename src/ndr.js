@@ -51,6 +51,9 @@ const TERMINAL_STATUS = /^(delivered|rto delivered|cancelled)$/i;
 let boardCache = { ts: 0, board: null };
 let storeDetailsCache = {};   // shopifyOrderId -> details (address/products don't change)
 let trackingCache = {};       // awb -> { ts, terminal, data }
+let awbOverrides = {};        // orderNumber (no '#') -> awb, for shipments created
+                              // standalone (before store-linking) whose AWB never
+                              // backfilled onto the synced store order
 const BOARD_TTL_MS = 5 * 60 * 1000;
 const TRACK_TTL_MS = 5 * 60 * 1000;
 
@@ -60,6 +63,7 @@ try {
     const disk = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf-8'));
     storeDetailsCache = disk.storeDetailsCache || {};
     trackingCache = disk.trackingCache || {};
+    awbOverrides = disk.awbOverrides || {};
     console.log(`[NDR] warm cache loaded: ${Object.keys(storeDetailsCache).length} orders, ${Object.keys(trackingCache).length} trackings`);
 } catch { /* cold start */ }
 
@@ -67,7 +71,26 @@ let lastSave = 0;
 const persistCaches = () => {
     if (Date.now() - lastSave < 30000) return;
     lastSave = Date.now();
-    try { fs.writeFileSync(CACHE_FILE, JSON.stringify({ storeDetailsCache, trackingCache })); } catch { /* read-only fs */ }
+    try { fs.writeFileSync(CACHE_FILE, JSON.stringify({ storeDetailsCache, trackingCache, awbOverrides })); } catch { /* read-only fs */ }
+};
+
+/**
+ * Register orderNumber→AWB mappings (from ship runs / the admin browser's
+ * awbMap) so standalone-created shipments still get live tracking on the
+ * board even when the synced store order carries no awb_no.
+ */
+const registerAwbs = (map) => {
+    let added = 0;
+    Object.entries(map || {}).forEach(([orderNo, awb]) => {
+        const key = String(orderNo || '').replace('#', '').trim();
+        const val = String(awb || '').trim();
+        if (key && val && awbOverrides[key] !== val) { awbOverrides[key] = val; added++; }
+    });
+    if (added) {
+        boardCache = { ts: 0, board: boardCache.board }; // force rebuild next fetch
+        persistCaches();
+    }
+    return { added, total: Object.keys(awbOverrides).length };
 };
 
 /** Run async worker over items with limited concurrency. */
@@ -129,7 +152,9 @@ const buildBoard = async (days = WINDOW_DAYS, refresh = false) => {
     // 3. Tracking — terminal journeys (Delivered / RTO Delivered / Cancelled)
     //    never change, so they're served from cache forever; live journeys
     //    re-fetch after TRACK_TTL (or immediately on refresh).
-    const awbs = [...new Set(details.map(d => d.awb_no).filter(Boolean))];
+    // AWB source: store record, else the registered override map
+    const awbFor = (d) => d.awb_no || awbOverrides[String(d.order_number || '').replace('#', '').trim()] || '';
+    const awbs = [...new Set(details.map(awbFor).filter(Boolean))];
     const trackMap = {};
     const needFetch = [];
     for (const awb of awbs) {
@@ -153,7 +178,7 @@ const buildBoard = async (days = WINDOW_DAYS, refresh = false) => {
 
     // 4. Merge + bucket
     const orders = details.map(d => {
-        const awb = d.awb_no || '';
+        const awb = awbFor(d);
         const t = awb ? (trackMap[awb] || null) : null;
         const status = t?.current_status || '';
         const bucket = awb ? bucketFor(status) : 'orders';
@@ -258,4 +283,4 @@ const takeAction = async ({ awb, action, date, time, phone, address, addressType
     };
 };
 
-module.exports = { buildBoard, takeAction, bucketFor };
+module.exports = { buildBoard, takeAction, bucketFor, registerAwbs };
