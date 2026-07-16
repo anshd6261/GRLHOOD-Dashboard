@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import axios from 'axios';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
 import {
   Package, RefreshCw, Truck, CheckCircle, AlertTriangle, RotateCcw,
   Phone, MessageSquare, MapPin, Calendar, Copy, ExternalLink, Search,
@@ -35,9 +37,16 @@ const relevantDate = (o) => {
 const istNow = () => new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
 const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 
-const inDateFilter = (o, filter) => {
+const inDateFilter = (o, filter, customRange) => {
   const d = relevantDate(o);
   const now = istNow();
+  if (filter === 'custom') {
+    const [start, end] = customRange || [];
+    if (!start) return true;
+    const from = new Date(start); from.setHours(0, 0, 0, 0);
+    const to = new Date(end || start); to.setHours(23, 59, 59, 999);
+    return d >= from && d <= to;
+  }
   if (filter === 'today') return sameDay(d, now);
   if (filter === 'yesterday') { const y = new Date(now.getTime() - 864e5); return sameDay(d, y); }
   if (filter === '7d') return now - d <= 7 * 864e5;
@@ -82,6 +91,7 @@ export default function NDRDashboard() {
   const [loading, setLoading] = useState(false);
   const [bucket, setBucket] = useState('ndr');
   const [dateFilter, setDateFilter] = useState('7d');
+  const [customRange, setCustomRange] = useState([null, null]); // [start, end] for single date or window
   const [sortDesc, setSortDesc] = useState(true);
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState(new Set());
@@ -98,13 +108,17 @@ export default function NDRDashboard() {
   const fetchBoard = useCallback(async (refresh = false) => {
     setLoading(true);
     try {
-      const days = dateFilter === '30d' ? 30 : 7;
+      // Fetch window must reach back to the custom range's start date
+      let days = dateFilter === '30d' ? 30 : 7;
+      if (dateFilter === 'custom' && customRange[0]) {
+        days = Math.min(90, Math.max(1, Math.ceil((istNow() - customRange[0]) / 864e5) + 1));
+      }
       const r = await axios.get(`${API_URL}/ndr/board?days=${days}${refresh ? '&refresh=1' : ''}`, { timeout: 240000 });
       setBoard(r.data);
     } catch (e) {
       setToast({ msg: `Load failed: ${e.response?.data?.error || e.message}`, err: true });
     } finally { setLoading(false); }
-  }, [dateFilter]);
+  }, [dateFilter, customRange]);
 
   useEffect(() => { fetchBoard(); }, [fetchBoard]);
 
@@ -113,23 +127,23 @@ export default function NDRDashboard() {
     const s = search.toLowerCase().trim();
     return board.orders
       .filter(o => bucket === 'orders' ? true : o.bucket === bucket)
-      .filter(o => inDateFilter(o, dateFilter))
+      .filter(o => inDateFilter(o, dateFilter, customRange))
       .filter(o => !s ||
         o.orderNumber?.toLowerCase().includes(s) ||
         o.awb?.includes(s) ||
         o.customer?.phone?.includes(s) ||
         o.customer?.name?.toLowerCase().includes(s))
       .sort((a, b) => sortDesc ? relevantDate(b) - relevantDate(a) : relevantDate(a) - relevantDate(b));
-  }, [board, bucket, dateFilter, sortDesc, search]);
+  }, [board, bucket, dateFilter, customRange, sortDesc, search]);
 
   const counts = useMemo(() => {
     const c = { orders: 0, ready: 0, transit: 0, delivered: 0, ndr: 0, rto: 0 };
-    (board?.orders || []).filter(o => inDateFilter(o, dateFilter)).forEach(o => {
+    (board?.orders || []).filter(o => inDateFilter(o, dateFilter, customRange)).forEach(o => {
       c.orders++;
       if (c[o.bucket] !== undefined && o.bucket !== 'orders') c[o.bucket]++;
     });
     return c;
-  }, [board, dateFilter]);
+  }, [board, dateFilter, customRange]);
 
   const toggleExpand = (id) => setExpanded(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
@@ -200,13 +214,33 @@ export default function NDRDashboard() {
       {/* Date filter + sort + search */}
       <div className="flex items-center gap-2 flex-wrap mb-5">
         {DATE_FILTERS.map(f => (
-          <button key={f.id} onClick={() => setDateFilter(f.id)}
+          <button key={f.id} onClick={() => { setDateFilter(f.id); setCustomRange([null, null]); }}
             className={`glass-pill text-[11px] font-bold tracking-wider cursor-pointer transition-all ${
               dateFilter === f.id ? 'glass-pill-active' : 'text-[rgba(245,245,245,0.35)] hover:text-[rgba(245,245,245,0.6)]'
             }`}>
             {f.label}
           </button>
         ))}
+        {/* Custom single date or date window */}
+        <div className={`glass-pill flex items-center gap-1.5 ${dateFilter === 'custom' ? 'glass-pill-active' : 'text-[rgba(245,245,245,0.35)]'}`}>
+          <Calendar size={10} className="shrink-0" />
+          <DatePicker
+            selectsRange
+            startDate={customRange[0]}
+            endDate={customRange[1]}
+            maxDate={new Date()}
+            onChange={(update) => {
+              setCustomRange(update);
+              if (update?.[0]) setDateFilter('custom');
+            }}
+            dateFormat="d MMM"
+            placeholderText="Pick date / range"
+            className="bg-transparent text-[11px] font-bold outline-none w-[120px] cursor-pointer placeholder-[rgba(245,245,245,0.3)]"
+          />
+          {customRange[0] && (
+            <button onClick={() => { setCustomRange([null, null]); setDateFilter('7d'); }} className="hover:text-white"><X size={10} /></button>
+          )}
+        </div>
         <button onClick={() => setSortDesc(!sortDesc)} className="glass-pill text-[11px] font-bold tracking-wider cursor-pointer text-[rgba(245,245,245,0.5)] flex items-center gap-1">
           <Calendar size={10} /> {sortDesc ? 'Newest first' : 'Oldest first'}
         </button>
