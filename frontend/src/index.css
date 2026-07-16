@@ -578,6 +578,20 @@ html, body {
 }
 
 /* ═══════════════════════════════════════════
+   BOARD CARD — performance-first card for the NDR board.
+   No backdrop-filter (GPU-cheap), offscreen cards skip
+   layout/paint entirely via content-visibility.
+   ═══════════════════════════════════════════ */
+.board-card {
+  background: linear-gradient(160deg, rgba(30, 30, 38, 0.92) 0%, rgba(20, 20, 26, 0.92) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 24px;
+  overflow: hidden;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 360px;
+}
+
+/* ═══════════════════════════════════════════
    GLASS PANEL (Modals)
    ═══════════════════════════════════════════ */
 
