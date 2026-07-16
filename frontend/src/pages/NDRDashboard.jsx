@@ -485,6 +485,12 @@ export default function NDRDashboard() {
   useEffect(() => {
     let alive = true;
     (async () => {
+      // Seed the server with this browser's known orderNumber→AWB map (from
+      // ship runs) so standalone shipments track correctly on the board.
+      try {
+        const m = JSON.parse(localStorage.getItem('awbMap') || '{}');
+        if (Object.keys(m).length) await axios.post(`${API_URL}/ndr/awb-map`, { map: m }).catch(() => {});
+      } catch {}
       await fetchBoard(false);              // fast: server cache
       if (alive) fetchBoard(true);          // background: live tracking sync
     })();
