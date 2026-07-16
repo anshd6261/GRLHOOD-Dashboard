@@ -13,8 +13,9 @@ const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
 
 const TABS = [
   { id: 'overview', label: 'Overview', color: '#e3cfd8' },
-  { id: 'orders', label: 'Orders', color: '#e3cfd8' },
-  { id: 'ready', label: 'Ready to Dispatch', color: '#818cf8' },
+  { id: 'orders', label: 'Orders', color: '#e3cfd8' },        // synced, NO courier yet
+  { id: 'ready', label: 'Ready to Dispatch', color: '#818cf8' }, // courier/AWB assigned
+  { id: 'manifested', label: 'Manifested', color: '#a78bfa' },   // manifest generated, awaiting pickup
   { id: 'transit', label: 'In Transit', color: '#38bdf8' },
   { id: 'delivered', label: 'Delivered', color: '#34d399' },
   { id: 'ndr', label: 'NDR', color: '#ff1493' },
@@ -280,11 +281,11 @@ const BoardCard = React.memo(function BoardCard({ o, actionEntry, onAction, onWa
         </div>
       )}
 
-      {o.bucket === 'ready' && (() => {
+      {(o.bucket === 'ready' || o.bucket === 'manifested') && (() => {
         const age = (istNow() - relevantDate(o)) / 864e5;
         return age > 2 ? (
           <div className="px-4 pb-3 flex items-center gap-1.5 text-[10px] text-amber-400">
-            <AlertTriangle size={11} /> Not picked up for {Math.floor(age)} days — chase the courier
+            <AlertTriangle size={11} /> {o.bucket === 'manifested' ? 'Not picked up' : 'Not manifested'} for {Math.floor(age)} days — chase the courier
           </div>
         ) : null;
       })()}
@@ -298,7 +299,7 @@ function Overview({ orders, onJump }) {
   const stats = useMemo(() => {
     const shipped = orders.filter(o => o.awb);
     const by = (b) => orders.filter(o => o.bucket === b);
-    const ndr = by('ndr'), rto = by('rto'), delivered = by('delivered'), transit = by('transit'), ready = by('ready');
+    const ndr = by('ndr'), rto = by('rto'), delivered = by('delivered'), transit = by('transit'), ready = by('ready'), manifested = by('manifested');
     const closed = delivered.length + rto.length; // journeys that ended
     const newNdr48 = ndr.filter(o => o.ndrDate && (now - new Date(o.ndrDate)) <= 48 * 3600e3);
     const newRto48 = rto.filter(o => o.rtoInitiatedAt && (now - new Date(o.rtoInitiatedAt)) <= 48 * 3600e3);
@@ -308,7 +309,7 @@ function Overview({ orders, onJump }) {
     const couriers = {};
     shipped.forEach(o => {
       const c = o.courier || 'Unassigned';
-      if (!couriers[c]) couriers[c] = { name: c, shipped: 0, transit: 0, delivered: 0, ndr: 0, rto: 0, ready: 0 };
+      if (!couriers[c]) couriers[c] = { name: c, shipped: 0, transit: 0, delivered: 0, ndr: 0, rto: 0, ready: 0, manifested: 0 };
       couriers[c].shipped++;
       if (couriers[c][o.bucket] !== undefined) couriers[c][o.bucket]++;
     });
@@ -322,7 +323,7 @@ function Overview({ orders, onJump }) {
 
     return {
       total: orders.length, shippedCount: shipped.length,
-      ndr, rto, delivered, transit, ready,
+      ndr, rto, delivered, transit, ready, manifested,
       newNdr48, newRto48, codAtRisk,
       ndrRate: shipped.length ? (ndr.length / shipped.length) * 100 : 0,
       rtoRate: closed ? (rto.length / closed) * 100 : 0,
@@ -377,11 +378,12 @@ function Overview({ orders, onJump }) {
       </div>
 
       {/* ── KPI row ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
         <Tile label="Shipped" value={stats.shippedCount} sub={`of ${stats.total} orders`} />
         <Tile label="Delivered" value={stats.delivered.length} color="#34d399" onClick={() => onJump('delivered')} />
         <Tile label="In Transit" value={stats.transit.length} color="#38bdf8" onClick={() => onJump('transit')} />
-        <Tile label="Awaiting Pickup" value={stats.ready.length} color="#818cf8" onClick={() => onJump('ready')} />
+        <Tile label="Manifested" value={stats.manifested.length} sub="awaiting pickup" color="#a78bfa" onClick={() => onJump('manifested')} />
+        <Tile label="Ready" value={stats.ready.length} sub="courier assigned" color="#818cf8" onClick={() => onJump('ready')} />
         <Tile label="NDR Rate" value={`${stats.ndrRate.toFixed(1)}%`} sub={`${stats.ndr.length} of ${stats.shippedCount} shipped`} color="#ff1493" />
         <Tile label="RTO Rate" value={`${stats.rtoRate.toFixed(1)}%`} sub={`${stats.rto.length} of ${stats.delivered.length + stats.rto.length} closed`} color="#fb923c" />
       </div>
@@ -464,23 +466,39 @@ export default function NDRDashboard() {
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(null), 3500); return () => clearTimeout(t); } }, [toast]);
   useEffect(() => { setPageSize(PAGE_SIZE); }, [tab, dateFilter, deferredSearch, customRange]);
 
-  const fetchBoard = useCallback(async (refresh = false) => {
+  // The server always loads a wide fixed window (30 days) so date filtering is
+  // purely client-side and instant; only a custom range older than that widens
+  // the request. No manual refresh — cached render → server-cache fetch →
+  // background live sync, then auto-sync every 5 minutes.
+  const fetchBoard = useCallback(async (refresh = false, extraDays = 0) => {
     setLoading(true);
     try {
-      let days = dateFilter === '30d' ? 30 : 7;
-      if (dateFilter === 'custom' && customRange[0]) {
-        days = Math.min(90, Math.max(1, Math.ceil((istNow() - customRange[0]) / 864e5) + 1));
-      }
+      const days = Math.min(90, Math.max(30, extraDays));
       const r = await axios.get(`${API_URL}/ndr/board?days=${days}${refresh ? '&refresh=1' : ''}`, { timeout: 240000 });
       setBoard(r.data);
-      // Instant loads next visit: stale-while-revalidate cache
       try { localStorage.setItem('ndr_board_cache', JSON.stringify(r.data)); } catch {}
     } catch (e) {
-      setToast({ msg: `Load failed: ${e.response?.data?.error || e.message}`, err: true });
+      setToast({ msg: `Sync failed: ${e.response?.data?.error || e.message}`, err: true });
     } finally { setLoading(false); }
-  }, [dateFilter, customRange]);
+  }, []);
 
-  useEffect(() => { fetchBoard(); }, [fetchBoard]);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      await fetchBoard(false);              // fast: server cache
+      if (alive) fetchBoard(true);          // background: live tracking sync
+    })();
+    const iv = setInterval(() => fetchBoard(true), 5 * 60 * 1000);
+    return () => { alive = false; clearInterval(iv); };
+  }, [fetchBoard]);
+
+  // Custom ranges reaching further back than the loaded window widen the fetch
+  useEffect(() => {
+    if (dateFilter === 'custom' && customRange[0] && board?.days) {
+      const needed = Math.ceil((istNow() - customRange[0]) / 864e5) + 1;
+      if (needed > board.days) fetchBoard(false, needed);
+    }
+  }, [dateFilter, customRange, board?.days, fetchBoard]);
 
   const dateFiltered = useMemo(() =>
     (board?.orders || []).filter(o => inDateFilter(o, dateFilter, customRange)),
@@ -490,9 +508,9 @@ export default function NDRDashboard() {
     const s = deferredSearch.toLowerCase().trim();
     return dateFiltered
       .filter(o => {
-        if (tab === 'orders' || tab === 'overview') return true;
+        if (tab === 'overview') return true;
         if (tab === 'action') return o.bucket === 'ndr' || actions[o.awb];
-        return o.bucket === tab;
+        return o.bucket === tab; // 'orders' = synced with no courier assigned yet
       })
       .filter(o => !s ||
         o.orderNumber?.toLowerCase().includes(s) ||
@@ -503,10 +521,9 @@ export default function NDRDashboard() {
   }, [dateFiltered, tab, actions, deferredSearch, sortDesc]);
 
   const counts = useMemo(() => {
-    const c = { overview: null, orders: 0, ready: 0, transit: 0, delivered: 0, ndr: 0, rto: 0, action: 0 };
+    const c = { overview: null, orders: 0, ready: 0, manifested: 0, transit: 0, delivered: 0, ndr: 0, rto: 0, action: 0 };
     dateFiltered.forEach(o => {
-      c.orders++;
-      if (c[o.bucket] !== undefined && o.bucket !== 'orders') c[o.bucket]++;
+      if (c[o.bucket] !== undefined) c[o.bucket]++;
       if (o.bucket === 'ndr' || actions[o.awb]) c.action++;
     });
     return c;
@@ -569,10 +586,12 @@ export default function NDRDashboard() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {loading && board && (
+            <span className="flex items-center gap-1.5 text-[10px] font-bold text-[rgba(245,245,245,0.35)]">
+              <RefreshCw size={10} className="animate-spin text-[#e3cfd8]" /> live syncing
+            </span>
+          )}
           <button onClick={() => setShowWaSettings(true)} className="glass-icon-btn" title="WhatsApp report settings"><Settings size={14} /></button>
-          <button onClick={() => fetchBoard(true)} disabled={loading} className="glass-btn px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2">
-            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> Refresh
-          </button>
         </div>
       </div>
 
