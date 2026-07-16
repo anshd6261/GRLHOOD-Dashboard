@@ -80,7 +80,12 @@ app.post('/api/login', (req, res) => {
     if (username === 'nextbige101' && password === 'nextbige101') {
         return res.json({ success: true, role: 'supplier', token: 'mock-jwt-supplier-token-2a4' });
     }
-    
+
+    // NDR management login — sees ONLY the NDR dashboard
+    if (username === 'ITHINKGRL' && password === 'ITHINKGRL') {
+        return res.json({ success: true, role: 'ndr', token: 'mock-jwt-ndr-token-5k8' });
+    }
+
     return res.status(401).json({ success: false, error: 'Invalid credentials' });
 });
 
@@ -887,6 +892,36 @@ app.post('/api/rapidshyp/bulk-labels-by-orders', async (req, res) => {
         res.json(result);
     } catch (e) {
         console.error('[API] Bulk Labels by Orders Error:', e);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// ==========================================
+// NDR MANAGEMENT (iThink store orders + tracking board)
+// ==========================================
+const ndr = require('./ndr');
+
+// Full shipment board: synced store orders bucketed by live courier status.
+// ?days=30 (window), ?refresh=1 (bust the 10-min cache)
+app.get('/api/ndr/board', async (req, res) => {
+    try {
+        const days = Math.min(Math.max(parseInt(req.query.days, 10) || 30, 1), 90);
+        const refresh = req.query.refresh === '1';
+        const board = await ndr.buildBoard(days, refresh);
+        res.json(board);
+    } catch (e) {
+        console.error('[API] NDR board error:', e.message);
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
+// Take NDR action: { awb, action: 'reattempt'|'rto', date?, time?, phone?, address?, remark? }
+app.post('/api/ndr/action', async (req, res) => {
+    try {
+        const result = await ndr.takeAction(req.body || {});
+        res.status(result.success ? 200 : 400).json(result);
+    } catch (e) {
+        console.error('[API] NDR action error:', e.message);
         res.status(500).json({ success: false, error: e.message });
     }
 });

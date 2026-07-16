@@ -20,6 +20,7 @@ import FulfillOrdersWizard from './components/FulfillOrdersWizard';
 import Login from './Login';
 import SEODashboard from './pages/SEODashboard';
 import FulfillmentHistory from './pages/FulfillmentHistory';
+import NDRDashboard from './pages/NDRDashboard';
 import { useAuth } from './AuthContext';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -623,6 +624,7 @@ function App() {
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'fulfill', label: 'Fulfill', icon: ClipboardCheck },
+    { id: 'ndr', label: 'NDR', icon: Truck },
     { id: 'history', label: 'History', icon: History },
     { id: 'finance', label: 'Finance', icon: TrendingUp },
     { id: 'seo', label: 'SEO', icon: Search },
@@ -633,7 +635,30 @@ function App() {
   if (!user) return <Login />;
 
   const isSupplier = user?.role === 'supplier';
-  
+  const isNdrUser = user?.role === 'ndr';
+
+  // NDR-management login: ONLY the NDR board, nothing else
+  if (isNdrUser) {
+    return (
+      <div className="min-h-screen relative font-sans text-[#f5f5f5]">
+        <DottedBackground />
+        <GlowBlobs />
+        <div className="relative z-10 flex flex-col min-h-screen">
+          <header className="sticky top-0 z-50 glass-topbar px-5 lg:px-8 py-3">
+            <div className="max-w-[1200px] mx-auto flex items-center justify-between gap-4">
+              <img src="/logo.png" alt="GRLHOOD" className="h-7 object-contain logo-tint opacity-90" />
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[rgba(245,245,245,0.35)]">NDR Management</span>
+              <button onClick={logout} className="glass-icon-btn hover:text-[#ffb6c1]" title="Logout"><LogOut size={15} /></button>
+            </div>
+          </header>
+          <main className="flex-1 px-5 lg:px-8 py-6 w-full">
+            <NDRDashboard />
+          </main>
+        </div>
+      </div>
+    );
+  }
+
   // Filter tabs for supplier
   const visibleTabs = tabs.filter(t => {
     if (isSupplier) return t.id === 'fulfill';
@@ -1182,6 +1207,13 @@ function App() {
                   <img src="/logo.png" alt="GRLHOOD" className="w-56 h-56 object-contain opacity-80 drop-shadow-[0_0_60px_rgba(227,207,216,0.08)]" />
                   <p className="text-sm text-[rgba(245,245,245,0.2)] mt-8 tracking-widest uppercase">Coming Soon</p>
                 </div>
+              </motion.div>
+            )}
+
+            {/* ═══ NDR TAB ═══ */}
+            {activeTab === 'ndr' && (
+              <motion.div key="ndr" initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                <NDRDashboard />
               </motion.div>
             )}
 
