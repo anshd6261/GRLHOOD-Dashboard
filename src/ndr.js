@@ -123,7 +123,7 @@ const buildBoard = async (days = 30, refresh = false) => {
             ndrReason: last.reason || '',
             ndrRemark: last.remark || '',
             attemptCount: parseInt(t?.ofd_count, 10) || 0,
-            edd: t?.expected_delivery_date || t?.promise_delivery_date || '',
+            edd: [t?.expected_delivery_date, t?.promise_delivery_date].find(v => v && !v.startsWith('0000')) || '',
             customer: {
                 name: d.billing_name || '',
                 phone: String(d.customer_phone || '').replace(/\D/g, '').slice(-10),

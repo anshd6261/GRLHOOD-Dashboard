@@ -20,6 +20,9 @@ require('dotenv').config();
  */
 
 const ITHINK_BASE = (process.env.ITHINK_API_BASE || 'https://my.ithinklogistics.com/api_v3').replace(/\/$/, '');
+// Tracking + order details live on a DIFFERENT host (per docs; verified live —
+// my.ithinklogistics.com returns bare [] / null for these endpoints).
+const ITHINK_TRACK_BASE = (process.env.ITHINK_TRACK_API_BASE || 'https://api.ithinklogistics.com/api_v3').replace(/\/$/, '');
 
 // Pickup/return warehouse id (from warehouse/get.json). GRLHOOD ships from "NBE HQ" Noida.
 const PICKUP_ADDRESS_ID = (process.env.ITHINK_PICKUP_ADDRESS_ID || '119349').trim();
@@ -70,10 +73,10 @@ const getCreds = () => {
 /**
  * POST a payload to an iThink endpoint. Wraps the payload in { data: {...creds} }.
  */
-const post = async (path, payload, timeout = 60000) => {
+const post = async (path, payload, timeout = 60000, base = ITHINK_BASE) => {
     const creds = getCreds();
     const body = { data: { ...payload, ...creds } };
-    const res = await itlApi.post(`${ITHINK_BASE}${path}`, body, {
+    const res = await itlApi.post(`${base}${path}`, body, {
         headers: { 'Content-Type': 'application/json' },
         timeout,
     });
@@ -637,8 +640,9 @@ const trackOrder = async (awbNumbers) => {
     try {
         const awbs = (Array.isArray(awbNumbers) ? awbNumbers : [awbNumbers]).filter(Boolean).map(String);
         if (awbs.length === 0) return { success: false, data: null };
-        const data = await post('/order/track.json', { awb_number_list: awbs.join(',') });
-        return { success: String(data?.status_code) === '200' || !!data?.data, data: data?.data || data };
+        const data = await post('/order/track.json', { awb_number_list: awbs.join(',') }, 60000, ITHINK_TRACK_BASE);
+        const map = (data && typeof data === 'object' && !Array.isArray(data)) ? data.data : null;
+        return { success: !!map, data: map || null };
     } catch (e) {
         console.error('[ITHINK] trackOrder failed:', e.response?.data || e.message);
         return { success: false, data: null };
@@ -667,7 +671,7 @@ const getOrderDetails = async (awbNumbers) => {
     try {
         const awbs = (Array.isArray(awbNumbers) ? awbNumbers : [awbNumbers]).filter(Boolean).map(String);
         if (awbs.length === 0) return { success: false, data: null };
-        const data = await post('/order/get_details.json', { awb_number_list: awbs.join(',') });
+        const data = await post('/order/get_details.json', { awb_number_list: awbs.join(',') }, 60000, ITHINK_TRACK_BASE);
         return { success: !!data?.data, data: data?.data || null };
     } catch (e) {
         return { success: false, data: null };
