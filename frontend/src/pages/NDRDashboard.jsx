@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useDeferredValue } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useDeferredValue, useRef } from 'react';
 import axios from 'axios';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
@@ -70,11 +70,28 @@ Please verify with the customer — this may be a FAKE delivery attempt. Goal: g
 const loadActions = () => { try { return JSON.parse(localStorage.getItem('ndr_actions') || '{}'); } catch { return {}; } };
 const STATUS_LABEL = { orders: 'Not Shipped', ready: 'AWB Assigned' };
 
+/* Horizontal scroll row with edge fades: right fade while more content exists,
+   left fade only appears once scrolled. */
+function ScrollRow({ children }) {
+  const ref = useRef(null);
+  const [fade, setFade] = useState({ l: false, r: false });
+  useEffect(() => {
+    const el = ref.current; if (!el) return;
+    const update = () => setFade({ l: el.scrollLeft > 6, r: el.scrollLeft + el.clientWidth < el.scrollWidth - 6 });
+    update();
+    el.addEventListener('scroll', update, { passive: true });
+    window.addEventListener('resize', update);
+    return () => { el.removeEventListener('scroll', update); window.removeEventListener('resize', update); };
+  }, []);
+  const mask = `linear-gradient(to right, ${fade.l ? 'transparent 0, black 30px' : 'black 0'}, black calc(100% - ${fade.r ? '30px' : '0px'}), ${fade.r ? 'transparent 100%' : 'black 100%'})`;
+  return <div ref={ref} className="scroll-row" style={{ maskImage: mask, WebkitMaskImage: mask }}>{children}</div>;
+}
+
 /* Filter controls — top-level component so the calendar never remounts
    (in-component definition caused the month-jump / jitter bug). */
 const FilterRow = React.memo(function FilterRow({ dateFilter, setDateFilter, customRange, setCustomRange, sortDesc, setSortDesc, search, setSearch }) {
   return (
-    <div className="scroll-row mb-6">
+    <div className="mb-6"><ScrollRow>
       {DATE_FILTERS.map(f => (
         <button key={f.id}
           onClick={() => { setDateFilter(f.id); setCustomRange([null, null]); }}
@@ -107,7 +124,7 @@ const FilterRow = React.memo(function FilterRow({ dateFilter, setDateFilter, cus
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Order · AWB · phone"
           className="tinput !h-[30px] !pl-9 !pr-4 !text-[11px] w-44 sm:w-60" />
       </div>
-    </div>
+    </ScrollRow></div>
   );
 });
 
@@ -705,7 +722,7 @@ export default function NDRDashboard() {
         {/* tabs — snap-scrolling segmented strip, sticky on mobile */}
         <div className="sticky top-[64px] sm:static z-30 -mx-6 px-6 sm:mx-0 sm:px-0 py-1.5 mb-3"
           style={{ background: 'linear-gradient(to bottom, var(--bg) 75%, transparent)' }}>
-          <div className="flex gap-2 overflow-x-auto pb-1.5" style={{ scrollbarWidth: 'none', scrollSnapType: 'x proximity' }}>
+          <ScrollRow>
             {TABS.map(b => (
               <button key={b.id} onClick={() => setTab(b.id)}
                 style={{ scrollSnapAlign: 'start' }}
@@ -715,7 +732,7 @@ export default function NDRDashboard() {
                 {counts[b.id] !== null && counts[b.id] !== undefined && <span className="tabular-nums opacity-70">{counts[b.id]}</span>}
               </button>
             ))}
-          </div>
+          </ScrollRow>
         </div>
 
         {/* filters — one scrollable line (like the tabs) on every screen size */}

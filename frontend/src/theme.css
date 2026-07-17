@@ -17,7 +17,7 @@
   --text-2: #9a9aa3;
   --text-3: #5b5b63;
   --accent: #ffd7e8;             /* light pink */
-  --accent-soft: rgba(255, 190, 220, 0.12);
+  --accent-soft: rgba(242, 196, 218, 0.16);
   --accent-line: rgba(255, 180, 214, 0.28);
   --accent-deep: #ff9cc6;        /* readable pink on dark */
   --glass: rgba(255, 220, 236, 0.07);
@@ -26,8 +26,8 @@
   --shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
   --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.3);
   --dim: rgba(0, 0, 0, 0.5);
-  --pill-bg: rgba(255, 255, 255, 0.06);
-  --pill-on: rgba(255, 255, 255, 0.16);
+  --pill-bg: rgba(255, 255, 255, 0.055);
+  --pill-on: rgba(255, 255, 255, 0.13);
   --pill-on-text: #ffffff;
   --dock-bg: rgba(34, 32, 38, 0.82);
   --accent-strong: #f2c4da;
@@ -47,7 +47,7 @@
   --text-2: #97949e;
   --text-3: #c5c2cb;
   --accent: #ffe4ef;
-  --accent-soft: rgba(255, 200, 224, 0.28);
+  --accent-soft: rgba(255, 211, 230, 0.5);
   --accent-line: rgba(240, 160, 198, 0.4);
   --accent-deep: #c2497f;
   --glass: rgba(255, 234, 244, 0.55);
@@ -56,9 +56,9 @@
   --shadow: 0 10px 32px rgba(35, 25, 40, 0.09);
   --shadow-sm: 0 2px 10px rgba(35, 25, 40, 0.06);
   --dim: rgba(30, 25, 34, 0.35);
-  --pill-bg: #ffffff;
-  --pill-on: #26242b;
-  --pill-on-text: #ffffff;
+  --pill-bg: #f1f0f3;
+  --pill-on: #e3e1e7;
+  --pill-on-text: #1b1b1f;
   --dock-bg: rgba(255, 255, 255, 0.88);
   --accent-strong: #ffd3e6;
   --accent-text: #7e2d55;
@@ -85,7 +85,6 @@ body { background: var(--bg); color: var(--text); }
   color: var(--text-2);
   background: var(--pill-bg);
   border: none;
-  box-shadow: var(--shadow-sm);
   backdrop-filter: blur(16px) saturate(1.5);
   -webkit-backdrop-filter: blur(16px) saturate(1.5);
   cursor: pointer; user-select: none; white-space: nowrap;
@@ -96,7 +95,6 @@ body { background: var(--bg); color: var(--text); }
   background: var(--pill-on);
   color: var(--pill-on-text);
   font-weight: 700;
-  box-shadow: var(--shadow-sm);
 }
 .pill > * { display: inline-flex; align-items: center; }
 
@@ -105,7 +103,6 @@ body { background: var(--bg); color: var(--text); }
   background: var(--card);
   border: none;
   border-radius: 26px;
-  box-shadow: var(--shadow);
   overflow: hidden;
   content-visibility: auto;
   contain-intrinsic-size: auto 280px;
@@ -134,29 +131,25 @@ body { background: var(--bg); color: var(--text); }
   height: 38px; padding: 0 18px; line-height: 1;
   border-radius: 999px;
   font-size: 12px; font-weight: 700; white-space: nowrap;
-  background: var(--card-solid); border: none; color: var(--text);
-  box-shadow: var(--shadow-sm);
+  background: var(--pill-bg); border: none; color: var(--text);
   cursor: pointer; transition: transform .12s ease, box-shadow .15s ease;
 }
-.tbtn:hover { box-shadow: var(--shadow-sm); }
 .tbtn:active { transform: scale(0.97); }
 .tbtn.accent {
   background: var(--accent-strong);
   color: var(--accent-text);
-  box-shadow: var(--shadow-sm);
 }
 .tbtn.icon { width: 38px; padding: 0; }
 .tbtn.big { height: 48px; font-size: 13px; padding: 0 24px; }
 
 .tinput {
   height: 40px; padding: 0 18px;
-  background: var(--card-solid);
   border: none; border-radius: 999px;
   font-size: 13px; color: var(--text); outline: none;
-  box-shadow: var(--shadow-sm);
+  background: var(--pill-bg);
   transition: border-color .15s ease, box-shadow .15s ease;
 }
-.tinput:focus { box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-sm); }
+.tinput:focus { box-shadow: 0 0 0 3px var(--accent-soft); }
 .tinput::placeholder { color: var(--text-3); }
 
 /* ── Sticky logo + iPhone-notch progressive blur ── */
