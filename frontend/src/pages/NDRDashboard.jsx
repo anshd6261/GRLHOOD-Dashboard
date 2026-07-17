@@ -729,6 +729,16 @@ function Overview({ allOrders, onJump }) {
           <p className="t-sub text-[12px]" style={{ color: 'var(--text-2)' }}>No COD remittances in the last {remit.days} days</p>
         ) : (
           <>
+            {/* Headline: all COD still in the pipeline (in transit + ready + manifested) */}
+            {codPipeline && (
+              <div className="rounded-2xl p-5 mb-5 flex items-center justify-between gap-4" style={{ background: 'var(--accent-soft)' }}>
+                <div>
+                  <p className="t-sub text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent-deep)' }}>Total Remittance To Be Collected</p>
+                  <p className="t-display text-[30px] mt-1.5 tabular-nums leading-none" style={{ color: 'var(--accent-deep)' }}>₹{Math.round(codPipeline.unsettledAmount).toLocaleString('en-IN')}</p>
+                </div>
+                <p className="t-sub text-[11px] text-right shrink-0" style={{ color: 'var(--accent-deep)' }}>{codPipeline.unsettledCount} COD orders<br /><span style={{ color: 'var(--text-2)' }}>in transit · ready · manifested</span></p>
+              </div>
+            )}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
               <div className="rounded-2xl p-4" style={{ background: 'var(--accent-soft)' }}>
                 <p className="t-sub text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent-deep)' }}>COD Remitted</p>
@@ -770,7 +780,7 @@ function Overview({ allOrders, onJump }) {
                     <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>{codPipeline.yetCount} delivered · awaiting payout</p>
                   </button>
                   <div className="rounded-2xl p-4" style={{ background: 'var(--card-2)' }}>
-                    <p className="t-sub text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--text-2)' }}>Unsettled</p>
+                    <p className="t-sub text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--text-2)' }}>To Be Collected</p>
                     <p className="t-display text-[20px] mt-1.5 tabular-nums leading-none" style={{ color: 'var(--text)' }}>₹{Math.round(codPipeline.unsettledAmount).toLocaleString('en-IN')}</p>
                     <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>{codPipeline.unsettledCount} in transit · not collected</p>
                   </div>
