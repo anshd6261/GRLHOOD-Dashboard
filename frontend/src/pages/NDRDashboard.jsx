@@ -7,7 +7,7 @@ import {
   Package, RefreshCw, Truck, CheckCircle, AlertTriangle, RotateCcw,
   Phone, MessageSquare, MapPin, Calendar, Copy, ExternalLink, Search,
   Send, X, Settings, LayoutDashboard, Zap, TrendingDown,
-  ChevronDown, ArrowDownUp
+  ChevronDown, ArrowDownUp, Image as ImageIcon, Download, Upload
 } from 'lucide-react';
 import { relevantDate, istNow, inDateFilter, sortByDate, parseDate } from '../utils/boardDates';
 
@@ -135,7 +135,7 @@ const fadeUp = {
 };
 
 /* ═══════════ Card v2 — zoned, not stacked. Desktop: identity rail | info | actions ═══════════ */
-const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, onWaReport, onToast, onSaveNote }) {
+const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, onWaReport, onToast, onSaveNote, onOpenChat, onUploadProof }) {
   const isNdr = o.bucket === 'ndr';
   const isRto = o.bucket === 'rto';
   const [open, setOpen] = useState(false);
@@ -249,7 +249,12 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
               </p>
             </div>
             {o.customer?.phone && (
-              <div className="flex gap-2 shrink-0">
+              <div className="flex gap-2 shrink-0 items-center">
+                {o.proof && (
+                  <button onClick={() => onOpenChat(o)} className="tbtn !h-9 !px-3.5 !text-[11px]" title="Customer Chat">
+                    <ImageIcon size={13} /> Customer Chat
+                  </button>
+                )}
                 <a href={`tel:+91${o.customer.phone}`} className="tbtn icon" title="Call"><Phone size={14} /></a>
                 <a href={`https://wa.me/91${o.customer.phone}?text=${encodeURIComponent(`Hi ${o.customer?.name}, this is GRLHOOD! Regarding your order ${o.orderNumber} — the courier (${o.courier}) marked a delivery attempt${o.ndrReason ? ` ("${o.ndrReason}")` : ''}. Were you contacted for delivery? We want to get this to you ASAP!`)}`}
                   target="_blank" rel="noopener noreferrer" className="tbtn icon" title="WhatsApp"><MessageSquare size={14} /></a>
@@ -297,6 +302,14 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
                     </div>
                     {(o.bucket === 'ndr' || o.bucket === 'rto' || actionEntry) && (
                       <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <p className="t-sub text-[9px] uppercase tracking-[0.12em] font-bold" style={{ color: 'var(--text-3)' }}>Customer Chat Proof</p>
+                          <label className="tbtn !h-8 !px-3 !text-[11px] cursor-pointer">
+                            <Upload size={12} /> {o.proof ? 'Replace' : 'Attach'}
+                            <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) onUploadProof(o, f); e.target.value=''; }} />
+                          </label>
+                        </div>
+                        {o.proof && <button onClick={() => onOpenChat(o)} className="tbtn !h-8 w-full !text-[11px] mb-3"><ImageIcon size={12} /> View customer chat</button>}
                         <p className="t-sub text-[9px] uppercase tracking-[0.12em] font-bold mb-1.5" style={{ color: 'var(--text-3)' }}>Note</p>
                         <div className="flex gap-2">
                           <input value={noteText} onChange={e => setNoteText(e.target.value)} placeholder="Add a note — synced & reported"
@@ -405,6 +418,11 @@ function Overview({ orders, onJump }) {
     const closed = delivered.length + rto.length;
     const newNdr48 = ndr.filter(o => o.ndrDate && (now - parseDate(o.ndrDate)) <= 48 * 3600e3 && parseDate(o.ndrDate).getTime() > 0);
     const newRto48 = rto.filter(o => o.rtoInitiatedAt && (now - parseDate(o.rtoInitiatedAt)) <= 48 * 3600e3 && parseDate(o.rtoInitiatedAt).getTime() > 0);
+    // Monthly RTO rate: RTOs vs closed journeys in the last 30 days (by event date)
+    const in30 = (v) => v && (now - parseDate(v)) <= 30 * 864e5 && parseDate(v).getTime() > 0;
+    const rtoM = rto.filter(o => in30(o.rtoInitiatedAt));
+    const delM = delivered.filter(o => in30(o.deliveredAt || o.statusDateTime));
+    const monthlyRtoRate = (rtoM.length + delM.length) ? (rtoM.length / (rtoM.length + delM.length)) * 100 : 0;
     const codAtRisk = ndr.reduce((s, o) => s + (o.isCod ? o.totalAmount : 0), 0) + rto.reduce((s, o) => s + (o.isCod ? o.totalAmount : 0), 0);
     const couriers = {};
     shipped.forEach(o => {
@@ -419,6 +437,7 @@ function Overview({ orders, onJump }) {
       total: orders.length, shippedCount: shipped.length,
       ndr, rto, delivered, transit, ready, manifested, newNdr48, newRto48, codAtRisk,
       ndrRate: shipped.length ? (ndr.length / shipped.length) * 100 : 0,
+      monthlyRtoRate,
       rtoRate: closed ? (rto.length / closed) * 100 : 0,
       couriers: Object.values(couriers).sort((a, b) => b.shipped - a.shipped),
       reasons: Object.entries(reasons).sort((a, b) => b[1] - a[1]),
@@ -447,11 +466,10 @@ function Overview({ orders, onJump }) {
           <Zap size={15} style={{ color: 'var(--accent-deep)' }} />
           <h3 className="t-display text-[15px]" style={{ color: 'var(--text)' }}>Manage Today</h3>
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <Tile i={1} label="Open NDRs" value={stats.ndr.length} sub="need action now" accent onClick={() => onJump('ndr')} />
           <Tile i={2} label="New NDRs · 48h" value={stats.newNdr48.length} sub="fresh failed attempts" accent onClick={() => onJump('ndr')} />
           <Tile i={3} label="RTO · 48h" value={stats.newRto48.length} sub="just started returning" onClick={() => onJump('rto')} />
-          <Tile i={4} label="COD at risk" value={`₹${Math.round(stats.codAtRisk).toLocaleString('en-IN')}`} sub="NDR + RTO value" />
         </div>
         {stats.newNdr48.length > 0 && (
           <div className="mt-5">
@@ -467,14 +485,11 @@ function Overview({ orders, onJump }) {
         )}
       </motion.section>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-        <Tile i={1} label="Shipped" value={stats.shippedCount} sub={`of ${stats.total} orders`} />
-        <Tile i={2} label="Delivered" value={stats.delivered.length} onClick={() => onJump('delivered')} />
-        <Tile i={3} label="Transit" value={stats.transit.length} onClick={() => onJump('transit')} />
-        <Tile i={4} label="Manifested" value={stats.manifested.length} sub="awaiting pickup" onClick={() => onJump('manifested')} />
-        <Tile i={5} label="Ready" value={stats.ready.length} sub="courier assigned" onClick={() => onJump('ready')} />
-        <Tile i={6} label="NDR Rate" value={`${stats.ndrRate.toFixed(1)}%`} sub={`${stats.ndr.length} of ${stats.shippedCount}`} accent />
-        <Tile i={7} label="RTO Rate" value={`${stats.rtoRate.toFixed(1)}%`} sub={`${stats.rto.length} of ${stats.delivered.length + stats.rto.length} closed`} accent />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Tile i={1} label="Delivered" value={stats.delivered.length} onClick={() => onJump('delivered')} />
+        <Tile i={2} label="NDR Rate" value={`${stats.ndrRate.toFixed(1)}%`} sub={`${stats.ndr.length} of ${stats.shippedCount} shipped`} accent />
+        <Tile i={3} label="Monthly RTO Rate" value={`${stats.monthlyRtoRate.toFixed(1)}%`} sub="last 30 days" accent />
+        <Tile i={4} label="In Transit" value={stats.transit.length} onClick={() => onJump('transit')} />
       </div>
 
       <motion.section custom={2} variants={fadeUp} initial="hidden" animate="visible" exit="exit" className="tcard p-6 sm:p-7">
@@ -658,7 +673,24 @@ export default function NDRDashboard() {
     return c;
   }, [dateFiltered, board, actions]);
 
+  const [chatOrder, setChatOrder] = useState(null); // order whose proof is open in the viewer
   const handleToast = useCallback((t) => setToast(t), []);
+  const handleOpenChat = useCallback((o) => setChatOrder(o), []);
+  const handleUploadProof = useCallback(async (o, file) => {
+    if (file.size > 4 * 1024 * 1024) { setToast({ msg: 'Image too large (max 4MB)', err: true }); return; }
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const author = (JSON.parse(localStorage.getItem('grlhood_user') || '{}').username) || '';
+        const r = await axios.post(`${API_URL}/ndr/proof`, { orderNumber: o.orderNumber, imageBase64: reader.result, author });
+        if (r.data?.success) {
+          setToast({ msg: 'Customer chat saved — synced forever' });
+          setBoard(prev => prev ? { ...prev, orders: prev.orders.map(x => x.shopifyId === o.shopifyId ? { ...x, proof: true } : x) } : prev);
+        } else setToast({ msg: r.data?.error || 'Upload failed', err: true });
+      } catch (e) { setToast({ msg: e.response?.data?.error || e.message, err: true }); }
+    };
+    reader.readAsDataURL(file);
+  }, []);
   const handleSaveNote = useCallback(async (o, note) => {
     try {
       const author = (JSON.parse(localStorage.getItem('grlhood_user') || '{}').username) || '';
@@ -703,7 +735,7 @@ export default function NDRDashboard() {
   const renderCards = (list) => (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
       {list.slice(0, pageSize).map((o, i) => (
-        <BoardCard key={o.shopifyId} o={o} i={i} actionEntry={actions[o.awb]} onAction={handleAction} onWaReport={handleWaReport} onToast={handleToast} onSaveNote={handleSaveNote} />
+        <BoardCard key={o.shopifyId} o={o} i={i} actionEntry={actions[o.awb]} onAction={handleAction} onWaReport={handleWaReport} onToast={handleToast} onSaveNote={handleSaveNote} onOpenChat={handleOpenChat} onUploadProof={handleUploadProof} />
       ))}
     </div>
   );
@@ -796,6 +828,38 @@ export default function NDRDashboard() {
               </>
             )}
           </motion.div>
+        </AnimatePresence>
+
+        {/* Customer chat proof viewer */}
+        <AnimatePresence>
+          {chatOrder && (
+            <>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[310]" style={{ background: 'var(--dim)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' }}
+                onClick={() => setChatOrder(null)} />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.94, y: 16 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 10 }}
+                transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+                className="fixed z-[311] left-1/2 -translate-x-1/2 bottom-1/2 translate-y-1/2 sm:left-auto sm:right-6 sm:translate-x-0 sm:bottom-6 sm:translate-y-0"
+                style={{ width: 'min(340px, calc(100vw - 32px))' }}>
+                <div className="relative rounded-[26px] overflow-hidden" style={{ background: 'var(--card-solid)', boxShadow: 'var(--shadow)' }}>
+                  <div className="flex items-center justify-between px-4 py-3">
+                    <p className="t-head text-[12px]" style={{ color: 'var(--text)' }}>Customer Chat · {chatOrder.orderNumber}</p>
+                    <button onClick={() => setChatOrder(null)} className="tbtn icon !h-8 !w-8"><X size={13} /></button>
+                  </div>
+                  <div className="relative">
+                    <img src={`${API_URL}/ndr/proof/${encodeURIComponent(chatOrder.orderNumber.replace('#',''))}`} alt="Customer chat"
+                      className="w-full block" style={{ maxHeight: '70vh', objectFit: 'contain', background: 'var(--card-2)' }} />
+                    <a href={`${API_URL}/ndr/proof/${encodeURIComponent(chatOrder.orderNumber.replace('#',''))}`}
+                      download={`${chatOrder.orderNumber} - customer chat.png`}
+                      className="absolute bottom-3 left-3 tbtn accent !h-9 !px-4 !text-[11px]" style={{ boxShadow: 'var(--shadow)' }}>
+                      <Download size={13} /> Download
+                    </a>
+                  </div>
+                </div>
+              </motion.div>
+            </>
+          )}
         </AnimatePresence>
 
         {/* agent welcome + notification permission */}
