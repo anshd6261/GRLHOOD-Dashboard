@@ -225,7 +225,24 @@ const fadeUp = {
 };
 
 /* ═══════════ Card v2 — zoned, not stacked. Desktop: identity rail | info | actions ═══════════ */
-const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, onWaReport, onToast, onSaveNote, onOpenChat, onUploadProof, selected, onToggleSelect }) {
+const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, onWaReport, onToast, onSaveNote, onOpenChat, onUploadProof, selected, selectionMode, onLongPress, onTapSelect }) {
+  const pressTimer = React.useRef(null);
+  const didLongPress = React.useRef(false);
+  const startPress = () => {
+    didLongPress.current = false;
+    pressTimer.current = setTimeout(() => {
+      didLongPress.current = true;
+      if ('vibrate' in navigator) navigator.vibrate(35);
+      onLongPress(o);
+    }, 420);
+  };
+  const endPress = () => { if (pressTimer.current) clearTimeout(pressTimer.current); };
+  const onCardClick = (e) => {
+    if (didLongPress.current) { didLongPress.current = false; return; } // consume the click after a long-press
+    if (!selectionMode) return;                                          // normal mode: inner controls act as usual
+    if (e.target.closest('button, a, input, label, select')) return;    // don't hijack real controls
+    onTapSelect(o);
+  };
   const isNdr = o.bucket === 'ndr';
   const isRto = o.bucket === 'rto';
   const [open, setOpen] = useState(false);
@@ -258,20 +275,17 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
   const stale = (o.bucket === 'ready' || o.bucket === 'manifested') && age > 2;
 
   return (
-    <motion.article layout="position" custom={i} variants={fadeUp} initial="hidden" animate="visible" exit="exit" className="tcard">
+    <motion.article layout="position" custom={i} variants={fadeUp} initial="hidden" animate="visible" exit="exit"
+      className="tcard"
+      onPointerDown={startPress} onPointerUp={endPress} onPointerLeave={endPress} onPointerCancel={endPress}
+      onClick={onCardClick}
+      style={selected ? { outline: '2px solid var(--accent-deep)', outlineOffset: -2 } : (selectionMode ? { cursor: 'pointer' } : undefined)}>
       <div className="sm:grid sm:grid-cols-[190px_1fr] lg:grid-cols-[210px_1fr]">
 
         {/* ═ ZONE A · identity rail (left on desktop, top on mobile) ═ */}
         <div className="p-6 sm:border-r flex sm:flex-col items-start justify-between sm:justify-start gap-2 sm:gap-3 relative"
-          style={{ borderColor: 'var(--line-2)', background: 'var(--card-2)' }}>
-          {/* selection checkbox */}
-          <button onClick={() => onToggleSelect(o)}
-            className="absolute top-4 right-4 sm:right-4 rounded-full flex items-center justify-center transition-all"
-            style={{ width: 22, height: 22, background: selected ? 'var(--accent-deep)' : 'transparent', border: selected ? 'none' : '1.5px solid var(--text-3)' }}
-            title={selected ? 'Deselect' : 'Select'}>
-            {selected && <Check size={13} color="#fff" strokeWidth={3} />}
-          </button>
-          <div className="pr-7 sm:pr-0">
+          style={{ borderColor: 'var(--line-2)', background: selected ? 'var(--accent-soft)' : 'var(--card-2)' }}>
+          <div>
             <h3 className="t-display text-[20px] leading-none" style={{ color: 'var(--text)' }}>{o.orderNumber}</h3>
             <p className="t-sub text-[11px] mt-2" style={{ color: 'var(--text-2)' }}>{o.courier || '—'}</p>
           </div>
@@ -781,8 +795,11 @@ export default function NDRDashboard() {
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [pdfBusy, setPdfBusy] = useState(false);
   const handleToast = useCallback((t) => setToast(t), []);
-  const handleToggleSelect = useCallback((o) => {
+  const toggleSelect = useCallback((o) => {
     setSelectedIds(prev => { const n = new Set(prev); n.has(o.shopifyId) ? n.delete(o.shopifyId) : n.add(o.shopifyId); return n; });
+  }, []);
+  const handleLongPress = useCallback((o) => {
+    setSelectedIds(prev => { const n = new Set(prev); n.add(o.shopifyId); return n; });
   }, []);
   // clear selection when leaving a tab
   useEffect(() => { setSelectedIds(new Set()); }, [tab]);
@@ -844,7 +861,7 @@ export default function NDRDashboard() {
   const renderCards = (list) => (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
       {list.slice(0, pageSize).map((o, i) => (
-        <BoardCard key={o.shopifyId} o={o} i={i} actionEntry={actions[o.awb]} onAction={handleAction} onWaReport={handleWaReport} onToast={handleToast} onSaveNote={handleSaveNote} onOpenChat={handleOpenChat} onUploadProof={handleUploadProof} selected={selectedIds.has(o.shopifyId)} onToggleSelect={handleToggleSelect} />
+        <BoardCard key={o.shopifyId} o={o} i={i} actionEntry={actions[o.awb]} onAction={handleAction} onWaReport={handleWaReport} onToast={handleToast} onSaveNote={handleSaveNote} onOpenChat={handleOpenChat} onUploadProof={handleUploadProof} selected={selectedIds.has(o.shopifyId)} selectionMode={selectedIds.size > 0} onLongPress={handleLongPress} onTapSelect={toggleSelect} />
       ))}
     </div>
   );
@@ -863,12 +880,12 @@ export default function NDRDashboard() {
               try { await downloadReportPdf(chosen); setToast({ msg: `PDF with ${chosen.length} orders downloaded` }); }
               catch (e) { setToast({ msg: 'PDF failed: ' + e.message, err: true }); }
               finally { setPdfBusy(false); }
-            }} disabled={pdfBusy} className="tbtn accent big" style={{ boxShadow: 'var(--shadow)' }}>
-              {pdfBusy ? <RefreshCw size={14} className="animate-spin" /> : <FileText size={14} />}
+            }} disabled={pdfBusy} className="glass-btn-bar">
+              {pdfBusy ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
               Download PDF · {selectedIds.size}
             </button>
-            <button onClick={() => setSelectedIds(new Set())} className="tbtn icon big" style={{ boxShadow: 'var(--shadow)' }} title="Clear selection">
-              <X size={15} />
+            <button onClick={() => setSelectedIds(new Set())} className="glass-btn-bar">
+              <X size={14} /> Unselect
             </button>
           </motion.div>
         )}
