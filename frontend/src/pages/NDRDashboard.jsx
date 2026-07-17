@@ -157,7 +157,6 @@ Amount: Rs${o.totalAmount} (${o.paymentMode})
 Please verify with the customer — this may be a FAKE delivery attempt. Goal: get it DELIVERED.`
 );
 
-const loadActions = () => { try { return JSON.parse(localStorage.getItem('ndr_actions') || '{}'); } catch { return {}; } };
 const STATUS_LABEL = { orders: 'Not Shipped', ready: 'AWB Assigned' };
 
 /* Horizontal scroll row with edge fades: right fade while more content exists,
@@ -299,13 +298,6 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
                 {fmtDT(o.statusDateTime)}{o.scanLocation ? ` · ${o.scanLocation.split(',')[0]}` : ''}
               </p>
             )}
-            {actionEntry && (
-              <span className="inline-flex items-center gap-1.5 mt-2 rounded-full px-2.5"
-                style={{ height: 24, background: 'var(--accent-strong)', color: 'var(--accent-text)' }}>
-                <CheckCircle size={11} />
-                <span className="text-[10px] font-bold">Re-attempt requested · {fmtD(actionEntry.ts)}</span>
-              </span>
-            )}
             <p className="t-display text-[21px] mt-2 tabular-nums leading-none" style={{ color: 'var(--text)' }}>₹{o.totalAmount}</p>
             <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>{o.paymentMode}</p>
           </div>
@@ -343,10 +335,11 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
                   {o.ndrReason && o.ndrRemark && o.ndrRemark !== o.ndrReason && (
                     <p className="t-sub text-[11px] mt-1" style={{ color: 'var(--text-2)' }}>{o.ndrRemark}</p>
                   )}
-                  {o.scanLocation && (
-                    <p className="t-sub text-[10px] mt-1.5 flex items-center gap-1" style={{ color: 'var(--text-2)' }}>
-                      <MapPin size={9} /> {o.scanLocation}
-                    </p>
+                  {actionEntry && (
+                    <span className="chip pink mt-2.5">
+                      <CheckCircle size={10} style={{ color: 'var(--accent-deep)' }} />
+                      <span className="v" style={{ color: 'var(--accent-deep)' }}>Re-attempt requested · {fmtD(actionEntry.ts)}</span>
+                    </span>
                   )}
                 </div>
               </div>
@@ -715,7 +708,6 @@ export default function NDRDashboard() {
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
-  const [actions, setActions] = useState(loadActions);
   const [toast, setToast] = useState(null);
   const [showWaSettings, setShowWaSettings] = useState(false);
   const [waNumber, setWaNumber] = useState(() => localStorage.getItem('ndr_wa_number') || '');
@@ -767,9 +759,9 @@ export default function NDRDashboard() {
     const filtered = source
       .filter(o => {
         if (tab === 'overview') return true;
-        if (tab === 'requested') return !!actions[o.awb];          // reattempt already requested
-        if (tab === 'ndr') return o.bucket === 'ndr' && !actions[o.awb]; // still need action
-        if (tab === 'rto') return o.bucket === 'rto' && !actions[o.awb];
+        if (tab === 'requested') return !!o.requested;                    // reattempt already requested
+        if (tab === 'ndr') return o.bucket === 'ndr' && !o.requested;     // still need action
+        if (tab === 'rto') return o.bucket === 'rto' && !o.requested;
         return o.bucket === tab;
       })
       .filter(o => !s ||
@@ -778,18 +770,18 @@ export default function NDRDashboard() {
         o.customer?.phone?.includes(s) ||
         o.customer?.name?.toLowerCase().includes(s));
     return sortByDate(filtered, sortDesc);
-  }, [dateFiltered, board, tab, actions, deferredSearch, sortDesc]);
+  }, [dateFiltered, board, tab, deferredSearch, sortDesc]);
 
   const counts = useMemo(() => {
     const c = { overview: null, orders: 0, ready: 0, manifested: 0, transit: 0, delivered: 0, ndr: 0, rto: 0, requested: 0 };
     dateFiltered.forEach(o => {
-      const requested = !!actions[o.awb];
+      const requested = !!o.requested;
       if (requested) { c.requested++; return; } // requested orders live only in the Requested tab
       if (c[o.bucket] !== undefined && !ALWAYS_ALL.includes(o.bucket)) c[o.bucket]++;
     });
-    (board?.orders || []).forEach(o => { if (ALWAYS_ALL.includes(o.bucket) && !actions[o.awb]) c[o.bucket]++; });
+    (board?.orders || []).forEach(o => { if (ALWAYS_ALL.includes(o.bucket) && !o.requested) c[o.bucket]++; });
     return c;
-  }, [dateFiltered, board, actions]);
+  }, [dateFiltered, board]);
 
   const [chatOrder, setChatOrder] = useState(null); // order whose proof is open in the viewer
   const [selectedIds, setSelectedIds] = useState(() => new Set());
@@ -843,11 +835,7 @@ export default function NDRDashboard() {
       const r = await axios.post(`${API_URL}/ndr/action`, { awb: o.awb, action, orderNumber: o.orderNumber, reason: o.ndrReason || o.ndrRemark, note: o.note?.note, author: (JSON.parse(localStorage.getItem('grlhood_user') || '{}').username) || '', ...extra }, { timeout: 60000 });
       setToast({ msg: r.data?.message || 'Done', err: !r.data?.success });
       if (r.data?.success) {
-        setActions(prev => {
-          const next = { ...prev, [o.awb]: { action, ts: new Date().toISOString(), orderNumber: o.orderNumber } };
-          try { localStorage.setItem('ndr_actions', JSON.stringify(next)); } catch {}
-          return next;
-        });
+        setBoard(prev => prev ? { ...prev, orders: prev.orders.map(x => x.shopifyId === o.shopifyId ? { ...x, requested: { action, ts: new Date().toISOString() } } : x) } : prev);
         return true;
       }
       return false;
@@ -861,7 +849,7 @@ export default function NDRDashboard() {
   const renderCards = (list) => (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
       {list.slice(0, pageSize).map((o, i) => (
-        <BoardCard key={o.shopifyId} o={o} i={i} actionEntry={actions[o.awb]} onAction={handleAction} onWaReport={handleWaReport} onToast={handleToast} onSaveNote={handleSaveNote} onOpenChat={handleOpenChat} onUploadProof={handleUploadProof} selected={selectedIds.has(o.shopifyId)} selectionMode={selectedIds.size > 0} onLongPress={handleLongPress} onTapSelect={toggleSelect} />
+        <BoardCard key={o.shopifyId} o={o} i={i} actionEntry={o.requested} onAction={handleAction} onWaReport={handleWaReport} onToast={handleToast} onSaveNote={handleSaveNote} onOpenChat={handleOpenChat} onUploadProof={handleUploadProof} selected={selectedIds.has(o.shopifyId)} selectionMode={selectedIds.size > 0} onLongPress={handleLongPress} onTapSelect={toggleSelect} />
       ))}
     </div>
   );
@@ -880,9 +868,8 @@ export default function NDRDashboard() {
               try { await downloadReportPdf(chosen); setToast({ msg: `PDF with ${chosen.length} orders downloaded` }); }
               catch (e) { setToast({ msg: 'PDF failed: ' + e.message, err: true }); }
               finally { setPdfBusy(false); }
-            }} disabled={pdfBusy} className="glass-btn-bar">
-              {pdfBusy ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
-              Download PDF · {selectedIds.size}
+            }} disabled={pdfBusy} className="glass-btn-bar circle" title={`Download PDF · ${selectedIds.size}`}>
+              {pdfBusy ? <RefreshCw size={16} className="animate-spin" /> : <Download size={16} />}
             </button>
             <button onClick={() => setSelectedIds(new Set())} className="glass-btn-bar">
               <X size={14} /> Unselect

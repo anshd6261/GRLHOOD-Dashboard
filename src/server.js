@@ -1001,6 +1001,9 @@ app.get('/api/ndr/proof/:orderNumber', async (req, res) => {
 app.post('/api/ndr/action', async (req, res) => {
     try {
         const result = await ndr.takeAction(req.body || {});
+        if (result.success && req.body?.awb) {
+            require('./ndr').recordAction(req.body.awb, req.body.action, req.body.orderNumber, req.body.author);
+        }
         if (result.success && req.body?.author === 'ITHINKGRLL') {
             sendNdrReport(`${String(req.body.action || '').toUpperCase()} requested — ${req.body.orderNumber || req.body.awb}`, [
                 ['Agent', req.body.author], ['Action', req.body.action], ['Order', req.body.orderNumber],
