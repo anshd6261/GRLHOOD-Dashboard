@@ -26,6 +26,12 @@
   --shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
   --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.3);
   --dim: rgba(0, 0, 0, 0.5);
+  --pill-bg: rgba(255, 255, 255, 0.06);
+  --pill-on: rgba(255, 255, 255, 0.16);
+  --pill-on-text: #ffffff;
+  --dock-bg: rgba(34, 32, 38, 0.82);
+  --accent-strong: #f2c4da;
+  --accent-text: #3c1226;
   color-scheme: dark;
 }
 
@@ -48,8 +54,14 @@
   --glass-strong: rgba(255, 228, 240, 0.8);
   --rim: rgba(255, 255, 255, 0.95);
   --shadow: 0 10px 32px rgba(35, 25, 40, 0.09);
-  --shadow-sm: 0 2px 10px rgba(35, 25, 40, 0.05);
+  --shadow-sm: 0 2px 10px rgba(35, 25, 40, 0.06);
   --dim: rgba(30, 25, 34, 0.35);
+  --pill-bg: #ffffff;
+  --pill-on: #26242b;
+  --pill-on-text: #ffffff;
+  --dock-bg: rgba(255, 255, 255, 0.88);
+  --accent-strong: #ffd3e6;
+  --accent-text: #7e2d55;
   color-scheme: light;
 }
 
@@ -66,13 +78,14 @@ body { background: var(--bg); color: var(--text); }
 /* ── Pills: liquid glass, pink tint, PERFECTLY centered text ── */
 .pill {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  padding: 0 16px; height: 36px; line-height: 1;
+  padding: 0 13px; height: 30px; line-height: 1;
   border-radius: 999px;
-  font-size: 12px; font-weight: 600; letter-spacing: 0;
+  font-size: 11px; font-weight: 600; letter-spacing: 0;
+  flex-wrap: nowrap;
   color: var(--text-2);
-  background: var(--glass);
-  border: 1px solid var(--rim);
-  box-shadow: inset 0 0 0 0.5px var(--rim), var(--shadow-sm);
+  background: var(--pill-bg);
+  border: none;
+  box-shadow: var(--shadow-sm);
   backdrop-filter: blur(16px) saturate(1.5);
   -webkit-backdrop-filter: blur(16px) saturate(1.5);
   cursor: pointer; user-select: none; white-space: nowrap;
@@ -80,19 +93,19 @@ body { background: var(--bg); color: var(--text); }
 }
 .pill:hover { color: var(--text); }
 .pill.on {
-  background: var(--glass-strong);
-  color: var(--accent-deep);
+  background: var(--pill-on);
+  color: var(--pill-on-text);
   font-weight: 700;
-  box-shadow: inset 0 0 0 0.5px var(--rim), inset 0 0 14px var(--accent-soft), var(--shadow-sm);
+  box-shadow: var(--shadow-sm);
 }
 .pill > * { display: inline-flex; align-items: center; }
 
 /* ── Cards ── */
 .tcard {
   background: var(--card);
-  border: 1px solid var(--line);
+  border: none;
   border-radius: 26px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow);
   overflow: hidden;
   content-visibility: auto;
   contain-intrinsic-size: auto 280px;
@@ -104,51 +117,51 @@ body { background: var(--bg); color: var(--text); }
 /* ── Chips (labeled values, e.g. dates) ── */
 .chip {
   display: inline-flex; align-items: center; gap: 7px;
-  height: 30px; padding: 0 13px; line-height: 1;
+  height: 26px; padding: 0 11px; line-height: 1;
   border-radius: 999px;
   background: var(--card-2);
-  border: 1px solid var(--line);
+  border: none;
   white-space: nowrap;
 }
-.chip.pink { background: var(--accent-soft); border-color: var(--accent-line); }
-.chip .l { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-2); }
-.chip .v { font-size: 12px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.chip.pink { background: var(--accent-soft); }
+.chip .l { font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-2); }
+.chip .v { font-size: 11px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
 .chip.pink .l, .chip.pink .v { color: var(--accent-deep); }
 
 /* ── Buttons & inputs ── */
 .tbtn {
   display: inline-flex; align-items: center; justify-content: center; gap: 7px;
-  height: 40px; padding: 0 18px; line-height: 1;
+  height: 38px; padding: 0 18px; line-height: 1;
   border-radius: 999px;
-  font-size: 12px; font-weight: 700;
-  background: var(--card-solid); border: 1px solid var(--line); color: var(--text);
+  font-size: 12px; font-weight: 700; white-space: nowrap;
+  background: var(--card-solid); border: none; color: var(--text);
+  box-shadow: var(--shadow-sm);
   cursor: pointer; transition: transform .12s ease, box-shadow .15s ease;
 }
 .tbtn:hover { box-shadow: var(--shadow-sm); }
 .tbtn:active { transform: scale(0.97); }
 .tbtn.accent {
-  background: var(--glass-strong);
-  border-color: var(--rim);
-  color: var(--accent-deep);
-  box-shadow: inset 0 0 0 0.5px var(--rim), var(--shadow-sm);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: var(--accent-strong);
+  color: var(--accent-text);
+  box-shadow: var(--shadow-sm);
 }
-.tbtn.icon { width: 40px; padding: 0; }
+.tbtn.icon { width: 38px; padding: 0; }
+.tbtn.big { height: 48px; font-size: 13px; padding: 0 24px; }
 
 .tinput {
   height: 40px; padding: 0 18px;
   background: var(--card-solid);
-  border: 1px solid var(--line); border-radius: 999px;
+  border: none; border-radius: 999px;
   font-size: 13px; color: var(--text); outline: none;
+  box-shadow: var(--shadow-sm);
   transition: border-color .15s ease, box-shadow .15s ease;
 }
-.tinput:focus { border-color: var(--accent-line); box-shadow: 0 0 0 4px var(--accent-soft); }
+.tinput:focus { box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-sm); }
 .tinput::placeholder { color: var(--text-3); }
 
 /* ── Sticky logo + iPhone-notch progressive blur ── */
 .logo-blur {
-  position: fixed; top: 0; left: 0; right: 0; height: 118px;
+  position: fixed; top: 0; left: 0; right: 0; height: 150px;
   pointer-events: none; z-index: 40;
   backdrop-filter: blur(14px) saturate(1.4);
   -webkit-backdrop-filter: blur(14px) saturate(1.4);
@@ -156,7 +169,7 @@ body { background: var(--bg); color: var(--text); }
   -webkit-mask-image: linear-gradient(to bottom, black 0%, black 32%, rgba(0,0,0,0.5) 62%, transparent 100%);
 }
 .logo-dim {
-  position: fixed; top: 0; left: 0; right: 0; height: 118px;
+  position: fixed; top: 0; left: 0; right: 0; height: 150px;
   pointer-events: none; z-index: 41;
   background: linear-gradient(to bottom, var(--dim-top, rgba(20,18,24,0.08)) 0%, transparent 100%);
 }
@@ -166,7 +179,7 @@ body { background: var(--bg); color: var(--text); }
   display: flex; justify-content: center; padding-top: 13px; pointer-events: none;
 }
 .logo-fix img {
-  height: var(--logo-h, 56px);
+  height: var(--logo-h, 96px);
   transition: height .28s cubic-bezier(.4, 0, .2, 1);
   object-fit: contain;
 }
@@ -180,9 +193,9 @@ body { background: var(--bg); color: var(--text); }
   z-index: 120;
   display: flex; align-items: center; gap: 4px;
   padding: 8px 12px; border-radius: 999px;
-  background: var(--glass-strong);
-  border: 1px solid var(--rim);
-  box-shadow: inset 0 0 0 0.5px var(--rim), inset 0 1px 0 var(--rim), var(--shadow);
+  background: var(--dock-bg);
+  border: none;
+  box-shadow: var(--shadow);
   backdrop-filter: blur(24px) saturate(1.7);
   -webkit-backdrop-filter: blur(24px) saturate(1.7);
   max-width: calc(100vw - 36px);
@@ -198,8 +211,8 @@ body { background: var(--bg); color: var(--text); }
 .dock button:hover { transform: translateY(-1px); color: var(--text); }
 .dock button.active {
   background: var(--card-solid);
-  box-shadow: inset 0 0 0 0.5px var(--rim), var(--shadow-sm);
-  color: var(--accent-deep);
+  box-shadow: var(--shadow-sm);
+  color: var(--text);
 }
 @media (max-width: 640px) {
   .dock button { min-width: 46px; padding: 0 6px; }
@@ -216,8 +229,7 @@ body { background: var(--bg); color: var(--text); }
 .sheet {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 201;
   background: var(--card-solid);
-  border: 1px solid var(--line);
-  border-bottom: none;
+  border: none;
   border-radius: 30px 30px 0 0;
   box-shadow: 0 -12px 44px rgba(0, 0, 0, 0.18);
   padding: 12px 24px calc(28px + env(safe-area-inset-bottom, 0px));
@@ -265,3 +277,62 @@ body { background: var(--bg); color: var(--text); }
 :root[data-theme="light"] .glass-pill-active { background: var(--glass-strong) !important; color: var(--accent-deep) !important; }
 :root[data-theme="light"] body { background: var(--bg); }
 :root[data-theme="light"] .dotted-bg, :root[data-theme="light"] .glow-blobs { opacity: 0.25; }
+
+/* ── react-datepicker: theme-aware, borderless, above everything ── */
+.react-datepicker-popper { z-index: 400 !important; }
+.react-datepicker {
+  font-family: inherit !important;
+  background: var(--card-solid) !important;
+  border: none !important;
+  border-radius: 22px !important;
+  box-shadow: var(--shadow) !important;
+  color: var(--text) !important;
+  padding: 10px;
+}
+.react-datepicker__header {
+  background: transparent !important;
+  border-bottom: none !important;
+  padding-top: 12px !important;
+}
+.react-datepicker__current-month { color: var(--text) !important; font-weight: 700 !important; font-size: 13px !important; }
+.react-datepicker__day-name { color: var(--text-3) !important; font-size: 10px !important; font-weight: 700; }
+.react-datepicker__day { color: var(--text) !important; border-radius: 999px !important; font-size: 12px !important; transition: background .12s ease; }
+.react-datepicker__day:hover { background: var(--card-2) !important; }
+.react-datepicker__day--disabled { color: var(--text-3) !important; opacity: 0.4; }
+.react-datepicker__day--outside-month { color: var(--text-3) !important; }
+.react-datepicker__day--in-range,
+.react-datepicker__day--in-selecting-range { background: var(--accent-soft) !important; color: var(--text) !important; }
+.react-datepicker__day--selected,
+.react-datepicker__day--range-start,
+.react-datepicker__day--range-end,
+.react-datepicker__day--keyboard-selected { background: var(--pill-on) !important; color: var(--pill-on-text) !important; }
+.react-datepicker__navigation { top: 14px !important; }
+.react-datepicker__navigation-icon::before { border-color: var(--text-2) !important; border-width: 2px 2px 0 0 !important; }
+.react-datepicker__triangle { display: none !important; }
+
+/* Mobile: calendar fades up centered over a blurred backdrop */
+@media (max-width: 640px) {
+  .react-datepicker-popper {
+    position: fixed !important;
+    inset: 0 !important;
+    transform: none !important;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--dim);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    animation: dp-fade .18s ease;
+  }
+  .react-datepicker { animation: dp-up .22s cubic-bezier(.25,.46,.45,.94); }
+}
+@keyframes dp-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dp-up { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+/* one-line scrollable control rows (tabs, filters) */
+.scroll-row {
+  display: flex; align-items: center; gap: 8px;
+  overflow-x: auto; flex-wrap: nowrap;
+  scrollbar-width: none; -ms-overflow-style: none;
+  padding-bottom: 6px;
+}
+.scroll-row::-webkit-scrollbar { display: none; }
+.scroll-row > * { flex-shrink: 0; }
