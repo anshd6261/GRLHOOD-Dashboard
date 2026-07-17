@@ -35,6 +35,10 @@ const DATE_FILTERS = [
 
 const PAGE_SIZE = 24;
 
+// Live-pipeline tabs show EVERY order currently in that state — date filters
+// don't apply to them (only to event tabs: orders/delivered/ndr/rto).
+const ALWAYS_ALL = ['ready', 'manifested', 'transit'];
+
 const fmtDT = (v) => {
   if (!v) return '—';
   const d = parseDate(v);
@@ -649,7 +653,9 @@ export default function NDRDashboard() {
 
   const visible = useMemo(() => {
     const s = deferredSearch.toLowerCase().trim();
-    const filtered = dateFiltered
+    // Pipeline tabs ignore the date filter and show the full live set
+    const source = ALWAYS_ALL.includes(tab) ? (board?.orders || []) : dateFiltered;
+    const filtered = source
       .filter(o => {
         if (tab === 'overview') return true;
         if (tab === 'action') return o.bucket === 'ndr' || actions[o.awb];
