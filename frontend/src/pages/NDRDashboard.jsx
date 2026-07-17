@@ -118,7 +118,7 @@ const fadeUp = {
 };
 
 /* ═══════════ Card v2 — zoned, not stacked. Desktop: identity rail | info | actions ═══════════ */
-const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, onWaReport, onToast }) {
+const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, onWaReport, onToast, onSaveNote }) {
   const isNdr = o.bucket === 'ndr';
   const isRto = o.bucket === 'rto';
   const [open, setOpen] = useState(false);
@@ -126,6 +126,8 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
   const [date, setDate] = useState('');
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
+  const [noteText, setNoteText] = useState(o.note?.note || '');
+  const [noteBusy, setNoteBusy] = useState(false);
 
   const copy = (text, label = 'Copied') => {
     navigator.clipboard.writeText(text).then(() => onToast({ msg: label })).catch(() => {});
@@ -276,6 +278,20 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
                         </div>
                       ))}
                     </div>
+                    {(o.bucket === 'ndr' || o.bucket === 'rto' || actionEntry) && (
+                      <div>
+                        <p className="t-sub text-[9px] uppercase tracking-[0.12em] font-bold mb-1.5" style={{ color: 'var(--text-3)' }}>Note</p>
+                        <div className="flex gap-2">
+                          <input value={noteText} onChange={e => setNoteText(e.target.value)} placeholder="Add a note — synced & reported"
+                            className="tinput !h-9 !text-[12px] flex-1" maxLength={500} />
+                          <button onClick={async () => { setNoteBusy(true); await onSaveNote(o, noteText); setNoteBusy(false); }}
+                            disabled={noteBusy || !noteText.trim()} className="tbtn !h-9">
+                            {noteBusy ? <RefreshCw size={12} className="animate-spin" /> : 'Save'}
+                          </button>
+                        </div>
+                        {o.note?.ts && <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-3)' }}>Last note by {o.note.author || '—'} · {fmtDT(o.note.ts)}</p>}
+                      </div>
+                    )}
                     {o.timeline?.length > 0 && (
                       <div>
                         <p className="t-sub text-[9px] uppercase tracking-[0.12em] font-bold mb-2" style={{ color: 'var(--text-3)' }}>Tracking history</p>
@@ -500,7 +516,49 @@ function Overview({ orders, onJump }) {
 }
 
 /* ═══════════ Main page ═══════════ */
+const REMINDERS_10 = [
+  'Morning check ☀️ — any fresh NDRs waiting? Customers are up, perfect time to call.',
+  'Hey, did you peek at the NDR board yet? New failed attempts land overnight 👀',
+  'Quick one — open NDRs and RTOs need eyes before couriers head out 🚚',
+  'Start strong: clear the Action Required list before lunch 💪',
+];
+const REMINDERS_15 = [
+  'Afternoon sweep 🕒 — re-attempts confirmed? RTOs challenged?',
+  'Did you follow up on this morning\'s NDRs? Couriers still have time today ⏳',
+  'Last good window to save today\'s deliveries — check the board 📦',
+  'Any fake delivery attempts caught today? Verify with customers now 📞',
+];
+
+/** Agent reminders: 10AM & 15PM IST, varied daily, GRLHOOD® branded. */
+function useAgentReminders(enabled) {
+  useEffect(() => {
+    if (!enabled || typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    const tick = () => {
+      const now = istNow();
+      const slot = now.getHours() === 10 ? '10' : now.getHours() === 15 ? '15' : null;
+      if (!slot) return;
+      const key = `ndr_notif_${slot}_${now.toDateString()}`;
+      if (localStorage.getItem(key)) return;
+      localStorage.setItem(key, '1');
+      const list = slot === '10' ? REMINDERS_10 : REMINDERS_15;
+      const body = list[now.getDate() % list.length];
+      try {
+        const n = new Notification('GRLHOOD®', { body, icon: '/logo.png', badge: '/logo.png', tag: `grl-${slot}` });
+        n.onclick = () => { window.focus(); n.close(); };
+      } catch {}
+    };
+    tick();
+    const iv = setInterval(tick, 60 * 1000);
+    return () => clearInterval(iv);
+  }, [enabled]);
+}
+
 export default function NDRDashboard() {
+  const authUser = useMemo(() => { try { return JSON.parse(localStorage.getItem('grlhood_user') || '{}'); } catch { return {}; } }, []);
+  const isAgent = authUser.role === 'ndr-agent';
+  const [showWelcome, setShowWelcome] = useState(() => isAgent && !localStorage.getItem('ndr_welcomed_v1'));
+  useAgentReminders(isAgent);
+
   const [board, setBoard] = useState(() => {
     try { return JSON.parse(localStorage.getItem('ndr_board_cache') || 'null'); } catch { return null; }
   });
@@ -583,6 +641,15 @@ export default function NDRDashboard() {
   }, [dateFiltered, actions]);
 
   const handleToast = useCallback((t) => setToast(t), []);
+  const handleSaveNote = useCallback(async (o, note) => {
+    try {
+      const author = (JSON.parse(localStorage.getItem('grlhood_user') || '{}').username) || '';
+      const r = await axios.post(`${API_URL}/ndr/note`, { orderNumber: o.orderNumber, awb: o.awb, note, author });
+      setToast({ msg: r.data?.success ? 'Note saved & synced' : (r.data?.error || 'Note failed'), err: !r.data?.success });
+      if (r.data?.success) setBoard(prev => prev ? { ...prev, orders: prev.orders.map(x => x.shopifyId === o.shopifyId ? { ...x, note: r.data.note } : x) } : prev);
+      return !!r.data?.success;
+    } catch (e) { setToast({ msg: e.message, err: true }); return false; }
+  }, []);
   const handleWaReport = useCallback((o) => {
     const msg = buildWaReport(o);
     const num = localStorage.getItem('ndr_wa_number') || '';
@@ -595,7 +662,7 @@ export default function NDRDashboard() {
   }, []);
   const handleAction = useCallback(async (o, action, extra = {}) => {
     try {
-      const r = await axios.post(`${API_URL}/ndr/action`, { awb: o.awb, action, ...extra }, { timeout: 60000 });
+      const r = await axios.post(`${API_URL}/ndr/action`, { awb: o.awb, action, orderNumber: o.orderNumber, reason: o.ndrReason || o.ndrRemark, note: o.note?.note, author: (JSON.parse(localStorage.getItem('grlhood_user') || '{}').username) || '', ...extra }, { timeout: 60000 });
       setToast({ msg: r.data?.message || 'Done', err: !r.data?.success });
       if (r.data?.success) {
         setActions(prev => {
@@ -618,7 +685,7 @@ export default function NDRDashboard() {
   const renderCards = (list) => (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
       {list.slice(0, pageSize).map((o, i) => (
-        <BoardCard key={o.shopifyId} o={o} i={i} actionEntry={actions[o.awb]} onAction={handleAction} onWaReport={handleWaReport} onToast={handleToast} />
+        <BoardCard key={o.shopifyId} o={o} i={i} actionEntry={actions[o.awb]} onAction={handleAction} onWaReport={handleWaReport} onToast={handleToast} onSaveNote={handleSaveNote} />
       ))}
     </div>
   );
@@ -711,6 +778,30 @@ export default function NDRDashboard() {
               </>
             )}
           </motion.div>
+        </AnimatePresence>
+
+        {/* agent welcome + notification permission */}
+        <AnimatePresence>
+          {showWelcome && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[320] flex items-center justify-center p-6 sheet-backdrop">
+              <motion.div initial={{ scale: 0.94, y: 14 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.96, opacity: 0 }}
+                className="tcard p-8 w-full max-w-sm text-center space-y-4">
+                <img src="/logo.png" alt="GRLHOOD" className="h-12 mx-auto object-contain" style={{ filter: 'var(--tw-empty,)' }} />
+                <h3 className="t-display text-[20px]" style={{ color: 'var(--text)' }}>Welcome 👋</h3>
+                <p className="t-sub text-[13px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
+                  This is your GRLHOOD® NDR board. Your mission: catch fake delivery attempts and get every order <b>delivered</b>.
+                  Want two daily nudges (10 AM &amp; 3 PM) so nothing slips?
+                </p>
+                <button onClick={async () => {
+                  try { await Notification.requestPermission(); } catch {}
+                  localStorage.setItem('ndr_welcomed_v1', '1'); setShowWelcome(false);
+                }} className="tbtn accent big w-full">Enable reminders</button>
+                <button onClick={() => { localStorage.setItem('ndr_welcomed_v1', '1'); setShowWelcome(false); }}
+                  className="tbtn w-full">Maybe later</button>
+              </motion.div>
+            </motion.div>
+          )}
         </AnimatePresence>
 
         {/* WA settings */}

@@ -86,6 +86,12 @@ app.post('/api/login', (req, res) => {
         return res.json({ success: true, role: 'ndr', token: 'mock-jwt-ndr-token-5k8' });
     }
 
+    // NDR agent login (iThink employee): NDR board + welcome/reminders/notes,
+    // every action reported by email to the owner
+    if (username === 'ITHINKGRLL' && password === 'ITHINKGRLL') {
+        return res.json({ success: true, role: 'ndr-agent', token: 'mock-jwt-ndragent-token-9q2' });
+    }
+
     return res.status(401).json({ success: false, error: 'Invalid credentials' });
 });
 
@@ -934,10 +940,53 @@ app.post('/api/ndr/awb-map', (req, res) => {
     }
 });
 
+// Formatted action-report email to the owner (best-effort, non-blocking)
+const OWNER_EMAIL = process.env.NDR_REPORT_EMAIL || 'grlhood18@gmail.com';
+async function sendNdrReport(subject, rows) {
+    try {
+        const nodemailer = require('nodemailer');
+        const t = nodemailer.createTransport({ service: 'gmail', auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD } });
+        const html = `
+        <div style="font-family:Helvetica,Arial,sans-serif;max-width:520px;margin:auto;background:#fbfafc;border-radius:18px;padding:28px">
+          <h2 style="margin:0 0 4px;letter-spacing:-0.5px">GRLHOOD<sup>®</sup></h2>
+          <p style="margin:0 0 20px;color:#97949e;font-size:13px">NDR Management activity report</p>
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            ${rows.map(([k, v]) => `<tr><td style="padding:7px 10px;color:#97949e;white-space:nowrap;vertical-align:top">${k}</td><td style="padding:7px 10px;color:#1b1b1f;font-weight:600">${v || '—'}</td></tr>`).join('')}
+          </table>
+          <p style="margin:20px 0 0;color:#c5c2cb;font-size:11px">${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })} IST · grlhood-dashboard.vercel.app</p>
+        </div>`;
+        await t.sendMail({ from: process.env.GMAIL_USER, to: OWNER_EMAIL, subject: `GRLHOOD® — ${subject}`, html });
+    } catch (e) { console.warn('[NDR] report email failed:', e.message); }
+}
+
+// Save a note on an order (synced server-side, included in the board + reports)
+app.post('/api/ndr/note', async (req, res) => {
+    try {
+        const { orderNumber, awb, note, author } = req.body || {};
+        const saved = ndr.saveNote(orderNumber, note, author);
+        if (!saved) return res.status(400).json({ success: false, error: 'orderNumber required' });
+        if (author === 'ITHINKGRLL') {
+            sendNdrReport(`Note added on ${orderNumber}`, [
+                ['Agent', author], ['Order', orderNumber], ['AWB', awb], ['Note', saved.note],
+            ]);
+        }
+        res.json({ success: true, note: saved });
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // Take NDR action: { awb, action: 'reattempt'|'rto', date?, time?, phone?, address?, remark? }
 app.post('/api/ndr/action', async (req, res) => {
     try {
         const result = await ndr.takeAction(req.body || {});
+        if (result.success && req.body?.author === 'ITHINKGRLL') {
+            sendNdrReport(`${String(req.body.action || '').toUpperCase()} requested — ${req.body.orderNumber || req.body.awb}`, [
+                ['Agent', req.body.author], ['Action', req.body.action], ['Order', req.body.orderNumber],
+                ['AWB', req.body.awb], ['Re-attempt date', req.body.date], ['New phone', req.body.phone],
+                ['NDR reason', req.body.reason], ['Note', req.body.note],
+            ]);
+        }
         res.status(result.success ? 200 : 400).json(result);
     } catch (e) {
         console.error('[API] NDR action error:', e.message);
