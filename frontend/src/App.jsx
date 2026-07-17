@@ -41,7 +41,7 @@ function StickyLogoHeader({ onLogout, theme, onToggleTheme }) {
     <>
       <div className="logo-blur" />
       <div className="logo-dim" />
-      <div className="logo-fix" style={{ '--logo-h': shrunk ? '32px' : '58px' }}>
+      <div className="logo-fix" style={{ '--logo-h': shrunk ? '52px' : 'clamp(84px, 20vw, 120px)' }}>
         <img src="/logo.png" alt="GRLHOOD" />
       </div>
       <div className="fixed top-4 right-4 z-[45] flex gap-2">
@@ -691,7 +691,7 @@ function App() {
     return (
       <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
         <StickyLogoHeader onLogout={logout} theme={theme} onToggleTheme={toggleTheme} />
-        <main className="pt-24 sm:pt-28">
+        <main className="pt-36 sm:pt-40">
           <NDRDashboard />
         </main>
       </div>

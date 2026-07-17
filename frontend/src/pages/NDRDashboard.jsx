@@ -7,7 +7,7 @@ import {
   Package, RefreshCw, Truck, CheckCircle, AlertTriangle, RotateCcw,
   Phone, MessageSquare, MapPin, Calendar, Copy, ExternalLink, Search,
   Send, X, Settings, LayoutDashboard, Zap, TrendingDown,
-  ChevronDown, ArrowDownUp, SlidersHorizontal
+  ChevronDown, ArrowDownUp
 } from 'lucide-react';
 import { relevantDate, istNow, inDateFilter, sortByDate, parseDate } from '../utils/boardDates';
 
@@ -70,6 +70,47 @@ Please verify with the customer — this may be a FAKE delivery attempt. Goal: g
 const loadActions = () => { try { return JSON.parse(localStorage.getItem('ndr_actions') || '{}'); } catch { return {}; } };
 const STATUS_LABEL = { orders: 'Not Shipped', ready: 'AWB Assigned' };
 
+/* Filter controls — top-level component so the calendar never remounts
+   (in-component definition caused the month-jump / jitter bug). */
+const FilterRow = React.memo(function FilterRow({ dateFilter, setDateFilter, customRange, setCustomRange, sortDesc, setSortDesc, search, setSearch }) {
+  return (
+    <div className="scroll-row mb-6">
+      {DATE_FILTERS.map(f => (
+        <button key={f.id}
+          onClick={() => { setDateFilter(f.id); setCustomRange([null, null]); }}
+          className={`pill ${dateFilter === f.id ? 'on' : ''}`}>
+          {f.label}
+        </button>
+      ))}
+      <div className={`pill ${dateFilter === 'custom' ? 'on' : ''}`}>
+        <Calendar size={11} className="shrink-0" />
+        <DatePicker
+          selectsRange
+          startDate={customRange[0]}
+          endDate={customRange[1]}
+          maxDate={new Date()}
+          onChange={(u) => { setCustomRange(u); if (u?.[0]) setDateFilter('custom'); }}
+          dateFormat="d MMM"
+          placeholderText="Pick dates"
+          className="bg-transparent outline-none w-[96px] cursor-pointer text-[11px] font-semibold text-center"
+        />
+        {customRange[0] && (
+          <button onClick={() => { setCustomRange([null, null]); setDateFilter('7d'); }}
+            className="bg-transparent border-none cursor-pointer p-0 flex"><X size={11} /></button>
+        )}
+      </div>
+      <button onClick={() => setSortDesc(!sortDesc)} className="pill">
+        <ArrowDownUp size={11} /> {sortDesc ? 'Newest' : 'Oldest'}
+      </button>
+      <div className="relative">
+        <Search size={12} className="absolute left-3.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-3)' }} />
+        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Order · AWB · phone"
+          className="tinput !h-[30px] !pl-9 !pr-4 !text-[11px] w-44 sm:w-60" />
+      </div>
+    </div>
+  );
+});
+
 const fadeUp = {
   hidden: { opacity: 0, y: 16 },
   visible: (i) => ({ opacity: 1, y: 0, transition: { duration: 0.3, delay: Math.min(i, 9) * 0.035, ease: [0.25, 0.46, 0.45, 0.94] } }),
@@ -115,7 +156,7 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
         <div className="p-6 sm:border-r flex sm:flex-col items-start justify-between sm:justify-start gap-2 sm:gap-3"
           style={{ borderColor: 'var(--line-2)', background: 'var(--card-2)' }}>
           <div>
-            <h3 className="t-display text-[17px] leading-none" style={{ color: 'var(--text)' }}>{o.orderNumber}</h3>
+            <h3 className="t-display text-[20px] leading-none" style={{ color: 'var(--text)' }}>{o.orderNumber}</h3>
             <p className="t-sub text-[11px] mt-2" style={{ color: 'var(--text-2)' }}>{o.courier || '—'}</p>
           </div>
           <div className="text-right sm:text-left">
@@ -123,7 +164,17 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
               style={{ color: isNdr || isRto ? 'var(--accent-deep)' : 'var(--text)' }}>
               {statusText}
             </p>
-            <p className="t-display text-[19px] mt-2 tabular-nums leading-none" style={{ color: 'var(--text)' }}>₹{o.totalAmount}</p>
+            {o.statusDateTime && o.bucket !== 'orders' && o.bucket !== 'ready' && (
+              <p className="t-sub text-[10px] mt-1.5 leading-snug" style={{ color: 'var(--text-2)' }}>
+                {fmtDT(o.statusDateTime)}{o.scanLocation ? ` · ${o.scanLocation.split(',')[0]}` : ''}
+              </p>
+            )}
+            {actionEntry && (
+              <span className="chip pink mt-2" style={{ height: 24 }}>
+                <span className="l">Re-attempt</span><span className="v">{fmtD(actionEntry.ts)}</span>
+              </span>
+            )}
+            <p className="t-display text-[21px] mt-2 tabular-nums leading-none" style={{ color: 'var(--text)' }}>₹{o.totalAmount}</p>
             <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>{o.paymentMode}</p>
           </div>
         </div>
@@ -225,6 +276,31 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
                         </div>
                       ))}
                     </div>
+                    {o.timeline?.length > 0 && (
+                      <div>
+                        <p className="t-sub text-[9px] uppercase tracking-[0.12em] font-bold mb-2" style={{ color: 'var(--text-3)' }}>Tracking history</p>
+                        <div className="space-y-2.5">
+                          {o.timeline.map((t, ti) => (
+                            <div key={ti} className="flex gap-3">
+                              <div className="flex flex-col items-center pt-1">
+                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: ti === 0 ? 'var(--accent-deep)' : 'var(--text-3)' }} />
+                                {ti < o.timeline.length - 1 && <span className="w-px flex-1 mt-1" style={{ background: 'var(--line-2)' }} />}
+                              </div>
+                              <div className="min-w-0 pb-0.5">
+                                <p className="t-head text-[11px] leading-none" style={{ color: ti === 0 ? 'var(--text)' : 'var(--text-2)' }}>
+                                  {t.status}<span className="t-sub font-normal" style={{ color: 'var(--text-3)' }}> · {fmtDT(t.at)}</span>
+                                </p>
+                                {(t.location || t.remark) && (
+                                  <p className="t-sub text-[10px] mt-1 leading-snug" style={{ color: 'var(--text-2)' }}>
+                                    {[t.location, t.remark].filter(Boolean).join(' — ')}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {o.awb && (
                       <div className="flex items-center justify-between gap-3">
                         <button onClick={() => copy(o.awb, 'AWB copied')}
@@ -248,16 +324,11 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
           {/* actions / footers */}
           {isNdr && o.awb && (
             <div className="zone px-6 py-4 space-y-3">
-              {actionEntry && (
-                <p className="t-sub text-[11px] font-semibold flex items-center gap-1.5" style={{ color: 'var(--accent-deep)' }}>
-                  <CheckCircle size={12} /> Re-attempt requested {fmtD(actionEntry.ts)}
-                </p>
-              )}
               <div className="flex gap-2.5 flex-wrap">
-                <button onClick={() => { setShowForm(!showForm); setDate(''); setPhone(''); }} className="tbtn accent flex-1 min-w-[150px]">
-                  <Truck size={13} /> Re-Attempt Delivery
+                <button onClick={() => { setShowForm(!showForm); setDate(''); setPhone(''); }} className="tbtn accent big flex-1 min-w-[170px]">
+                  <Truck size={14} /> Re-Attempt Delivery
                 </button>
-                <button onClick={() => onWaReport(o)} className="tbtn"><Send size={13} /> Report</button>
+                <button onClick={() => onWaReport(o)} className="tbtn big"><Send size={14} /> Report</button>
               </div>
               <AnimatePresence>
                 {showForm && (
@@ -439,12 +510,10 @@ export default function NDRDashboard() {
   const [customRange, setCustomRange] = useState([null, null]);
   const [sortDesc, setSortDesc] = useState(true);
   const [search, setSearch] = useState('');
-  const [searchOpen, setSearchOpen] = useState(false);
   const deferredSearch = useDeferredValue(search);
   const [pageSize, setPageSize] = useState(PAGE_SIZE);
   const [actions, setActions] = useState(loadActions);
   const [toast, setToast] = useState(null);
-  const [sheetOpen, setSheetOpen] = useState(false); // mobile filter bottom-sheet
   const [showWaSettings, setShowWaSettings] = useState(false);
   const [waNumber, setWaNumber] = useState(() => localStorage.getItem('ndr_wa_number') || '');
 
@@ -546,50 +615,12 @@ export default function NDRDashboard() {
   const actionRequired = tab === 'action' ? visible.filter(o => o.bucket === 'ndr' && !actions[o.awb]) : [];
   const actionRequested = tab === 'action' ? visible.filter(o => actions[o.awb]) : [];
   const viewKey = `${tab}|${dateFilter}|${customRange[0]?.toDateString?.() || ''}|${customRange[1]?.toDateString?.() || ''}|${sortDesc}`;
-  const dateLabel = dateFilter === 'custom' && customRange[0]
-    ? `${fmtD(customRange[0])}${customRange[1] ? ` – ${fmtD(customRange[1])}` : ''}`
-    : DATE_FILTERS.find(f => f.id === dateFilter)?.label || '7 Days';
-
   const renderCards = (list) => (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
       {list.slice(0, pageSize).map((o, i) => (
         <BoardCard key={o.shopifyId} o={o} i={i} actionEntry={actions[o.awb]} onAction={handleAction} onWaReport={handleWaReport} onToast={handleToast} />
       ))}
     </div>
-  );
-
-  const DateControls = ({ inSheet }) => (
-    <>
-      <div className={inSheet ? 'grid grid-cols-2 gap-2.5' : 'flex items-center gap-2'}>
-        {DATE_FILTERS.map(f => (
-          <button key={f.id}
-            onClick={() => { setDateFilter(f.id); setCustomRange([null, null]); if (inSheet) setSheetOpen(false); }}
-            className={`pill ${inSheet ? '!h-11 w-full' : ''} ${dateFilter === f.id ? 'on' : ''}`}>
-            {f.label}
-          </button>
-        ))}
-      </div>
-      <div className={`pill ${inSheet ? '!h-11 w-full mt-2.5' : ''} ${dateFilter === 'custom' ? 'on' : ''}`}>
-        <Calendar size={11} className="shrink-0" />
-        <DatePicker
-          selectsRange
-          startDate={customRange[0]}
-          endDate={customRange[1]}
-          maxDate={new Date()}
-          onChange={(u) => { setCustomRange(u); if (u?.[0]) setDateFilter('custom'); }}
-          dateFormat="d MMM"
-          placeholderText="Pick dates"
-          className="bg-transparent outline-none w-[104px] cursor-pointer text-[12px] font-semibold text-center"
-        />
-        {customRange[0] && (
-          <button onClick={() => { setCustomRange([null, null]); setDateFilter('7d'); }}
-            className="bg-transparent border-none cursor-pointer p-0 flex"><X size={11} /></button>
-        )}
-      </div>
-      <button onClick={() => { setSortDesc(!sortDesc); }} className={`pill ${inSheet ? '!h-11 w-full mt-2.5' : ''}`}>
-        <ArrowDownUp size={11} /> {sortDesc ? 'Newest first' : 'Oldest first'}
-      </button>
-    </>
   );
 
   return (
@@ -620,35 +651,14 @@ export default function NDRDashboard() {
           </div>
         </div>
 
-        {/* filters — inline on desktop, one Filters pill + sheet on mobile */}
+        {/* filters — one scrollable line (like the tabs) on every screen size */}
         {tab !== 'overview' && (
-          <div className="mb-7">
-            <div className="hidden sm:flex items-center gap-2 flex-wrap">
-              <DateControls />
-              <div className="relative ml-auto">
-                <Search size={13} className="absolute left-4 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-3)' }} />
-                <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Order · AWB · phone · name"
-                  className="tinput !pl-10 w-64" />
-              </div>
-            </div>
-            <div className="flex sm:hidden items-center gap-2.5">
-              <button onClick={() => setSheetOpen(true)} className="pill on flex-1 !h-11">
-                <SlidersHorizontal size={12} /> {dateLabel} · {sortDesc ? 'Newest' : 'Oldest'}
-              </button>
-              <button onClick={() => setSearchOpen(!searchOpen)} className={`pill !h-11 !w-11 !p-0 ${searchOpen || search ? 'on' : ''}`}>
-                <Search size={14} />
-              </button>
-            </div>
-            <AnimatePresence>
-              {searchOpen && (
-                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                  className="sm:hidden overflow-hidden">
-                  <input autoFocus value={search} onChange={e => setSearch(e.target.value)} placeholder="Order · AWB · phone · name"
-                    className="tinput w-full mt-2.5" />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
+          <FilterRow
+            dateFilter={dateFilter} setDateFilter={setDateFilter}
+            customRange={customRange} setCustomRange={setCustomRange}
+            sortDesc={sortDesc} setSortDesc={setSortDesc}
+            search={search} setSearch={setSearch}
+          />
         )}
 
         {/* first load */}
@@ -701,23 +711,6 @@ export default function NDRDashboard() {
               </>
             )}
           </motion.div>
-        </AnimatePresence>
-
-        {/* mobile filter bottom-sheet */}
-        <AnimatePresence>
-          {sheetOpen && (
-            <>
-              <motion.div className="sheet-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                onClick={() => setSheetOpen(false)} />
-              <motion.div className="sheet" initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
-                transition={{ type: 'spring', damping: 30, stiffness: 320 }}>
-                <div className="sheet-grab" />
-                <p className="t-display text-[15px] mb-4" style={{ color: 'var(--text)' }}>Filter &amp; sort</p>
-                <DateControls inSheet />
-                <button onClick={() => setSheetOpen(false)} className="tbtn accent w-full mt-5 !h-12">Done</button>
-              </motion.div>
-            </>
-          )}
         </AnimatePresence>
 
         {/* WA settings */}
