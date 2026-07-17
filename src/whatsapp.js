@@ -40,11 +40,9 @@ const buildNdrMessage = (o) => {
         '',
         '⚠️ *Did anyone actually call or visit you for this delivery?*',
         '',
-        'Please reply with:',
-        '*1* — Yes, I was contacted',
-        '*2* — No, nobody came',
+        'Please tell us *what happened* — did the delivery agent contact you, and were you available? 🙏',
         '',
-        "We'll get your order re-attempted right away 💌",
+        "We really want to get your order delivered — just reply here and we'll re-attempt it right away 💌",
     ].join('\n');
 };
 
