@@ -198,8 +198,13 @@ const buildBoard = async (days = WINDOW_DAYS, refresh = false) => {
         const scans = Array.isArray(t?.scan_details) ? t.scan_details : [];
         const rtoInitiatedAt = scans.filter(s => /^rto/i.test(String(s?.status || '')))
             .map(s => s.status_date_time).filter(Boolean).sort()[0] || '';
-        const ndrAt = scans.filter(s => /^undelivered$/i.test(String(s?.status || '')))
-            .map(s => s.status_date_time).filter(Boolean).sort().pop() || '';
+        const ndrScans = scans.filter(s => /^undelivered$/i.test(String(s?.status || '')))
+            .sort((a, b) => String(a.status_date_time || '').localeCompare(String(b.status_date_time || '')));
+        const ndrAt = ndrScans.map(s => s.status_date_time).filter(Boolean).pop() || '';
+        // Reason specifically from the NDR (Undelivered) scan — accurate even
+        // after the order moves past NDR (last scan would be a delivery reason).
+        const lastNdrScan = ndrScans[ndrScans.length - 1] || null;
+        const ndrScanReason = lastNdrScan ? (lastNdrScan.reason || lastNdrScan.remark || '') : '';
         const deliveredAt = scans.filter(s => /^delivered$/i.test(String(s?.status || '')))
             .map(s => s.status_date_time).filter(Boolean).sort().pop() || '';
         // Formatted recent history for the card timeline (newest first, max 6)
@@ -229,6 +234,7 @@ const buildBoard = async (days = WINDOW_DAYS, refresh = false) => {
             ndrReason: last.reason || '',
             ndrRemark: last.remark || '',
             ndrDate: ndrAt || (bucket === 'ndr' ? last.status_date_time || '' : ''),
+            ndrScanReason: ndrScanReason || (bucket === 'ndr' ? (last.reason || last.remark || '') : ''),
             rtoInitiatedAt: rtoInitiatedAt || (bucket === 'rto' ? last.status_date_time || '' : ''),
             deliveredAt: deliveredAt || (bucket === 'delivered' ? last.status_date_time || '' : ''),
             timeline,
@@ -395,4 +401,50 @@ const saveNote = (orderNumber, note, author) => {
     return notesStore[key];
 };
 
-module.exports = { buildBoard, takeAction, bucketFor, registerAwbs, saveNote, saveProof, getProof, recordAction };
+/**
+ * Remittance summary — iThink pays COD out on specific dates. `remittance/get`
+ * needs a single date, so we scan the last `days` days, keep the dates that
+ * actually paid out, and total them. Cached 30 min.
+ */
+let remitCache = { ts: 0, data: null };
+const getRemittances = async (days = 45, refresh = false) => {
+    if (!refresh && remitCache.data && Date.now() - remitCache.ts < 30 * 60 * 1000) {
+        return { ...remitCache.data, cached: true };
+    }
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const dates = [];
+    for (let i = 0; i < days; i++) dates.push(fmtDate(new Date(now.getTime() - i * 864e5)));
+
+    const results = await mapLimit(dates, 6, async (date) => {
+        try {
+            const data = await ithink.postRaw('/remittance/get.json', { remittance_date: date });
+            const rows = Array.isArray(data?.data) ? data.data : [];
+            return rows.map(r => ({
+                id: r.remittance_id,
+                date,                                   // ISO for sorting
+                dateLabel: r.remittance_date || date,
+                codGenerated: parseFloat(r.cod_generated) || 0,
+                codRemitted: parseFloat(r.cod_remitted) || 0,
+                billAdjusted: parseFloat(r.bill_adjusted) || 0,
+                refundAdjusted: parseFloat(r.refund_adjusted) || 0,
+                transactionCharges: parseFloat(r.transaction_charges) || 0,
+                transactionGst: parseFloat(r.transaction_gst_charges) || 0,
+                walletAmount: parseFloat(r.wallet_amount) || 0,
+                advanceHold: parseFloat(r.advance_hold) || 0,
+            }));
+        } catch { return []; }
+    });
+
+    const remittances = results.flat().sort((a, b) => b.date.localeCompare(a.date)); // newest first
+    const totals = remittances.reduce((t, r) => ({
+        codGenerated: t.codGenerated + r.codGenerated,
+        codRemitted: t.codRemitted + r.codRemitted,
+        charges: t.charges + r.transactionCharges + r.transactionGst,
+    }), { codGenerated: 0, codRemitted: 0, charges: 0 });
+
+    const out = { success: true, generatedAt: new Date().toISOString(), days, remittances, totals, lastPaid: remittances[0] || null };
+    remitCache = { ts: Date.now(), data: out };
+    return out;
+};
+
+module.exports = { buildBoard, takeAction, bucketFor, registerAwbs, saveNote, saveProof, getProof, recordAction, getRemittances };

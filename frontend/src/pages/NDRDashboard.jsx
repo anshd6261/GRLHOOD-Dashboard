@@ -7,7 +7,7 @@ import {
   Package, RefreshCw, Truck, CheckCircle, AlertTriangle, RotateCcw,
   Phone, MessageSquare, MapPin, Calendar, Copy, ExternalLink, Search,
   Send, X, Settings, LayoutDashboard, Zap, TrendingDown,
-  ChevronDown, ArrowDownUp, Image as ImageIcon, Download, Upload, Check, FileText
+  ChevronDown, ArrowDownUp, Image as ImageIcon, Download, Upload, Check, FileText, IndianRupee
 } from 'lucide-react';
 import { relevantDate, istNow, inDateFilter, sortByDate, parseDate } from '../utils/boardDates';
 import { jsPDF } from 'jspdf';
@@ -515,40 +515,63 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
 });
 
 /* ═══════════ Overview ═══════════ */
-function Overview({ orders, onJump }) {
+const hadNdr = (o) => !!(o.ndrDate && parseDate(o.ndrDate).getTime() > 0);
+const wentRto = (o) => o.bucket === 'rto' || !!(o.rtoInitiatedAt && parseDate(o.rtoInitiatedAt).getTime() > 0);
+
+function Overview({ allOrders, onJump }) {
   const now = istNow();
+  // Overview has its OWN date filter — independent from the tab date filter.
+  const [ovFilter, setOvFilter] = useState('30d');
+  const [ovRange, setOvRange] = useState([null, null]);
+  const [remit, setRemit] = useState(null);
+
+  useEffect(() => {
+    axios.get(`${API_URL}/ndr/remittances?days=60`, { timeout: 120000 }).then(r => setRemit(r.data)).catch(() => {});
+  }, []);
+
   const stats = useMemo(() => {
+    // analytical set respects the Overview date filter (by event date)
+    const orders = allOrders.filter(o => inDateFilter(o, ovFilter, ovRange));
     const shipped = orders.filter(o => o.awb);
     const by = (b) => orders.filter(o => o.bucket === b);
-    const ndr = by('ndr'), rto = by('rto'), delivered = by('delivered'), transit = by('transit'), ready = by('ready'), manifested = by('manifested');
-    const closed = delivered.length + rto.length;
-    const newNdr48 = ndr.filter(o => o.ndrDate && (now - parseDate(o.ndrDate)) <= 48 * 3600e3 && parseDate(o.ndrDate).getTime() > 0);
-    const newRto48 = rto.filter(o => o.rtoInitiatedAt && (now - parseDate(o.rtoInitiatedAt)) <= 48 * 3600e3 && parseDate(o.rtoInitiatedAt).getTime() > 0);
-    // Monthly RTO rate: RTOs vs closed journeys in the last 30 days (by event date)
-    const in30 = (v) => v && (now - parseDate(v)) <= 30 * 864e5 && parseDate(v).getTime() > 0;
-    const rtoM = rto.filter(o => in30(o.rtoInitiatedAt));
-    const delM = delivered.filter(o => in30(o.deliveredAt || o.statusDateTime));
-    const monthlyRtoRate = (rtoM.length + delM.length) ? (rtoM.length / (rtoM.length + delM.length)) * 100 : 0;
-    const codAtRisk = ndr.reduce((s, o) => s + (o.isCod ? o.totalAmount : 0), 0) + rto.reduce((s, o) => s + (o.isCod ? o.totalAmount : 0), 0);
+    const rto = by('rto'), delivered = by('delivered'), transit = by('transit'), ready = by('ready'), manifested = by('manifested');
+
+    // ACCURATE rates: count every shipment that EVER had an NDR / went RTO
+    // (an order that failed then delivered still counts as an NDR), using the
+    // event dates extracted from the full scan history.
+    const everNdr = shipped.filter(hadNdr);
+    const everRto = shipped.filter(wentRto);
+    const closed = delivered.length + everRto.length;
+
+    // Manage Today comes from the FULL board (always current, filter-independent)
+    const openNdr = allOrders.filter(o => o.bucket === 'ndr');
+    const newNdr48 = allOrders.filter(o => hadNdr(o) && (now - parseDate(o.ndrDate)) <= 48 * 3600e3);
+    const newRto48 = allOrders.filter(o => o.rtoInitiatedAt && parseDate(o.rtoInitiatedAt).getTime() > 0 && (now - parseDate(o.rtoInitiatedAt)) <= 48 * 3600e3);
+
     const couriers = {};
     shipped.forEach(o => {
       const c = o.courier || 'Unassigned';
-      if (!couriers[c]) couriers[c] = { name: c, shipped: 0, transit: 0, delivered: 0, ndr: 0, rto: 0, ready: 0, manifested: 0 };
+      if (!couriers[c]) couriers[c] = { name: c, shipped: 0, delivered: 0, transit: 0, ndr: 0, rto: 0 };
       couriers[c].shipped++;
-      if (couriers[c][o.bucket] !== undefined) couriers[c][o.bucket]++;
+      if (o.bucket === 'delivered') couriers[c].delivered++;
+      if (o.bucket === 'transit') couriers[c].transit++;
+      if (hadNdr(o)) couriers[c].ndr++;
+      if (wentRto(o)) couriers[c].rto++;
     });
     const reasons = {};
-    ndr.forEach(o => { const r = (o.ndrReason || o.ndrRemark || 'Unknown').slice(0, 60); reasons[r] = (reasons[r] || 0) + 1; });
+    everNdr.forEach(o => { const r = (o.ndrScanReason || o.ndrReason || o.ndrRemark || 'Unknown').slice(0, 60); reasons[r] = (reasons[r] || 0) + 1; });
+
     return {
-      total: orders.length, shippedCount: shipped.length,
-      ndr, rto, delivered, transit, ready, manifested, newNdr48, newRto48, codAtRisk,
-      ndrRate: shipped.length ? (ndr.length / shipped.length) * 100 : 0,
-      monthlyRtoRate,
-      rtoRate: closed ? (rto.length / closed) * 100 : 0,
+      shippedCount: shipped.length,
+      delivered, transit, ready, manifested,
+      rtoCount: everRto.length, ndrCount: everNdr.length,
+      openNdr, newNdr48, newRto48,
+      ndrRate: shipped.length ? (everNdr.length / shipped.length) * 100 : 0,
+      rtoRate: closed ? (everRto.length / closed) * 100 : 0,
       couriers: Object.values(couriers).sort((a, b) => b.shipped - a.shipped),
       reasons: Object.entries(reasons).sort((a, b) => b[1] - a[1]),
     };
-  }, [orders]);
+  }, [allOrders, ovFilter, ovRange, now]);
 
   const Tile = ({ label, value, sub, accent, onClick, i = 0 }) => (
     <motion.button custom={i} variants={fadeUp} initial="hidden" animate="visible" exit="exit"
@@ -573,7 +596,7 @@ function Overview({ orders, onJump }) {
           <h3 className="t-display text-[15px]" style={{ color: 'var(--text)' }}>Manage Today</h3>
         </div>
         <div className="grid grid-cols-3 gap-3">
-          <Tile i={1} label="Open NDRs" value={stats.ndr.length} sub="need action now" accent onClick={() => onJump('ndr')} />
+          <Tile i={1} label="Open NDRs" value={stats.openNdr.length} sub="need action now" accent onClick={() => onJump('ndr')} />
           <Tile i={2} label="New NDRs · 48h" value={stats.newNdr48.length} sub="fresh failed attempts" accent onClick={() => onJump('ndr')} />
           <Tile i={3} label="RTO · 48h" value={stats.newRto48.length} sub="just started returning" onClick={() => onJump('rto')} />
         </div>
@@ -591,11 +614,29 @@ function Overview({ orders, onJump }) {
         )}
       </motion.section>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Tile i={1} label="Delivered" value={stats.delivered.length} onClick={() => onJump('delivered')} />
-        <Tile i={2} label="NDR Rate" value={`${stats.ndrRate.toFixed(1)}%`} sub={`${stats.ndr.length} of ${stats.shippedCount} shipped`} accent />
-        <Tile i={3} label="Monthly RTO Rate" value={`${stats.monthlyRtoRate.toFixed(1)}%`} sub="last 30 days" accent />
-        <Tile i={4} label="In Transit" value={stats.transit.length} onClick={() => onJump('transit')} />
+      {/* Overview's OWN date filter — independent of the tab date filter */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="t-sub text-[10px] font-bold uppercase tracking-[0.12em] mr-1" style={{ color: 'var(--text-3)' }}>Analytics period</span>
+        {DATE_FILTERS.map(f => (
+          <button key={f.id} onClick={() => { setOvFilter(f.id); setOvRange([null, null]); }}
+            className={`pill ${ovFilter === f.id ? 'on' : ''}`}>{f.label}</button>
+        ))}
+        <div className={`pill ${ovFilter === 'custom' ? 'on' : ''}`}>
+          <Calendar size={11} className="shrink-0" />
+          <DatePicker selectsRange startDate={ovRange[0]} endDate={ovRange[1]} maxDate={new Date()}
+            onChange={(u) => { setOvRange(u); if (u?.[0]) setOvFilter('custom'); }}
+            dateFormat="d MMM" placeholderText="Pick dates"
+            className="bg-transparent outline-none w-[92px] cursor-pointer text-[11px] font-semibold text-center" />
+          {ovRange[0] && <button onClick={() => { setOvRange([null, null]); setOvFilter('30d'); }} className="bg-transparent border-none cursor-pointer p-0 flex"><X size={11} /></button>}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+        <Tile i={1} label="Delivered" value={stats.delivered.length} />
+        <Tile i={2} label="NDR Rate" value={`${stats.ndrRate.toFixed(1)}%`} sub={`${stats.ndrCount} of ${stats.shippedCount} shipped`} accent />
+        <Tile i={3} label="RTO Rate" value={`${stats.rtoRate.toFixed(1)}%`} sub={`${stats.rtoCount} of ${stats.delivered.length + stats.rtoCount} closed`} accent />
+        <Tile i={4} label="RTO Orders" value={stats.rtoCount} sub="returned / returning" accent onClick={() => onJump('rto')} />
+        <Tile i={5} label="In Transit" value={stats.transit.length} onClick={() => onJump('transit')} />
       </div>
 
       <motion.section custom={2} variants={fadeUp} initial="hidden" animate="visible" exit="exit" className="tcard p-6 sm:p-7">
@@ -642,13 +683,61 @@ function Overview({ orders, onJump }) {
             {stats.reasons.map(([reason, count]) => (
               <div key={reason} className="flex items-center gap-4">
                 <p className="flex-1 t-sub text-[12px] truncate" style={{ color: 'var(--text)' }}>{reason}</p>
-                <div className="w-28 sm:w-48"><Bar pct={(count / stats.ndr.length) * 100} /></div>
+                <div className="w-28 sm:w-48"><Bar pct={(count / (stats.ndrCount || 1)) * 100} /></div>
                 <p className="w-6 text-right t-head text-[12px] tabular-nums" style={{ color: 'var(--text)' }}>{count}</p>
               </div>
             ))}
           </div>
         </motion.section>
       )}
+
+      {/* ═ Remittance (COD payouts from iThink) ═ */}
+      <motion.section custom={4} variants={fadeUp} initial="hidden" animate="visible" exit="exit" className="tcard p-6 sm:p-7">
+        <div className="flex items-center gap-2 mb-5">
+          <IndianRupee size={14} style={{ color: 'var(--accent-deep)' }} />
+          <h3 className="t-display text-[15px]" style={{ color: 'var(--text)' }}>COD Remittances</h3>
+          {remit?.cached && <span className="t-sub text-[10px]" style={{ color: 'var(--text-3)' }}>cached</span>}
+        </div>
+        {!remit ? (
+          <p className="t-sub text-[12px] flex items-center gap-2" style={{ color: 'var(--text-2)' }}>
+            <RefreshCw size={12} className="animate-spin" /> Loading remittances…
+          </p>
+        ) : (remit.remittances || []).length === 0 ? (
+          <p className="t-sub text-[12px]" style={{ color: 'var(--text-2)' }}>No COD remittances in the last {remit.days} days</p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+              <div className="rounded-2xl p-4" style={{ background: 'var(--accent-soft)' }}>
+                <p className="t-sub text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent-deep)' }}>COD Remitted</p>
+                <p className="t-display text-[22px] mt-1.5 tabular-nums leading-none" style={{ color: 'var(--accent-deep)' }}>₹{Math.round(remit.totals.codRemitted).toLocaleString('en-IN')}</p>
+                <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>paid out · {remit.days}d</p>
+              </div>
+              <div className="rounded-2xl p-4" style={{ background: 'var(--card-2)' }}>
+                <p className="t-sub text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--text-2)' }}>COD Generated</p>
+                <p className="t-display text-[22px] mt-1.5 tabular-nums leading-none" style={{ color: 'var(--text)' }}>₹{Math.round(remit.totals.codGenerated).toLocaleString('en-IN')}</p>
+                <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>collected</p>
+              </div>
+              <div className="rounded-2xl p-4" style={{ background: 'var(--card-2)' }}>
+                <p className="t-sub text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--text-2)' }}>Last Payout</p>
+                <p className="t-display text-[22px] mt-1.5 tabular-nums leading-none" style={{ color: 'var(--text)' }}>₹{Math.round(remit.lastPaid?.codRemitted || 0).toLocaleString('en-IN')}</p>
+                <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>{remit.lastPaid?.dateLabel || '—'}</p>
+              </div>
+            </div>
+            <p className="t-sub text-[9px] font-bold uppercase tracking-[0.12em] mb-2.5" style={{ color: 'var(--text-3)' }}>Payout history</p>
+            <div className="space-y-1.5">
+              {remit.remittances.map(r => (
+                <div key={r.id} className="flex items-center justify-between rounded-xl px-3.5 py-2.5" style={{ background: 'var(--card-2)' }}>
+                  <div>
+                    <p className="t-head text-[12px]" style={{ color: 'var(--text)' }}>{r.dateLabel}</p>
+                    <p className="t-sub text-[10px]" style={{ color: 'var(--text-2)' }}>#{r.id}{r.transactionCharges + r.transactionGst > 0 ? ` · charges ₹${Math.round(r.transactionCharges + r.transactionGst)}` : ''}</p>
+                  </div>
+                  <p className="t-head text-[14px] tabular-nums" style={{ color: 'var(--accent-deep)' }}>₹{Math.round(r.codRemitted).toLocaleString('en-IN')}</p>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </motion.section>
     </div>
   );
 }
@@ -926,7 +1015,7 @@ export default function NDRDashboard() {
         {/* content — fades out and in on any change */}
         <AnimatePresence mode="wait">
           <motion.div key={viewKey} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.13 } }}>
-            {tab === 'overview' && board && <Overview orders={dateFiltered} onJump={setTab} />}
+            {tab === 'overview' && board && <Overview allOrders={board.orders || []} onJump={setTab} />}
 
             {tab === 'requested' && board && (
               <>
