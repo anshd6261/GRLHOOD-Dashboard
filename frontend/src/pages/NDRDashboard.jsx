@@ -357,11 +357,11 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
           {/* actions / footers */}
           {isNdr && o.awb && (
             <div className="zone px-6 py-4 space-y-3">
-              <div className="flex gap-2.5 flex-wrap">
-                <button onClick={() => { setShowForm(!showForm); setDate(''); setPhone(''); }} className="tbtn accent big flex-1 min-w-[170px]">
-                  <Truck size={14} /> Re-Attempt Delivery
+              <div className="flex gap-2.5">
+                <button onClick={() => { setShowForm(!showForm); setDate(''); setPhone(''); }} className="tbtn accent big flex-1">
+                  <Truck size={14} /> Re-Attempt
                 </button>
-                <button onClick={() => onWaReport(o)} className="tbtn big"><Send size={14} /> Report</button>
+                <button onClick={() => onWaReport(o)} className="tbtn big flex-1"><Send size={14} /> Report</button>
               </div>
               <AnimatePresence>
                 {showForm && (
@@ -646,16 +646,17 @@ export default function NDRDashboard() {
         o.customer?.phone?.includes(s) ||
         o.customer?.name?.toLowerCase().includes(s));
     return sortByDate(filtered, sortDesc);
-  }, [dateFiltered, tab, actions, deferredSearch, sortDesc]);
+  }, [dateFiltered, board, tab, actions, deferredSearch, sortDesc]);
 
   const counts = useMemo(() => {
     const c = { overview: null, orders: 0, ready: 0, manifested: 0, transit: 0, delivered: 0, ndr: 0, rto: 0, action: 0 };
     dateFiltered.forEach(o => {
-      if (c[o.bucket] !== undefined) c[o.bucket]++;
+      if (c[o.bucket] !== undefined && !ALWAYS_ALL.includes(o.bucket)) c[o.bucket]++;
       if (o.bucket === 'ndr' || actions[o.awb]) c.action++;
     });
+    (board?.orders || []).forEach(o => { if (ALWAYS_ALL.includes(o.bucket)) c[o.bucket]++; });
     return c;
-  }, [dateFiltered, actions]);
+  }, [dateFiltered, board, actions]);
 
   const handleToast = useCallback((t) => setToast(t), []);
   const handleSaveNote = useCallback(async (o, note) => {
@@ -808,14 +809,11 @@ export default function NDRDashboard() {
                 <h3 className="t-display text-[20px]" style={{ color: 'var(--text)' }}>Welcome 👋</h3>
                 <p className="t-sub text-[13px] leading-relaxed" style={{ color: 'var(--text-2)' }}>
                   This is your GRLHOOD® NDR board. Your mission: catch fake delivery attempts and get every order <b>delivered</b>.
-                  Want two daily nudges (10 AM &amp; 3 PM) so nothing slips?
                 </p>
                 <button onClick={async () => {
                   try { await Notification.requestPermission(); } catch {}
                   localStorage.setItem('ndr_welcomed_v1', '1'); setShowWelcome(false);
-                }} className="tbtn accent big w-full">Enable reminders</button>
-                <button onClick={() => { localStorage.setItem('ndr_welcomed_v1', '1'); setShowWelcome(false); }}
-                  className="tbtn w-full">Maybe later</button>
+                }} className="tbtn accent big w-full">Get Started</button>
               </motion.div>
             </motion.div>
           )}
