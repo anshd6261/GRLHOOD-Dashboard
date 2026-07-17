@@ -976,6 +976,27 @@ app.post('/api/ndr/note', async (req, res) => {
     }
 });
 
+// Customer-chat proof: upload (stored permanently in Dropbox) + fetch
+app.post('/api/ndr/proof', async (req, res) => {
+    try {
+        const { orderNumber, imageBase64, author } = req.body || {};
+        const saved = await ndr.saveProof(orderNumber, imageBase64, author);
+        res.json({ success: true, proof: saved });
+    } catch (e) {
+        res.status(400).json({ success: false, error: e.message });
+    }
+});
+app.get('/api/ndr/proof/:orderNumber', async (req, res) => {
+    try {
+        const buf = await ndr.getProof(req.params.orderNumber);
+        if (!buf) return res.status(404).json({ error: 'No proof for this order' });
+        res.set({ 'Content-Type': 'image/png', 'Cache-Control': 'private, max-age=300' });
+        res.send(buf);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // Take NDR action: { awb, action: 'reattempt'|'rto', date?, time?, phone?, address?, remark? }
 app.post('/api/ndr/action', async (req, res) => {
     try {

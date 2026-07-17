@@ -1,4 +1,5 @@
 const ithink = require('./ithink');
+const whatsapp = require('./whatsapp');
 
 /**
  * NDR / Shipment Board
@@ -52,7 +53,10 @@ let boardCache = { ts: 0, board: null };
 let storeDetailsCache = {};   // shopifyOrderId -> details (address/products don't change)
 let trackingCache = {};       // awb -> { ts, terminal, data }
 let awbOverrides = {};
-let notesStore = {};             // orderNumber -> { note, author, ts }        // orderNumber (no '#') -> awb, for shipments created
+let notesStore = {};             // orderNumber -> { note, author, ts }
+let proofsStore = {};            // orderNumber -> { name, ts, by }  (image lives in Dropbox forever)
+let waSentStore = {};            // orderNumber -> ts of auto WhatsApp verification
+let proofsLoaded = false;        // orderNumber (no '#') -> awb, for shipments created
                               // standalone (before store-linking) whose AWB never
                               // backfilled onto the synced store order
 const BOARD_TTL_MS = 5 * 60 * 1000;
@@ -66,6 +70,7 @@ try {
     trackingCache = disk.trackingCache || {};
     awbOverrides = disk.awbOverrides || {};
     notesStore = disk.notesStore || {};
+    waSentStore = disk.waSentStore || {};
     console.log(`[NDR] warm cache loaded: ${Object.keys(storeDetailsCache).length} orders, ${Object.keys(trackingCache).length} trackings`);
 } catch { /* cold start */ }
 
@@ -73,7 +78,7 @@ let lastSave = 0;
 const persistCaches = () => {
     if (Date.now() - lastSave < 30000) return;
     lastSave = Date.now();
-    try { fs.writeFileSync(CACHE_FILE, JSON.stringify({ storeDetailsCache, trackingCache, awbOverrides, notesStore })); } catch { /* read-only fs */ }
+    try { fs.writeFileSync(CACHE_FILE, JSON.stringify({ storeDetailsCache, trackingCache, awbOverrides, notesStore, waSentStore })); } catch { /* read-only fs */ }
 };
 
 /**
@@ -178,6 +183,8 @@ const buildBoard = async (days = WINDOW_DAYS, refresh = false) => {
     });
     persistCaches();
 
+    await loadProofIndex();
+
     // 4. Merge + bucket
     const orders = details.map(d => {
         const awb = awbFor(d);
@@ -224,6 +231,8 @@ const buildBoard = async (days = WINDOW_DAYS, refresh = false) => {
             deliveredAt: deliveredAt || (bucket === 'delivered' ? last.status_date_time || '' : ''),
             timeline,
             note: notesStore[String(d.order_number || '').replace('#', '').trim()] || null,
+            proof: !!proofsStore[String(d.order_number || '').replace('#', '').trim()],
+            waSentAt: waSentStore[String(d.order_number || '').replace('#', '').trim()] || '',
             attemptCount: parseInt(t?.ofd_count, 10) || 0,
             edd: [t?.expected_delivery_date, t?.promise_delivery_date].find(v => v && !v.startsWith('0000')) || '',
             customer: {
@@ -251,6 +260,19 @@ const buildBoard = async (days = WINDOW_DAYS, refresh = false) => {
 
     const counts = { total: orders.length, orders: 0, ready: 0, manifested: 0, transit: 0, delivered: 0, ndr: 0, rto: 0, cancelled: 0 };
     orders.forEach(o => { if (counts[o.bucket] !== undefined) counts[o.bucket]++; });
+
+    // Auto WhatsApp verification: fresh NDRs (attempt within the last 24h)
+    // get the formatted "were you actually contacted?" message once.
+    if (whatsapp.configured()) {
+        const fresh = orders.filter(o => o.bucket === 'ndr' && o.ndrDate &&
+            (Date.now() - new Date(String(o.ndrDate).replace(' ', 'T')).getTime()) < 24 * 3600e3 &&
+            !waSentStore[String(o.orderNumber).replace('#', '').trim()]);
+        for (const o of fresh.slice(0, 20)) {
+            const r = await whatsapp.sendNdrMessage(o);
+            if (r.sent) waSentStore[String(o.orderNumber).replace('#', '').trim()] = new Date().toISOString();
+        }
+        if (fresh.length) persistCaches();
+    }
 
     const board = {
         success: true,
@@ -301,6 +323,57 @@ const takeAction = async ({ awb, action, date, time, phone, address, addressType
     };
 };
 
+const PROOF_FOLDER = '/NDR PROOFS';
+
+const loadProofIndex = async () => {
+    if (proofsLoaded) return;
+    proofsLoaded = true;
+    try {
+        const { getAccessToken, listFolder } = require('./dropbox');
+        const token = await getAccessToken();
+        const entries = await listFolder(token, PROOF_FOLDER);
+        entries.forEach(e => {
+            if (e['.tag'] === 'file') {
+                const m = e.name.match(/^(.+)\.(png|jpe?g|webp)$/i);
+                if (m) proofsStore[m[1].replace('#', '').trim()] = { name: e.name, ts: e.server_modified || '' };
+            }
+        });
+        console.log(`[NDR] proof index: ${Object.keys(proofsStore).length} customer chats loaded from Dropbox`);
+    } catch (e) { console.warn('[NDR] proof index load failed:', e.message); proofsLoaded = false; }
+};
+
+/** Store a customer-chat screenshot permanently in Dropbox, keyed by order. */
+const saveProof = async (orderNumber, imageBase64, by) => {
+    const key = String(orderNumber || '').replace('#', '').trim();
+    if (!key) throw new Error('orderNumber required');
+    const buf = Buffer.from(String(imageBase64 || '').replace(/^data:image\/\w+;base64,/, ''), 'base64');
+    if (!buf.length) throw new Error('empty image');
+    if (buf.length > 4 * 1024 * 1024) throw new Error('image too large (max 4MB)');
+    const { getAccessToken, uploadFile } = require('./dropbox');
+    const token = await getAccessToken();
+    const name = `${key}.png`;
+    await uploadFile(token, `${PROOF_FOLDER}/${name}`, buf);
+    proofsStore[key] = { name, ts: new Date().toISOString(), by: by || '' };
+    if (boardCache.board) boardCache = { ts: 0, board: boardCache.board };
+    return proofsStore[key];
+};
+
+/** Stream a stored proof image back (Dropbox download). */
+const getProof = async (orderNumber) => {
+    const key = String(orderNumber || '').replace('#', '').trim();
+    await loadProofIndex();
+    const entry = proofsStore[key];
+    if (!entry) return null;
+    const { getAccessToken } = require('./dropbox');
+    const token = await getAccessToken();
+    const axios = require('axios');
+    const r = await axios.post('https://content.dropboxapi.com/2/files/download', null, {
+        headers: { Authorization: `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path: `${PROOF_FOLDER}/${entry.name}` }) },
+        responseType: 'arraybuffer',
+    });
+    return Buffer.from(r.data);
+};
+
 const saveNote = (orderNumber, note, author) => {
     const key = String(orderNumber || '').replace('#', '').trim();
     if (!key) return null;
@@ -310,4 +383,4 @@ const saveNote = (orderNumber, note, author) => {
     return notesStore[key];
 };
 
-module.exports = { buildBoard, takeAction, bucketFor, registerAwbs, saveNote };
+module.exports = { buildBoard, takeAction, bucketFor, registerAwbs, saveNote, saveProof, getProof };
