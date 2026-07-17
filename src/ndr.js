@@ -218,8 +218,15 @@ const buildBoard = async (days = WINDOW_DAYS, refresh = false) => {
                 location: s.scan_location || '',
                 remark: s.remark || '',
             }));
-        const isPartial = String(d.payment_mode || '').toLowerCase().includes('partial');
-        const isCod = isPartial || String(d.payment_mode || '').toLowerCase() === 'cod';
+        // iThink/Shopify payment_mode: 'paid' = prepaid; 'pending' or 'cod' =
+        // COD (collect on delivery); 'partially_paid' = advance + COD balance.
+        const pm = String(d.payment_mode || '').toLowerCase();
+        const isPartial = pm.includes('partial');
+        const isCod = isPartial || pm === 'cod' || pm === 'pending' || pm === 'unpaid';
+        // COD amount still to collect on delivery (for accurate remittance-to-collect)
+        const codAmount = isPartial
+            ? Math.max(0, (parseFloat(d.total_amount) || 0) - (parseFloat(d.advance_amount) || 0))
+            : (isCod ? (parseFloat(d.total_amount) || 0) : 0);
 
         return {
             shopifyId: d.shopifyId,
@@ -261,6 +268,7 @@ const buildBoard = async (days = WINDOW_DAYS, refresh = false) => {
                 price: parseFloat(p.product_price) || 0,
             })),
             totalAmount: parseFloat(d.total_amount) || 0,
+            codAmount,
             paymentMode: isPartial ? 'Partially Paid' : (isCod ? 'COD' : 'Prepaid'),
             isCod,
             trackingUrl: awb ? `https://ithinklogistics.co.in/postship/tracking/${awb}` : '',

@@ -532,25 +532,29 @@ function Overview({ allOrders, onJump }) {
   }, []);
 
   // COD money lifecycle: cross-reference board orders with the remittance
-  // order list to split COD into settled / yet-to-settle / unsettled.
+  // order list to split COD into settled / unsettled / to-collect.
+  // Uses the ACTUAL COD amount to collect (codAmount) and respects the
+  // Overview date filter.
   const codPipeline = useMemo(() => {
     if (!remit) return null;
     const norm = (s) => String(s || '').replace('#', '').trim().toUpperCase();
     const settledNos = new Set();
     (remit.remittances || []).forEach(r => (r.orders || []).forEach(o => settledNos.add(norm(o.orderNo))));
-    const cod = allOrders.filter(o => o.isCod);
+    const scope = allOrders.filter(o => inDateFilter(o, ovFilter, ovRange));
+    const cod = scope.filter(o => o.isCod);
+    const codVal = (o) => (o.codAmount != null ? o.codAmount : o.totalAmount) || 0;
     const delivered = cod.filter(o => o.bucket === 'delivered');
     const settled = delivered.filter(o => settledNos.has(norm(o.orderNumber)));
     const yetToSettle = delivered.filter(o => !settledNos.has(norm(o.orderNumber)));
-    const inPipeline = cod.filter(o => ['ready', 'manifested', 'transit'].includes(o.bucket)); // money not collected yet
-    const sum = (arr) => arr.reduce((s, o) => s + (o.totalAmount || 0), 0);
+    const inPipeline = cod.filter(o => ['ready', 'manifested', 'transit'].includes(o.bucket)); // not collected yet
+    const sum = (arr) => arr.reduce((s, o) => s + codVal(o), 0);
     return {
       settledAmount: remit.totals?.codRemitted || sum(settled),
       settledCount: remit.totals?.orders || settled.length,
       yetAmount: sum(yetToSettle), yetCount: yetToSettle.length, yetOrders: yetToSettle,
       unsettledAmount: sum(inPipeline), unsettledCount: inPipeline.length,
     };
-  }, [remit, allOrders]);
+  }, [remit, allOrders, ovFilter, ovRange]);
 
   const stats = useMemo(() => {
     // analytical set respects the Overview date filter (by event date)
