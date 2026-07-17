@@ -976,6 +976,17 @@ app.post('/api/ndr/note', async (req, res) => {
     }
 });
 
+// Remittance summary (COD payouts) for the Overview
+app.get('/api/ndr/remittances', async (req, res) => {
+    try {
+        const days = Math.min(Math.max(parseInt(req.query.days, 10) || 45, 7), 120);
+        const result = await ndr.getRemittances(days, req.query.refresh === '1');
+        res.json(result);
+    } catch (e) {
+        res.status(500).json({ success: false, error: e.message });
+    }
+});
+
 // Customer-chat proof: upload (stored permanently in Dropbox) + fetch
 app.post('/api/ndr/proof', async (req, res) => {
     try {
