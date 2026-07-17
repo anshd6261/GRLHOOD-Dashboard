@@ -7,8 +7,9 @@ import {
   UploadCloud, ChevronDown, ChevronUp, Box, MessageSquare,
   Trash2, ExternalLink, Calendar, CheckSquare,
   AlertTriangle, Edit3, X, Settings, LayoutDashboard, ClipboardCheck,
-  TrendingUp, Phone, XOctagon, Truck, FileText, LogOut, History
+  TrendingUp, Phone, XOctagon, Truck, FileText, LogOut, History, Sun, Moon
 } from 'lucide-react';
+import { useTheme } from './useTheme';
 import { motion, AnimatePresence } from 'framer-motion';
 import DottedBackground from './components/DottedBackground';
 import GlowBlobs from './components/GlowBlobs';
@@ -24,8 +25,8 @@ import NDRDashboard from './pages/NDRDashboard';
 import LiquidDock from './components/LiquidDock';
 
 /* Sticky centered logo that shrinks on scroll, over an iPhone-notch style
-   progressive blur + soft exposure dip — no solid header bar. */
-function StickyLogoHeader({ onLogout }) {
+   progressive blur + soft exposure dip — no solid header bar. Theme aware. */
+function StickyLogoHeader({ onLogout, theme, onToggleTheme }) {
   const [shrunk, setShrunk] = useState(false);
   useEffect(() => {
     let raf = 0;
@@ -38,18 +39,23 @@ function StickyLogoHeader({ onLogout }) {
   }, []);
   return (
     <>
-      <div className="np-top-blur" />
-      <div className="np-top-dim" />
-      <div className="np-logo-wrap" style={{ '--np-logo-h': shrunk ? '32px' : '58px' }}>
+      <div className="logo-blur" />
+      <div className="logo-dim" />
+      <div className="logo-fix" style={{ '--logo-h': shrunk ? '32px' : '58px' }}>
         <img src="/logo.png" alt="GRLHOOD" />
       </div>
-      {onLogout && (
-        <button onClick={onLogout} title="Logout"
-          className="fixed top-4 right-4 z-[45] np-btn !p-2.5"
-          style={{ fontFamily: 'inherit' }}>
-          <LogOut size={14} />
-        </button>
-      )}
+      <div className="fixed top-4 right-4 z-[45] flex gap-2">
+        {onToggleTheme && (
+          <button onClick={onToggleTheme} title="Toggle theme" className="tbtn icon !h-9 !w-9">
+            {theme === 'light' ? <Moon size={14} /> : <Sun size={14} />}
+          </button>
+        )}
+        {onLogout && (
+          <button onClick={onLogout} title="Logout" className="tbtn icon !h-9 !w-9">
+            <LogOut size={14} />
+          </button>
+        )}
+      </div>
     </>
   );
 }
@@ -227,6 +233,7 @@ function SettingsTab({ historyData, onHistorySelect }) {
    ═══════════════════════════════════════════ */
 function App() {
   const { user, logout } = useAuth();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState('fulfill');
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
@@ -679,11 +686,11 @@ function App() {
   const isSupplier = user?.role === 'supplier';
   const isNdrUser = user?.role === 'ndr';
 
-  // NDR-management login: light-mode shell, sticky shrinking logo, ONLY the board
+  // NDR-management login: themed shell, sticky shrinking logo, ONLY the board
   if (isNdrUser) {
     return (
-      <div className="ndr-light min-h-screen" style={{ background: '#fbfafb' }}>
-        <StickyLogoHeader onLogout={logout} />
+      <div className="min-h-screen" style={{ background: 'var(--bg)' }}>
+        <StickyLogoHeader onLogout={logout} theme={theme} onToggleTheme={toggleTheme} />
         <main className="pt-24 sm:pt-28">
           <NDRDashboard />
         </main>
@@ -824,6 +831,11 @@ function App() {
               {/* Refresh */}
               <button onClick={handleSync} disabled={loading} className="glass-icon-btn" title="Refresh">
                 <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+              </button>
+
+              {/* Theme toggle */}
+              <button onClick={toggleTheme} className="glass-icon-btn" title="Toggle dark/light theme">
+                {theme === 'light' ? <Moon size={15} /> : <Sun size={15} />}
               </button>
 
               {/* Settings (Hidden for Supplier) */}

@@ -1,12 +1,12 @@
 import React from 'react';
 
 /**
- * Apple Liquid-Glass style bottom dock — fully rounded, very light pink tint,
- * rim-lit glass. Navigation for the full-access dashboard tabs.
+ * Liquid-Glass bottom dock — fully rounded, theme-aware pink tint,
+ * rim-lit. Tab navigation for the full-access dashboard.
  */
 export default function LiquidDock({ tabs, active, onChange }) {
   return (
-    <nav className="liquid-dock" role="tablist" aria-label="Dashboard sections">
+    <nav className="dock" role="tablist" aria-label="Dashboard sections">
       {tabs.map(t => {
         const Icon = t.icon;
         return (

@@ -1,0 +1,267 @@
+/* ═══════════════════════════════════════════════════════════════
+   GRLHOOD THEME SYSTEM — dark & light, toggled via <html data-theme>.
+   Every shared component class is token-driven, so the whole app
+   (Fulfill, NDR, History, wizard, modals) flips with one attribute.
+   Typeface: Inter Variable (SF-Display-class), tight display headings.
+   ═══════════════════════════════════════════════════════════════ */
+
+:root, :root[data-theme="dark"] {
+  --bg: #0e0e11;
+  --bg-2: #16161b;
+  --card: rgba(28, 28, 34, 0.86);
+  --card-solid: #1c1c22;
+  --card-2: rgba(255, 255, 255, 0.03);
+  --line: rgba(255, 255, 255, 0.08);
+  --line-2: rgba(255, 255, 255, 0.05);
+  --text: #f5f5f7;
+  --text-2: #9a9aa3;
+  --text-3: #5b5b63;
+  --accent: #ffd7e8;             /* light pink */
+  --accent-soft: rgba(255, 190, 220, 0.12);
+  --accent-line: rgba(255, 180, 214, 0.28);
+  --accent-deep: #ff9cc6;        /* readable pink on dark */
+  --glass: rgba(255, 220, 236, 0.07);
+  --glass-strong: rgba(255, 224, 238, 0.12);
+  --rim: rgba(255, 255, 255, 0.14);
+  --shadow: 0 10px 34px rgba(0, 0, 0, 0.45);
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.3);
+  --dim: rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: #fbfafc;
+  --bg-2: #f4f3f6;
+  --card: #ffffff;
+  --card-solid: #ffffff;
+  --card-2: #f6f5f8;
+  --line: #eceaef;
+  --line-2: #f2f0f4;
+  --text: #1b1b1f;
+  --text-2: #97949e;
+  --text-3: #c5c2cb;
+  --accent: #ffe4ef;
+  --accent-soft: rgba(255, 200, 224, 0.28);
+  --accent-line: rgba(240, 160, 198, 0.4);
+  --accent-deep: #c2497f;
+  --glass: rgba(255, 234, 244, 0.55);
+  --glass-strong: rgba(255, 228, 240, 0.8);
+  --rim: rgba(255, 255, 255, 0.95);
+  --shadow: 0 10px 32px rgba(35, 25, 40, 0.09);
+  --shadow-sm: 0 2px 10px rgba(35, 25, 40, 0.05);
+  --dim: rgba(30, 25, 34, 0.35);
+  color-scheme: light;
+}
+
+/* ── Typeface: Inter Variable everywhere; display style for headings ── */
+html, body, #root, button, input, select, textarea {
+  font-family: 'Inter Variable', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+}
+.t-display { font-weight: 800; letter-spacing: -0.03em; }
+.t-head    { font-weight: 700; letter-spacing: -0.02em; }
+.t-sub     { font-weight: 400; letter-spacing: 0; }
+
+body { background: var(--bg); color: var(--text); }
+
+/* ── Pills: liquid glass, pink tint, PERFECTLY centered text ── */
+.pill {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 0 16px; height: 36px; line-height: 1;
+  border-radius: 999px;
+  font-size: 12px; font-weight: 600; letter-spacing: 0;
+  color: var(--text-2);
+  background: var(--glass);
+  border: 1px solid var(--rim);
+  box-shadow: inset 0 0 0 0.5px var(--rim), var(--shadow-sm);
+  backdrop-filter: blur(16px) saturate(1.5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
+  cursor: pointer; user-select: none; white-space: nowrap;
+  transition: color .16s ease, background .16s ease, box-shadow .16s ease;
+}
+.pill:hover { color: var(--text); }
+.pill.on {
+  background: var(--glass-strong);
+  color: var(--accent-deep);
+  font-weight: 700;
+  box-shadow: inset 0 0 0 0.5px var(--rim), inset 0 0 14px var(--accent-soft), var(--shadow-sm);
+}
+.pill > * { display: inline-flex; align-items: center; }
+
+/* ── Cards ── */
+.tcard {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 26px;
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 280px;
+}
+
+/* zone divider inside cards (replaces boxes-in-boxes) */
+.zone + .zone { border-top: 1px solid var(--line-2); }
+
+/* ── Chips (labeled values, e.g. dates) ── */
+.chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 30px; padding: 0 13px; line-height: 1;
+  border-radius: 999px;
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+.chip.pink { background: var(--accent-soft); border-color: var(--accent-line); }
+.chip .l { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-2); }
+.chip .v { font-size: 12px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.chip.pink .l, .chip.pink .v { color: var(--accent-deep); }
+
+/* ── Buttons & inputs ── */
+.tbtn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  height: 40px; padding: 0 18px; line-height: 1;
+  border-radius: 999px;
+  font-size: 12px; font-weight: 700;
+  background: var(--card-solid); border: 1px solid var(--line); color: var(--text);
+  cursor: pointer; transition: transform .12s ease, box-shadow .15s ease;
+}
+.tbtn:hover { box-shadow: var(--shadow-sm); }
+.tbtn:active { transform: scale(0.97); }
+.tbtn.accent {
+  background: var(--glass-strong);
+  border-color: var(--rim);
+  color: var(--accent-deep);
+  box-shadow: inset 0 0 0 0.5px var(--rim), var(--shadow-sm);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.tbtn.icon { width: 40px; padding: 0; }
+
+.tinput {
+  height: 40px; padding: 0 18px;
+  background: var(--card-solid);
+  border: 1px solid var(--line); border-radius: 999px;
+  font-size: 13px; color: var(--text); outline: none;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.tinput:focus { border-color: var(--accent-line); box-shadow: 0 0 0 4px var(--accent-soft); }
+.tinput::placeholder { color: var(--text-3); }
+
+/* ── Sticky logo + iPhone-notch progressive blur ── */
+.logo-blur {
+  position: fixed; top: 0; left: 0; right: 0; height: 118px;
+  pointer-events: none; z-index: 40;
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  mask-image: linear-gradient(to bottom, black 0%, black 32%, rgba(0,0,0,0.5) 62%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 32%, rgba(0,0,0,0.5) 62%, transparent 100%);
+}
+.logo-dim {
+  position: fixed; top: 0; left: 0; right: 0; height: 118px;
+  pointer-events: none; z-index: 41;
+  background: linear-gradient(to bottom, var(--dim-top, rgba(20,18,24,0.08)) 0%, transparent 100%);
+}
+:root[data-theme="dark"] .logo-dim { --dim-top: rgba(0,0,0,0.28); }
+.logo-fix {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 42;
+  display: flex; justify-content: center; padding-top: 13px; pointer-events: none;
+}
+.logo-fix img {
+  height: var(--logo-h, 56px);
+  transition: height .28s cubic-bezier(.4, 0, .2, 1);
+  object-fit: contain;
+}
+:root[data-theme="light"] .logo-fix img { filter: brightness(0.28) saturate(0.4); }
+:root[data-theme="dark"]  .logo-fix img { filter: sepia(100%) hue-rotate(296deg) saturate(180%) brightness(0.95) contrast(0.95); }
+
+/* ── Liquid Glass dock (theme aware) ── */
+.dock {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: max(18px, env(safe-area-inset-bottom, 0px) + 10px);
+  z-index: 120;
+  display: flex; align-items: center; gap: 4px;
+  padding: 8px 12px; border-radius: 999px;
+  background: var(--glass-strong);
+  border: 1px solid var(--rim);
+  box-shadow: inset 0 0 0 0.5px var(--rim), inset 0 1px 0 var(--rim), var(--shadow);
+  backdrop-filter: blur(24px) saturate(1.7);
+  -webkit-backdrop-filter: blur(24px) saturate(1.7);
+  max-width: calc(100vw - 36px);
+  overflow-x: auto;
+}
+.dock button {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  min-width: 56px; height: 48px; padding: 0 10px;
+  border-radius: 999px; border: none; background: transparent;
+  color: var(--text-2); font-size: 9px; font-weight: 700; letter-spacing: 0.04em;
+  cursor: pointer; transition: background .18s ease, color .18s ease, transform .15s ease;
+}
+.dock button:hover { transform: translateY(-1px); color: var(--text); }
+.dock button.active {
+  background: var(--card-solid);
+  box-shadow: inset 0 0 0 0.5px var(--rim), var(--shadow-sm);
+  color: var(--accent-deep);
+}
+@media (max-width: 640px) {
+  .dock button { min-width: 46px; padding: 0 6px; }
+  .dock button .dock-label { display: none; }
+}
+
+/* ── Bottom sheet (mobile filters) ── */
+.sheet-backdrop {
+  position: fixed; inset: 0; z-index: 200;
+  background: var(--dim);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 201;
+  background: var(--card-solid);
+  border: 1px solid var(--line);
+  border-bottom: none;
+  border-radius: 30px 30px 0 0;
+  box-shadow: 0 -12px 44px rgba(0, 0, 0, 0.18);
+  padding: 12px 24px calc(28px + env(safe-area-inset-bottom, 0px));
+}
+.sheet-grab { width: 42px; height: 5px; border-radius: 999px; background: var(--line); margin: 0 auto 18px; }
+
+/* ── LIGHT THEME GLOBAL REMAP ─────────────────────────────────
+   The legacy pages (Fulfill, History, wizard, modals) hard-code
+   dark-theme text/background utilities. These remaps make them
+   readable in light mode without touching every file. ── */
+:root[data-theme="light"] .text-white { color: var(--text) !important; }
+:root[data-theme="light"] [class*="text-[rgba(245"] { color: var(--text-2) !important; }
+:root[data-theme="light"] [class*="text-[#e3cfd8]"] { color: var(--accent-deep) !important; }
+:root[data-theme="light"] [class*="text-[#f5f5f5]"] { color: var(--text) !important; }
+:root[data-theme="light"] .glass-card,
+:root[data-theme="light"] .glass-card-sm,
+:root[data-theme="light"] .board-card,
+:root[data-theme="light"] .glass-panel {
+  background: var(--card-solid) !important;
+  border-color: var(--line) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+:root[data-theme="light"] .glass-topbar {
+  background: rgba(255, 255, 255, 0.75) !important;
+  border-bottom: 1px solid var(--line) !important;
+}
+:root[data-theme="light"] .glass-input {
+  background: var(--card-2) !important;
+  border-color: var(--line) !important;
+  color: var(--text) !important;
+}
+:root[data-theme="light"] .glass-btn,
+:root[data-theme="light"] .glass-icon-btn,
+:root[data-theme="light"] .glass-icon-btn-sm {
+  background: var(--card-solid) !important;
+  border-color: var(--line) !important;
+  color: var(--text-2) !important;
+}
+:root[data-theme="light"] .glass-btn-accent {
+  background: var(--glass-strong) !important;
+  color: var(--accent-deep) !important;
+  border-color: var(--accent-line) !important;
+}
+:root[data-theme="light"] .glass-pill { background: var(--glass) !important; border-color: var(--line) !important; color: var(--text-2) !important; }
+:root[data-theme="light"] .glass-pill-active { background: var(--glass-strong) !important; color: var(--accent-deep) !important; }
+:root[data-theme="light"] body { background: var(--bg); }
+:root[data-theme="light"] .dotted-bg, :root[data-theme="light"] .glow-blobs { opacity: 0.25; }
