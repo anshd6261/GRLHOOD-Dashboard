@@ -65,22 +65,58 @@ const TRACK_TTL_MS = 5 * 60 * 1000;
 
 const fs = require('fs');
 const CACHE_FILE = '/tmp/ndr_cache.json';
+// /tmp caches (per-instance, fine to be cold — they rebuild from iThink)
 try {
     const disk = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf-8'));
     storeDetailsCache = disk.storeDetailsCache || {};
     trackingCache = disk.trackingCache || {};
-    awbOverrides = disk.awbOverrides || {};
-    notesStore = disk.notesStore || {};
-    waSentStore = disk.waSentStore || {};
-    actionsStore = disk.actionsStore || {};
-    console.log(`[NDR] warm cache loaded: ${Object.keys(storeDetailsCache).length} orders, ${Object.keys(trackingCache).length} trackings`);
+    console.log(`[NDR] warm cache loaded: ${Object.keys(storeDetailsCache).length} orders`);
 } catch { /* cold start */ }
+
+// ── Durable state (actions / notes / awb overrides / WA-sent) in Dropbox ──
+// Vercel serverless /tmp is per-instance and ephemeral, so user state MUST
+// live in external storage to survive across requests/instances.
+const STATE_PATH = '/NDR STATE/state.json';
+let stateLoaded = false;
+let stateDirty = false;
+const loadState = async () => {
+    if (stateLoaded) return;
+    stateLoaded = true;
+    try {
+        const { getAccessToken } = require('./dropbox');
+        const token = await getAccessToken();
+        const r = await require('axios').post('https://content.dropboxapi.com/2/files/download', null, {
+            headers: { Authorization: `Bearer ${token}`, 'Dropbox-API-Arg': JSON.stringify({ path: STATE_PATH }) },
+            responseType: 'text', transformResponse: [d => d],
+        });
+        const s = JSON.parse(r.data);
+        awbOverrides = { ...s.awbOverrides, ...awbOverrides };
+        notesStore = { ...s.notesStore, ...notesStore };
+        waSentStore = { ...s.waSentStore, ...waSentStore };
+        actionsStore = { ...s.actionsStore, ...actionsStore };
+        console.log(`[NDR] state loaded from Dropbox: ${Object.keys(actionsStore).length} actions, ${Object.keys(notesStore).length} notes`);
+    } catch (e) {
+        if (e.response?.status !== 409) console.warn('[NDR] state load:', e.response?.status || e.message);
+    }
+};
+const saveState = async () => {
+    stateDirty = false;
+    try {
+        const { getAccessToken, uploadFile } = require('./dropbox');
+        const token = await getAccessToken();
+        await uploadFile(token, STATE_PATH, Buffer.from(JSON.stringify({ awbOverrides, notesStore, waSentStore, actionsStore }), 'utf-8'));
+    } catch (e) { console.warn('[NDR] state save failed:', e.message); stateDirty = true; }
+};
 
 let lastSave = 0;
 const persistCaches = () => {
-    if (Date.now() - lastSave < 30000) return;
-    lastSave = Date.now();
-    try { fs.writeFileSync(CACHE_FILE, JSON.stringify({ storeDetailsCache, trackingCache, awbOverrides, notesStore, waSentStore, actionsStore })); } catch { /* read-only fs */ }
+    // /tmp for the heavy read caches (best-effort)
+    if (Date.now() - lastSave > 30000) {
+        lastSave = Date.now();
+        try { fs.writeFileSync(CACHE_FILE, JSON.stringify({ storeDetailsCache, trackingCache })); } catch { /* read-only fs */ }
+    }
+    // durable state to Dropbox
+    saveState();
 };
 
 /**
@@ -138,6 +174,8 @@ const buildBoard = async (days = WINDOW_DAYS, refresh = false) => {
     if (!refresh && boardCache.board && boardCache.board.days >= windowDays && Date.now() - boardCache.ts < BOARD_TTL_MS) {
         return { ...boardCache.board, cached: true };
     }
+
+    await loadState(); // durable actions/notes/overrides from Dropbox
 
     // IST "today" so date windows match Indian business days
     const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -331,11 +369,18 @@ const takeAction = async ({ awb, action, date, time, phone, address, addressType
 
     const data = await ithink.postRaw('/ndr/add-reattempt-rto.json', { shipments: [shipment] });
     const entry = Object.values(data?.data || {})[0] || {};
-    const ok = String(data?.status || '').toLowerCase() === 'success' &&
-        String(entry.status || '').toLowerCase() === 'success';
+    const remarkStr = String(entry.remark || '').toLowerCase();
+    // iThink returns an "error" entry when the AWB is already reattempted/RTO'd —
+    // that's not a failure for us, it means the action is already in place.
+    const alreadyDone = /already marked as reattempt|already marked as rto|already reattempt|already rto/i.test(remarkStr);
+    const ok = (String(data?.status || '').toLowerCase() === 'success' &&
+        String(entry.status || '').toLowerCase() === 'success') || alreadyDone;
     return {
         success: ok,
-        message: entry.remark || data?.html_message || (ok ? 'Done' : 'Action failed'),
+        alreadyDone,
+        message: alreadyDone
+            ? `Already marked for ${isRto ? 'RTO' : 're-attempt'} on iThink`
+            : (entry.remark || data?.html_message || (ok ? 'Done' : 'Action failed')),
         raw: data,
     };
 };
