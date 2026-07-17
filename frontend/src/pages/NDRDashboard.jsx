@@ -525,10 +525,32 @@ function Overview({ allOrders, onJump }) {
   const [ovRange, setOvRange] = useState([null, null]);
   const [remit, setRemit] = useState(null);
   const [openRemit, setOpenRemit] = useState(null);
+  const [openYet, setOpenYet] = useState(false);
 
   useEffect(() => {
     axios.get(`${API_URL}/ndr/remittances?days=60`, { timeout: 120000 }).then(r => setRemit(r.data)).catch(() => {});
   }, []);
+
+  // COD money lifecycle: cross-reference board orders with the remittance
+  // order list to split COD into settled / yet-to-settle / unsettled.
+  const codPipeline = useMemo(() => {
+    if (!remit) return null;
+    const norm = (s) => String(s || '').replace('#', '').trim().toUpperCase();
+    const settledNos = new Set();
+    (remit.remittances || []).forEach(r => (r.orders || []).forEach(o => settledNos.add(norm(o.orderNo))));
+    const cod = allOrders.filter(o => o.isCod);
+    const delivered = cod.filter(o => o.bucket === 'delivered');
+    const settled = delivered.filter(o => settledNos.has(norm(o.orderNumber)));
+    const yetToSettle = delivered.filter(o => !settledNos.has(norm(o.orderNumber)));
+    const inPipeline = cod.filter(o => ['ready', 'manifested', 'transit'].includes(o.bucket)); // money not collected yet
+    const sum = (arr) => arr.reduce((s, o) => s + (o.totalAmount || 0), 0);
+    return {
+      settledAmount: remit.totals?.codRemitted || sum(settled),
+      settledCount: remit.totals?.orders || settled.length,
+      yetAmount: sum(yetToSettle), yetCount: yetToSettle.length, yetOrders: yetToSettle,
+      unsettledAmount: sum(inPipeline), unsettledCount: inPipeline.length,
+    };
+  }, [remit, allOrders]);
 
   const stats = useMemo(() => {
     // analytical set respects the Overview date filter (by event date)
@@ -729,6 +751,52 @@ function Overview({ allOrders, onJump }) {
                 <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>{remit.lastPaid?.dateLabel || '—'}</p>
               </div>
             </div>
+            {/* COD money lifecycle: settled / yet-to-settle / unsettled */}
+            {codPipeline && (
+              <div className="mb-6">
+                <p className="t-sub text-[9px] font-bold uppercase tracking-[0.12em] mb-2.5" style={{ color: 'var(--text-3)' }}>COD settlement status</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-2xl p-4" style={{ background: 'var(--accent-soft)' }}>
+                    <p className="t-sub text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent-deep)' }}>Settled</p>
+                    <p className="t-display text-[20px] mt-1.5 tabular-nums leading-none" style={{ color: 'var(--accent-deep)' }}>₹{Math.round(codPipeline.settledAmount).toLocaleString('en-IN')}</p>
+                    <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>{codPipeline.settledCount} orders remitted</p>
+                  </div>
+                  <button onClick={() => setOpenYet(!openYet)} disabled={!codPipeline.yetCount}
+                    className="rounded-2xl p-4 text-left border-none cursor-pointer disabled:cursor-default" style={{ background: 'var(--card-2)' }}>
+                    <p className="t-sub text-[9px] font-bold uppercase tracking-[0.14em] flex items-center gap-1" style={{ color: 'var(--text-2)' }}>
+                      Yet to Settle {codPipeline.yetCount > 0 && <ChevronDown size={10} style={{ transform: openYet ? 'rotate(180deg)' : 'none' }} />}
+                    </p>
+                    <p className="t-display text-[20px] mt-1.5 tabular-nums leading-none" style={{ color: 'var(--text)' }}>₹{Math.round(codPipeline.yetAmount).toLocaleString('en-IN')}</p>
+                    <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>{codPipeline.yetCount} delivered · awaiting payout</p>
+                  </button>
+                  <div className="rounded-2xl p-4" style={{ background: 'var(--card-2)' }}>
+                    <p className="t-sub text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--text-2)' }}>Unsettled</p>
+                    <p className="t-display text-[20px] mt-1.5 tabular-nums leading-none" style={{ color: 'var(--text)' }}>₹{Math.round(codPipeline.unsettledAmount).toLocaleString('en-IN')}</p>
+                    <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>{codPipeline.unsettledCount} in transit · not collected</p>
+                  </div>
+                </div>
+                <AnimatePresence initial={false}>
+                  {openYet && codPipeline.yetOrders.length > 0 && (
+                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.22 }} className="overflow-hidden">
+                      <div className="mt-3 rounded-lg overflow-hidden" style={{ background: 'var(--card-2)' }}>
+                        <p className="t-sub text-[9px] font-bold uppercase tracking-[0.12em] px-3 pt-2.5 pb-1" style={{ color: 'var(--text-3)' }}>Delivered — courier collected, payout pending</p>
+                        {codPipeline.yetOrders.map((o, oi) => (
+                          <div key={oi} className="flex items-center justify-between px-3 py-1.5 text-[11px]" style={{ borderTop: '1px solid var(--line-2)' }}>
+                            <div className="min-w-0">
+                              <span className="t-head" style={{ color: 'var(--text)' }}>{o.orderNumber}</span>
+                              <span className="t-sub ml-2" style={{ color: 'var(--text-3)' }}>{o.courier || ''} · del {fmtD(o.deliveredAt || o.statusDateTime)}</span>
+                            </div>
+                            <span className="tabular-nums font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(o.totalAmount).toLocaleString('en-IN')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
+
             <p className="t-sub text-[9px] font-bold uppercase tracking-[0.12em] mb-2.5" style={{ color: 'var(--text-3)' }}>Payout history — tap a payout for its orders</p>
             <div className="space-y-1.5">
               {remit.remittances.map(r => (
