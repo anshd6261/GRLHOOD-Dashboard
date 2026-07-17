@@ -419,6 +419,18 @@ const getRemittances = async (days = 45, refresh = false) => {
         try {
             const data = await ithink.postRaw('/remittance/get.json', { remittance_date: date });
             const rows = Array.isArray(data?.data) ? data.data : [];
+            if (!rows.length) return [];
+            // Per-order breakdown for this payout date (which orders, COD each)
+            let orders = [];
+            try {
+                const det = await ithink.postRaw('/remittance/get_details.json', { remittance_date: date });
+                orders = (Array.isArray(det?.data) ? det.data : []).map(o => ({
+                    awb: o.airway_bill_no || '',
+                    orderNo: o.order_no || '',
+                    amount: parseFloat(o.netpayment) || 0,
+                    deliveredDate: o.delivered_date || '',
+                }));
+            } catch { /* details optional */ }
             return rows.map(r => ({
                 id: r.remittance_id,
                 date,                                   // ISO for sorting
@@ -431,6 +443,8 @@ const getRemittances = async (days = 45, refresh = false) => {
                 transactionGst: parseFloat(r.transaction_gst_charges) || 0,
                 walletAmount: parseFloat(r.wallet_amount) || 0,
                 advanceHold: parseFloat(r.advance_hold) || 0,
+                orderCount: orders.length,
+                orders,
             }));
         } catch { return []; }
     });
@@ -440,7 +454,9 @@ const getRemittances = async (days = 45, refresh = false) => {
         codGenerated: t.codGenerated + r.codGenerated,
         codRemitted: t.codRemitted + r.codRemitted,
         charges: t.charges + r.transactionCharges + r.transactionGst,
-    }), { codGenerated: 0, codRemitted: 0, charges: 0 });
+        adjustments: t.adjustments + r.billAdjusted + r.refundAdjusted,
+        orders: t.orders + r.orderCount,
+    }), { codGenerated: 0, codRemitted: 0, charges: 0, adjustments: 0, orders: 0 });
 
     const out = { success: true, generatedAt: new Date().toISOString(), days, remittances, totals, lastPaid: remittances[0] || null };
     remitCache = { ts: Date.now(), data: out };

@@ -524,6 +524,7 @@ function Overview({ allOrders, onJump }) {
   const [ovFilter, setOvFilter] = useState('30d');
   const [ovRange, setOvRange] = useState([null, null]);
   const [remit, setRemit] = useState(null);
+  const [openRemit, setOpenRemit] = useState(null);
 
   useEffect(() => {
     axios.get(`${API_URL}/ndr/remittances?days=60`, { timeout: 120000 }).then(r => setRemit(r.data)).catch(() => {});
@@ -706,32 +707,74 @@ function Overview({ allOrders, onJump }) {
           <p className="t-sub text-[12px]" style={{ color: 'var(--text-2)' }}>No COD remittances in the last {remit.days} days</p>
         ) : (
           <>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
               <div className="rounded-2xl p-4" style={{ background: 'var(--accent-soft)' }}>
                 <p className="t-sub text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--accent-deep)' }}>COD Remitted</p>
-                <p className="t-display text-[22px] mt-1.5 tabular-nums leading-none" style={{ color: 'var(--accent-deep)' }}>₹{Math.round(remit.totals.codRemitted).toLocaleString('en-IN')}</p>
+                <p className="t-display text-[21px] mt-1.5 tabular-nums leading-none" style={{ color: 'var(--accent-deep)' }}>₹{Math.round(remit.totals.codRemitted).toLocaleString('en-IN')}</p>
                 <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>paid out · {remit.days}d</p>
               </div>
               <div className="rounded-2xl p-4" style={{ background: 'var(--card-2)' }}>
                 <p className="t-sub text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--text-2)' }}>COD Generated</p>
-                <p className="t-display text-[22px] mt-1.5 tabular-nums leading-none" style={{ color: 'var(--text)' }}>₹{Math.round(remit.totals.codGenerated).toLocaleString('en-IN')}</p>
-                <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>collected</p>
+                <p className="t-display text-[21px] mt-1.5 tabular-nums leading-none" style={{ color: 'var(--text)' }}>₹{Math.round(remit.totals.codGenerated).toLocaleString('en-IN')}</p>
+                <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>{remit.totals.orders} orders</p>
+              </div>
+              <div className="rounded-2xl p-4" style={{ background: 'var(--card-2)' }}>
+                <p className="t-sub text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--text-2)' }}>Charges</p>
+                <p className="t-display text-[21px] mt-1.5 tabular-nums leading-none" style={{ color: 'var(--text)' }}>₹{Math.round(remit.totals.charges).toLocaleString('en-IN')}</p>
+                <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>freight + GST</p>
               </div>
               <div className="rounded-2xl p-4" style={{ background: 'var(--card-2)' }}>
                 <p className="t-sub text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--text-2)' }}>Last Payout</p>
-                <p className="t-display text-[22px] mt-1.5 tabular-nums leading-none" style={{ color: 'var(--text)' }}>₹{Math.round(remit.lastPaid?.codRemitted || 0).toLocaleString('en-IN')}</p>
+                <p className="t-display text-[21px] mt-1.5 tabular-nums leading-none" style={{ color: 'var(--text)' }}>₹{Math.round(remit.lastPaid?.codRemitted || 0).toLocaleString('en-IN')}</p>
                 <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>{remit.lastPaid?.dateLabel || '—'}</p>
               </div>
             </div>
-            <p className="t-sub text-[9px] font-bold uppercase tracking-[0.12em] mb-2.5" style={{ color: 'var(--text-3)' }}>Payout history</p>
+            <p className="t-sub text-[9px] font-bold uppercase tracking-[0.12em] mb-2.5" style={{ color: 'var(--text-3)' }}>Payout history — tap a payout for its orders</p>
             <div className="space-y-1.5">
               {remit.remittances.map(r => (
-                <div key={r.id} className="flex items-center justify-between rounded-xl px-3.5 py-2.5" style={{ background: 'var(--card-2)' }}>
-                  <div>
-                    <p className="t-head text-[12px]" style={{ color: 'var(--text)' }}>{r.dateLabel}</p>
-                    <p className="t-sub text-[10px]" style={{ color: 'var(--text-2)' }}>#{r.id}{r.transactionCharges + r.transactionGst > 0 ? ` · charges ₹${Math.round(r.transactionCharges + r.transactionGst)}` : ''}</p>
-                  </div>
-                  <p className="t-head text-[14px] tabular-nums" style={{ color: 'var(--accent-deep)' }}>₹{Math.round(r.codRemitted).toLocaleString('en-IN')}</p>
+                <div key={r.id} className="rounded-xl overflow-hidden" style={{ background: 'var(--card-2)' }}>
+                  <button onClick={() => setOpenRemit(openRemit === r.id ? null : r.id)}
+                    className="w-full flex items-center justify-between px-3.5 py-2.5 bg-transparent border-none cursor-pointer">
+                    <div className="text-left">
+                      <p className="t-head text-[12px]" style={{ color: 'var(--text)' }}>{r.dateLabel}</p>
+                      <p className="t-sub text-[10px]" style={{ color: 'var(--text-2)' }}>
+                        {r.orderCount} orders · #{r.id}{r.transactionCharges + r.transactionGst > 0 ? ` · charges ₹${Math.round(r.transactionCharges + r.transactionGst)}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <p className="t-head text-[14px] tabular-nums" style={{ color: 'var(--accent-deep)' }}>₹{Math.round(r.codRemitted).toLocaleString('en-IN')}</p>
+                      <motion.span animate={{ rotate: openRemit === r.id ? 180 : 0 }} transition={{ duration: 0.2 }} className="flex"><ChevronDown size={13} style={{ color: 'var(--text-3)' }} /></motion.span>
+                    </div>
+                  </button>
+                  <AnimatePresence initial={false}>
+                    {openRemit === r.id && (
+                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.22 }} className="overflow-hidden">
+                        <div className="px-3.5 pb-3.5 pt-1">
+                          {/* full financial breakdown */}
+                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-5 gap-y-1.5 mb-3 text-[11px]">
+                            {[['COD generated', r.codGenerated], ['COD remitted', r.codRemitted], ['Freight charges', r.transactionCharges], ['GST', r.transactionGst], ['Bill adjusted', r.billAdjusted], ['Refund adjusted', r.refundAdjusted], ['Wallet', r.walletAmount], ['Advance hold', r.advanceHold]]
+                              .filter(([, v]) => v).map(([k, v]) => (
+                                <div key={k} className="flex justify-between"><span style={{ color: 'var(--text-2)' }}>{k}</span><span className="tabular-nums font-semibold" style={{ color: 'var(--text)' }}>₹{Math.round(v).toLocaleString('en-IN')}</span></div>
+                              ))}
+                          </div>
+                          {r.orders?.length > 0 && (
+                            <div className="rounded-lg overflow-hidden" style={{ background: 'var(--card)' }}>
+                              {r.orders.map((o, oi) => (
+                                <div key={oi} className="flex items-center justify-between px-3 py-1.5 text-[11px]" style={{ borderTop: oi ? '1px solid var(--line-2)' : 'none' }}>
+                                  <div className="min-w-0">
+                                    <span className="t-head" style={{ color: 'var(--text)' }}>{o.orderNo}</span>
+                                    <span className="t-sub ml-2" style={{ color: 'var(--text-3)' }}>{o.deliveredDate ? `del ${fmtD(o.deliveredDate)}` : ''}</span>
+                                  </div>
+                                  <span className="tabular-nums font-semibold" style={{ color: 'var(--accent-deep)' }}>₹{Math.round(o.amount).toLocaleString('en-IN')}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               ))}
             </div>
