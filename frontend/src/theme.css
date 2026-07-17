@@ -142,6 +142,33 @@ body { background: var(--bg); color: var(--text); }
 .tbtn.icon { width: 38px; padding: 0; }
 .tbtn.big { height: 48px; font-size: 13px; padding: 0 24px; }
 
+/* Glass-morph grey action buttons (selection bar) */
+.glass-btn-bar {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 46px; padding: 0 20px; border-radius: 999px;
+  font-size: 13px; font-weight: 700; white-space: nowrap;
+  color: var(--text);
+  background: var(--glass-grey);
+  border: 1px solid var(--glass-grey-rim);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(22px) saturate(1.5);
+  -webkit-backdrop-filter: blur(22px) saturate(1.5);
+  cursor: pointer; transition: transform .12s ease, background .16s ease;
+}
+.glass-btn-bar:hover { background: var(--glass-grey-hover); }
+.glass-btn-bar:active { transform: scale(0.97); }
+.glass-btn-bar:disabled { opacity: 0.6; }
+:root[data-theme="dark"] {
+  --glass-grey: rgba(60, 60, 68, 0.72);
+  --glass-grey-hover: rgba(72, 72, 82, 0.8);
+  --glass-grey-rim: rgba(255, 255, 255, 0.1);
+}
+:root[data-theme="light"] {
+  --glass-grey: rgba(238, 238, 242, 0.78);
+  --glass-grey-hover: rgba(230, 230, 236, 0.9);
+  --glass-grey-rim: rgba(255, 255, 255, 0.85);
+}
+
 .tinput {
   height: 40px; padding: 0 18px;
   border: none; border-radius: 999px;
