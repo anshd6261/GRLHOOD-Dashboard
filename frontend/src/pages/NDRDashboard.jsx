@@ -774,10 +774,10 @@ function Overview({ allOrders, onJump }) {
                   <button onClick={() => setOpenYet(!openYet)} disabled={!codPipeline.yetCount}
                     className="rounded-2xl p-4 text-left border-none cursor-pointer disabled:cursor-default" style={{ background: 'var(--card-2)' }}>
                     <p className="t-sub text-[9px] font-bold uppercase tracking-[0.14em] flex items-center gap-1" style={{ color: 'var(--text-2)' }}>
-                      Yet to Settle {codPipeline.yetCount > 0 && <ChevronDown size={10} style={{ transform: openYet ? 'rotate(180deg)' : 'none' }} />}
+                      Unsettled {codPipeline.yetCount > 0 && <ChevronDown size={10} style={{ transform: openYet ? 'rotate(180deg)' : 'none' }} />}
                     </p>
                     <p className="t-display text-[20px] mt-1.5 tabular-nums leading-none" style={{ color: 'var(--text)' }}>₹{Math.round(codPipeline.yetAmount).toLocaleString('en-IN')}</p>
-                    <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>{codPipeline.yetCount} delivered · awaiting payout</p>
+                    <p className="t-sub text-[10px] mt-1.5" style={{ color: 'var(--text-2)' }}>{codPipeline.yetCount} collected · not settled to bank</p>
                   </button>
                   <div className="rounded-2xl p-4" style={{ background: 'var(--card-2)' }}>
                     <p className="t-sub text-[9px] font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--text-2)' }}>To Be Collected</p>
@@ -790,7 +790,7 @@ function Overview({ allOrders, onJump }) {
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
                       transition={{ duration: 0.22 }} className="overflow-hidden">
                       <div className="mt-3 rounded-lg overflow-hidden" style={{ background: 'var(--card-2)' }}>
-                        <p className="t-sub text-[9px] font-bold uppercase tracking-[0.12em] px-3 pt-2.5 pb-1" style={{ color: 'var(--text-3)' }}>Delivered — courier collected, payout pending</p>
+                        <p className="t-sub text-[9px] font-bold uppercase tracking-[0.12em] px-3 pt-2.5 pb-1" style={{ color: 'var(--text-3)' }}>Delivered — COD collected, not yet settled to bank</p>
                         {codPipeline.yetOrders.map((o, oi) => (
                           <div key={oi} className="flex items-center justify-between px-3 py-1.5 text-[11px]" style={{ borderTop: '1px solid var(--line-2)' }}>
                             <div className="min-w-0">
