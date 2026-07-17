@@ -7,9 +7,95 @@ import {
   Package, RefreshCw, Truck, CheckCircle, AlertTriangle, RotateCcw,
   Phone, MessageSquare, MapPin, Calendar, Copy, ExternalLink, Search,
   Send, X, Settings, LayoutDashboard, Zap, TrendingDown,
-  ChevronDown, ArrowDownUp, Image as ImageIcon, Download, Upload
+  ChevronDown, ArrowDownUp, Image as ImageIcon, Download, Upload, Check, FileText
 } from 'lucide-react';
 import { relevantDate, istNow, inDateFilter, sortByDate, parseDate } from '../utils/boardDates';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
+/* Logo as a dark dataURL for the white PDF (the app logo is white, so recolor
+   its shape to ink while keeping transparency). */
+let _logoData = null;
+const getLogoData = async () => {
+  if (_logoData) return _logoData;
+  try {
+    const img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = '/logo.png'; });
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth; c.height = img.naturalHeight;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    ctx.globalCompositeOperation = 'source-in'; // fill the logo shape with ink
+    ctx.fillStyle = '#1b1b1f';
+    ctx.fillRect(0, 0, c.width, c.height);
+    _logoData = c.toDataURL('image/png');
+  } catch { _logoData = null; }
+  return _logoData;
+};
+
+/* Clean, aesthetic NDR/RTO report PDF with the GRLHOOD logo. */
+const downloadReportPdf = async (orders) => {
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const W = doc.internal.pageSize.getWidth();
+  const pink = [194, 73, 127];
+  const ink = [27, 27, 31];
+  const grey = [151, 148, 158];
+
+  // Logo (centered, dark version on white)
+  const logo = await getLogoData();
+  if (logo) {
+    try {
+      const props = doc.getImageProperties(logo);
+      const w = 120, h = (props.height / props.width) * w;
+      doc.addImage(logo, 'PNG', (W - w) / 2, 42, w, h);
+    } catch {}
+  }
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...ink);
+  doc.text('NDR / RTO Report', W / 2, 118, { align: 'center' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(...grey);
+  const when = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  doc.text(`${orders.length} order${orders.length !== 1 ? 's' : ''} · Generated ${when} IST`, W / 2, 134, { align: 'center' });
+
+  const fmtd = (v) => { if (!v) return '—'; const d = parseDate(v); return d.getTime() === 0 ? String(v) : d.toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); };
+  const rows = orders.map(o => {
+    const isRto = o.bucket === 'rto';
+    return [
+      o.orderNumber || '—',
+      o.awb || '—',
+      isRto ? 'RTO' : 'NDR',
+      o.ndrReason || o.ndrRemark || '—',
+      fmtd(isRto ? (o.rtoInitiatedAt || o.statusDateTime) : (o.ndrDate || o.statusDateTime)),
+      String(o.attemptCount || 0),
+    ];
+  });
+
+  autoTable(doc, {
+    startY: 158,
+    head: [['Order ID', 'AWB', 'Type', 'Reason', 'Date', 'Attempts']],
+    body: rows,
+    theme: 'plain',
+    styles: { font: 'helvetica', fontSize: 9, cellPadding: 7, textColor: ink, lineColor: [236, 234, 239], lineWidth: 0.5 },
+    headStyles: { fontStyle: 'bold', fontSize: 8.5, textColor: [255, 255, 255], fillColor: pink, cellPadding: 8 },
+    alternateRowStyles: { fillColor: [250, 249, 251] },
+    columnStyles: {
+      0: { fontStyle: 'bold', cellWidth: 66 },
+      1: { cellWidth: 92, font: 'courier', fontSize: 8.5 },
+      2: { cellWidth: 40, halign: 'center', fontStyle: 'bold' },
+      3: { cellWidth: 'auto' },
+      4: { cellWidth: 82 },
+      5: { cellWidth: 52, halign: 'center' },
+    },
+    margin: { left: 36, right: 36 },
+    didParseCell: (d) => { if (d.section === 'body' && d.column.index === 2) d.cell.styles.textColor = pink; },
+    didDrawPage: () => {
+      const h = doc.internal.pageSize.getHeight();
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(...grey);
+      doc.text('GRLHOOD® — NDR Management', 36, h - 22);
+      doc.text('grlhood-dashboard.vercel.app', W - 36, h - 22, { align: 'right' });
+    },
+  });
+
+  doc.save(`GRLHOOD NDR-RTO Report ${new Date().toISOString().slice(0, 10)}.pdf`);
+};
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 const API_URL = API_BASE ? `${API_BASE}/api` : '/api';
@@ -139,7 +225,7 @@ const fadeUp = {
 };
 
 /* ═══════════ Card v2 — zoned, not stacked. Desktop: identity rail | info | actions ═══════════ */
-const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, onWaReport, onToast, onSaveNote, onOpenChat, onUploadProof }) {
+const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, onWaReport, onToast, onSaveNote, onOpenChat, onUploadProof, selected, onToggleSelect }) {
   const isNdr = o.bucket === 'ndr';
   const isRto = o.bucket === 'rto';
   const [open, setOpen] = useState(false);
@@ -176,9 +262,16 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
       <div className="sm:grid sm:grid-cols-[190px_1fr] lg:grid-cols-[210px_1fr]">
 
         {/* ═ ZONE A · identity rail (left on desktop, top on mobile) ═ */}
-        <div className="p-6 sm:border-r flex sm:flex-col items-start justify-between sm:justify-start gap-2 sm:gap-3"
+        <div className="p-6 sm:border-r flex sm:flex-col items-start justify-between sm:justify-start gap-2 sm:gap-3 relative"
           style={{ borderColor: 'var(--line-2)', background: 'var(--card-2)' }}>
-          <div>
+          {/* selection checkbox */}
+          <button onClick={() => onToggleSelect(o)}
+            className="absolute top-4 right-4 sm:right-4 rounded-full flex items-center justify-center transition-all"
+            style={{ width: 22, height: 22, background: selected ? 'var(--accent-deep)' : 'transparent', border: selected ? 'none' : '1.5px solid var(--text-3)' }}
+            title={selected ? 'Deselect' : 'Select'}>
+            {selected && <Check size={13} color="#fff" strokeWidth={3} />}
+          </button>
+          <div className="pr-7 sm:pr-0">
             <h3 className="t-display text-[20px] leading-none" style={{ color: 'var(--text)' }}>{o.orderNumber}</h3>
             <p className="t-sub text-[11px] mt-2" style={{ color: 'var(--text-2)' }}>{o.courier || '—'}</p>
           </div>
@@ -680,7 +773,14 @@ export default function NDRDashboard() {
   }, [dateFiltered, board, actions]);
 
   const [chatOrder, setChatOrder] = useState(null); // order whose proof is open in the viewer
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [pdfBusy, setPdfBusy] = useState(false);
   const handleToast = useCallback((t) => setToast(t), []);
+  const handleToggleSelect = useCallback((o) => {
+    setSelectedIds(prev => { const n = new Set(prev); n.has(o.shopifyId) ? n.delete(o.shopifyId) : n.add(o.shopifyId); return n; });
+  }, []);
+  // clear selection when leaving a tab
+  useEffect(() => { setSelectedIds(new Set()); }, [tab]);
   const handleOpenChat = useCallback((o) => setChatOrder(o), []);
   const handleUploadProof = useCallback(async (o, file) => {
     if (file.size > 4 * 1024 * 1024) { setToast({ msg: 'Image too large (max 4MB)', err: true }); return; }
@@ -741,13 +841,36 @@ export default function NDRDashboard() {
   const renderCards = (list) => (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
       {list.slice(0, pageSize).map((o, i) => (
-        <BoardCard key={o.shopifyId} o={o} i={i} actionEntry={actions[o.awb]} onAction={handleAction} onWaReport={handleWaReport} onToast={handleToast} onSaveNote={handleSaveNote} onOpenChat={handleOpenChat} onUploadProof={handleUploadProof} />
+        <BoardCard key={o.shopifyId} o={o} i={i} actionEntry={actions[o.awb]} onAction={handleAction} onWaReport={handleWaReport} onToast={handleToast} onSaveNote={handleSaveNote} onOpenChat={handleOpenChat} onUploadProof={handleUploadProof} selected={selectedIds.has(o.shopifyId)} onToggleSelect={handleToggleSelect} />
       ))}
     </div>
   );
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg)', color: 'var(--text)' }}>
+      {/* Floating top-left download button — appears when orders are selected */}
+      <AnimatePresence>
+        {selectedIds.size > 0 && (
+          <motion.div initial={{ opacity: 0, y: -10, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -10, scale: 0.95 }}
+            className="fixed left-4 sm:left-6 z-[130] flex items-center gap-2"
+            style={{ top: 'max(14px, env(safe-area-inset-top, 0px) + 8px)' }}>
+            <button onClick={async () => {
+              setPdfBusy(true);
+              const chosen = (board?.orders || []).filter(o => selectedIds.has(o.shopifyId));
+              try { await downloadReportPdf(chosen); setToast({ msg: `PDF with ${chosen.length} orders downloaded` }); }
+              catch (e) { setToast({ msg: 'PDF failed: ' + e.message, err: true }); }
+              finally { setPdfBusy(false); }
+            }} disabled={pdfBusy} className="tbtn accent big" style={{ boxShadow: 'var(--shadow)' }}>
+              {pdfBusy ? <RefreshCw size={14} className="animate-spin" /> : <FileText size={14} />}
+              Download PDF · {selectedIds.size}
+            </button>
+            <button onClick={() => setSelectedIds(new Set())} className="tbtn icon big" style={{ boxShadow: 'var(--shadow)' }} title="Clear selection">
+              <X size={15} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="max-w-[1160px] mx-auto px-6 sm:px-8 pb-44">
 
         {/* status + settings */}
