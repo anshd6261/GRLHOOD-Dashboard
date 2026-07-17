@@ -54,7 +54,7 @@ const sendNdrMessage = async (o) => {
     const phone = String(o.customer?.phone || '').replace(/\D/g, '').slice(-10);
     if (phone.length !== 10) return { sent: false, message: 'No valid customer phone' };
     try {
-        await post('/api/send', { recipient: `91${phone}`, message: buildNdrMessage(o), orderNumber: o.orderNumber });
+        await post('/api/send', { recipient: `91${phone}`, message: buildNdrMessage(o), orderNumber: o.orderNumber, customerName: o.customer?.name || '' });
         console.log(`[WA] NDR verification sent → ${o.orderNumber} (+91${phone})`);
         return { sent: true };
     } catch (e) {
