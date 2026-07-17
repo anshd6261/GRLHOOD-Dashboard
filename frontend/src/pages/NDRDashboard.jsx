@@ -109,7 +109,7 @@ const TABS = [
   { id: 'delivered', label: 'Delivered' },
   { id: 'ndr', label: 'NDR' },
   { id: 'rto', label: 'RTO' },
-  { id: 'action', label: 'Action' },
+  { id: 'requested', label: 'Action Requested' },
 ];
 
 const DATE_FILTERS = [
@@ -286,8 +286,10 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
               </p>
             )}
             {actionEntry && (
-              <span className="chip pink mt-2" style={{ height: 24 }}>
-                <span className="l">Re-attempt</span><span className="v">{fmtD(actionEntry.ts)}</span>
+              <span className="inline-flex items-center gap-1.5 mt-2 rounded-full px-2.5"
+                style={{ height: 24, background: 'var(--accent-strong)', color: 'var(--accent-text)' }}>
+                <CheckCircle size={11} />
+                <span className="text-[10px] font-bold">Re-attempt requested · {fmtD(actionEntry.ts)}</span>
               </span>
             )}
             <p className="t-display text-[21px] mt-2 tabular-nums leading-none" style={{ color: 'var(--text)' }}>₹{o.totalAmount}</p>
@@ -751,7 +753,9 @@ export default function NDRDashboard() {
     const filtered = source
       .filter(o => {
         if (tab === 'overview') return true;
-        if (tab === 'action') return o.bucket === 'ndr' || actions[o.awb];
+        if (tab === 'requested') return !!actions[o.awb];          // reattempt already requested
+        if (tab === 'ndr') return o.bucket === 'ndr' && !actions[o.awb]; // still need action
+        if (tab === 'rto') return o.bucket === 'rto' && !actions[o.awb];
         return o.bucket === tab;
       })
       .filter(o => !s ||
@@ -763,12 +767,13 @@ export default function NDRDashboard() {
   }, [dateFiltered, board, tab, actions, deferredSearch, sortDesc]);
 
   const counts = useMemo(() => {
-    const c = { overview: null, orders: 0, ready: 0, manifested: 0, transit: 0, delivered: 0, ndr: 0, rto: 0, action: 0 };
+    const c = { overview: null, orders: 0, ready: 0, manifested: 0, transit: 0, delivered: 0, ndr: 0, rto: 0, requested: 0 };
     dateFiltered.forEach(o => {
+      const requested = !!actions[o.awb];
+      if (requested) { c.requested++; return; } // requested orders live only in the Requested tab
       if (c[o.bucket] !== undefined && !ALWAYS_ALL.includes(o.bucket)) c[o.bucket]++;
-      if (o.bucket === 'ndr' || actions[o.awb]) c.action++;
     });
-    (board?.orders || []).forEach(o => { if (ALWAYS_ALL.includes(o.bucket)) c[o.bucket]++; });
+    (board?.orders || []).forEach(o => { if (ALWAYS_ALL.includes(o.bucket) && !actions[o.awb]) c[o.bucket]++; });
     return c;
   }, [dateFiltered, board, actions]);
 
@@ -835,8 +840,6 @@ export default function NDRDashboard() {
     }
   }, []);
 
-  const actionRequired = tab === 'action' ? visible.filter(o => o.bucket === 'ndr' && !actions[o.awb]) : [];
-  const actionRequested = tab === 'action' ? visible.filter(o => actions[o.awb]) : [];
   const viewKey = `${tab}|${dateFilter}|${customRange[0]?.toDateString?.() || ''}|${customRange[1]?.toDateString?.() || ''}|${sortDesc}`;
   const renderCards = (list) => (
     <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
@@ -921,26 +924,24 @@ export default function NDRDashboard() {
           <motion.div key={viewKey} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.13 } }}>
             {tab === 'overview' && board && <Overview orders={dateFiltered} onJump={setTab} />}
 
-            {tab === 'action' && board && (
-              <div className="space-y-10">
-                <section>
-                  <div className="flex items-baseline gap-2.5 mb-4">
-                    <h3 className="t-display text-[15px]" style={{ color: 'var(--accent-deep)' }}>Action Required</h3>
-                    <span className="t-sub text-[11px]" style={{ color: 'var(--text-2)' }}>{actionRequired.length} NDRs with no re-attempt yet</span>
+            {tab === 'requested' && board && (
+              <>
+                {!loading && visible.length === 0 && (
+                  <div className="flex flex-col items-center py-24" style={{ color: 'var(--text-3)' }}>
+                    <CheckCircle size={38} />
+                    <p className="mt-4 t-head text-[13px]" style={{ color: 'var(--text-2)' }}>No re-attempts requested yet</p>
                   </div>
-                  {actionRequired.length ? renderCards(actionRequired) : <p className="t-sub text-[13px] py-4" style={{ color: 'var(--text-2)' }}>All NDRs actioned 🎉</p>}
-                </section>
-                <section>
-                  <div className="flex items-baseline gap-2.5 mb-4">
-                    <h3 className="t-display text-[15px]" style={{ color: 'var(--text)' }}>Action Requested</h3>
-                    <span className="t-sub text-[11px]" style={{ color: 'var(--text-2)' }}>{actionRequested.length} waiting on courier</span>
-                  </div>
-                  {actionRequested.length ? renderCards(actionRequested) : <p className="t-sub text-[13px] py-4" style={{ color: 'var(--text-2)' }}>No pending requests</p>}
-                </section>
-              </div>
+                )}
+                {renderCards(visible)}
+                {visible.length > pageSize && (
+                  <button onClick={() => setPageSize(p => p + PAGE_SIZE)} className="tbtn w-full mt-6 !h-12">
+                    Show {Math.min(PAGE_SIZE, visible.length - pageSize)} more of {visible.length - pageSize}
+                  </button>
+                )}
+              </>
             )}
 
-            {tab !== 'overview' && tab !== 'action' && (
+            {tab !== 'overview' && tab !== 'requested' && (
               <>
                 {!loading && visible.length === 0 && (
                   <div className="flex flex-col items-center py-24" style={{ color: 'var(--text-3)' }}>
