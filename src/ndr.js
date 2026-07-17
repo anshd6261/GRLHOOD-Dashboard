@@ -56,6 +56,7 @@ let awbOverrides = {};
 let notesStore = {};             // orderNumber -> { note, author, ts }
 let proofsStore = {};            // orderNumber -> { name, ts, by }  (image lives in Dropbox forever)
 let waSentStore = {};            // orderNumber -> ts of auto WhatsApp verification
+let actionsStore = {};           // awb -> { action, ts, orderNumber, by }  (reattempt/rto requested)
 let proofsLoaded = false;        // orderNumber (no '#') -> awb, for shipments created
                               // standalone (before store-linking) whose AWB never
                               // backfilled onto the synced store order
@@ -71,6 +72,7 @@ try {
     awbOverrides = disk.awbOverrides || {};
     notesStore = disk.notesStore || {};
     waSentStore = disk.waSentStore || {};
+    actionsStore = disk.actionsStore || {};
     console.log(`[NDR] warm cache loaded: ${Object.keys(storeDetailsCache).length} orders, ${Object.keys(trackingCache).length} trackings`);
 } catch { /* cold start */ }
 
@@ -78,7 +80,7 @@ let lastSave = 0;
 const persistCaches = () => {
     if (Date.now() - lastSave < 30000) return;
     lastSave = Date.now();
-    try { fs.writeFileSync(CACHE_FILE, JSON.stringify({ storeDetailsCache, trackingCache, awbOverrides, notesStore, waSentStore })); } catch { /* read-only fs */ }
+    try { fs.writeFileSync(CACHE_FILE, JSON.stringify({ storeDetailsCache, trackingCache, awbOverrides, notesStore, waSentStore, actionsStore })); } catch { /* read-only fs */ }
 };
 
 /**
@@ -231,6 +233,7 @@ const buildBoard = async (days = WINDOW_DAYS, refresh = false) => {
             deliveredAt: deliveredAt || (bucket === 'delivered' ? last.status_date_time || '' : ''),
             timeline,
             note: notesStore[String(d.order_number || '').replace('#', '').trim()] || null,
+            requested: (awb && actionsStore[awb]) || null,
             proof: !!proofsStore[String(d.order_number || '').replace('#', '').trim()],
             waSentAt: waSentStore[String(d.order_number || '').replace('#', '').trim()] || '',
             attemptCount: parseInt(t?.ofd_count, 10) || 0,
@@ -374,6 +377,15 @@ const getProof = async (orderNumber) => {
     return Buffer.from(r.data);
 };
 
+const recordAction = (awb, action, orderNumber, by) => {
+    const key = String(awb || '').trim();
+    if (!key) return null;
+    actionsStore[key] = { action: action || 'reattempt', ts: new Date().toISOString(), orderNumber: orderNumber || '', by: by || '' };
+    if (boardCache.board) boardCache = { ts: 0, board: boardCache.board };
+    persistCaches();
+    return actionsStore[key];
+};
+
 const saveNote = (orderNumber, note, author) => {
     const key = String(orderNumber || '').replace('#', '').trim();
     if (!key) return null;
@@ -383,4 +395,4 @@ const saveNote = (orderNumber, note, author) => {
     return notesStore[key];
 };
 
-module.exports = { buildBoard, takeAction, bucketFor, registerAwbs, saveNote, saveProof, getProof };
+module.exports = { buildBoard, takeAction, bucketFor, registerAwbs, saveNote, saveProof, getProof, recordAction };
