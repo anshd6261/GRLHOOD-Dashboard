@@ -684,7 +684,7 @@ function App() {
   if (!user) return <Login />;
 
   const isSupplier = user?.role === 'supplier';
-  const isNdrUser = user?.role === 'ndr';
+  const isNdrUser = user?.role === 'ndr' || user?.role === 'ndr-agent';
 
   // NDR-management login: themed shell, sticky shrinking logo, ONLY the board
   if (isNdrUser) {
