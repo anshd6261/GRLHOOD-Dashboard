@@ -21,6 +21,38 @@ import Login from './Login';
 import SEODashboard from './pages/SEODashboard';
 import FulfillmentHistory from './pages/FulfillmentHistory';
 import NDRDashboard from './pages/NDRDashboard';
+import LiquidDock from './components/LiquidDock';
+
+/* Sticky centered logo that shrinks on scroll, over an iPhone-notch style
+   progressive blur + soft exposure dip — no solid header bar. */
+function StickyLogoHeader({ onLogout }) {
+  const [shrunk, setShrunk] = useState(false);
+  useEffect(() => {
+    let raf = 0;
+    const onScroll = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => setShrunk(window.scrollY > 26));
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => { window.removeEventListener('scroll', onScroll); cancelAnimationFrame(raf); };
+  }, []);
+  return (
+    <>
+      <div className="np-top-blur" />
+      <div className="np-top-dim" />
+      <div className="np-logo-wrap" style={{ '--np-logo-h': shrunk ? '32px' : '58px' }}>
+        <img src="/logo.png" alt="GRLHOOD" />
+      </div>
+      {onLogout && (
+        <button onClick={onLogout} title="Logout"
+          className="fixed top-4 right-4 z-[45] np-btn !p-2.5"
+          style={{ fontFamily: 'inherit' }}>
+          <LogOut size={14} />
+        </button>
+      )}
+    </>
+  );
+}
 import { useAuth } from './AuthContext';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
@@ -215,6 +247,16 @@ function App() {
       hasInitialized.current = true;
     }
   }, [activeTab, user]);
+
+  // Preload the NDR board in the background so the NDR tab opens instantly
+  const ndrPrefetched = useRef(false);
+  useEffect(() => {
+    if (!user || ndrPrefetched.current) return;
+    ndrPrefetched.current = true;
+    axios.get(`${API_URL}/ndr/board?days=30`, { timeout: 240000 })
+      .then(r => { try { localStorage.setItem('ndr_board_cache', JSON.stringify(r.data)); } catch {} })
+      .catch(() => {});
+  }, [user]);
 
   // Date Picker
   const [dateRange, setDateRange] = useState([
@@ -637,24 +679,14 @@ function App() {
   const isSupplier = user?.role === 'supplier';
   const isNdrUser = user?.role === 'ndr';
 
-  // NDR-management login: ONLY the NDR board, nothing else
+  // NDR-management login: light-mode shell, sticky shrinking logo, ONLY the board
   if (isNdrUser) {
     return (
-      <div className="min-h-screen relative font-sans text-[#f5f5f5]">
-        <DottedBackground />
-        <GlowBlobs />
-        <div className="relative z-10 flex flex-col min-h-screen">
-          <header className="sticky top-0 z-50 glass-topbar px-5 lg:px-8 py-3">
-            <div className="max-w-[1200px] mx-auto flex items-center justify-between gap-4">
-              <img src="/logo.png" alt="GRLHOOD" className="h-7 object-contain logo-tint opacity-90" />
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-[rgba(245,245,245,0.35)]">NDR Management</span>
-              <button onClick={logout} className="glass-icon-btn hover:text-[#ffb6c1]" title="Logout"><LogOut size={15} /></button>
-            </div>
-          </header>
-          <main className="flex-1 px-5 lg:px-8 py-6 w-full">
-            <NDRDashboard />
-          </main>
-        </div>
+      <div className="ndr-light min-h-screen" style={{ background: '#fbfafb' }}>
+        <StickyLogoHeader onLogout={logout} />
+        <main className="pt-24 sm:pt-28">
+          <NDRDashboard />
+        </main>
       </div>
     );
   }
@@ -692,27 +724,10 @@ function App() {
               </div>
             </div>
 
-            {/* Center: Tabs */}
-            <nav className="absolute left-1/2 -translate-x-1/2 flex items-center gap-4">
-              {visibleTabs.map(tab => {
-                const Icon = tab.icon;
-                const isActive = activeTab === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`flex items-center gap-2 px-3 py-2 text-sm font-bold tracking-widest uppercase transition-all ${
-                      isActive
-                        ? 'text-[#e3cfd8] drop-shadow-[0_0_8px_rgba(227,207,216,0.3)]'
-                        : 'text-[rgba(245,245,245,0.3)] hover:text-[rgba(245,245,245,0.7)]'
-                    }`}
-                  >
-                    <Icon size={15} />
-                    <span className="hidden sm:inline">{tab.label}</span>
-                  </button>
-                );
-              })}
-            </nav>
+            {/* Center: brand mark (tab navigation lives in the bottom dock) */}
+            <div className="absolute left-1/2 -translate-x-1/2 pointer-events-none">
+              <img src="/logo.png" alt="GRLHOOD" className="h-6 object-contain logo-tint opacity-80" />
+            </div>
 
             {/* Right: Search + Refresh + Settings */}
             <div className="flex items-center gap-2 shrink-0">
@@ -834,7 +849,7 @@ function App() {
           </div>
         </header>
 
-        <main className="flex-1 px-5 lg:px-8 py-6 max-w-[1400px] mx-auto w-full">
+        <main className="flex-1 px-5 lg:px-8 py-6 pb-32 max-w-[1400px] mx-auto w-full">
 
           <AnimatePresence mode="wait">
 
@@ -1251,6 +1266,9 @@ function App() {
 
           </AnimatePresence>
         </main>
+
+        {/* Liquid-glass bottom dock — full-access tab navigation */}
+        <LiquidDock tabs={visibleTabs} active={activeTab} onChange={setActiveTab} />
       </div>
 
       {/* ═══ MODALS & OVERLAYS ═══ */}
