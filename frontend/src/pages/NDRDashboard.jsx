@@ -293,6 +293,14 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
               style={{ color: isNdr || isRto ? 'var(--accent-deep)' : 'var(--text)' }}>
               {statusText}
             </p>
+            {/* Recovered: had an NDR, now delivered — happy tag */}
+            {o.bucket === 'delivered' && hadNdr(o) && (
+              <span className="inline-flex items-center gap-1 mt-1.5 rounded-full px-2 py-0.5"
+                style={{ background: 'rgba(52,211,153,0.15)' }}>
+                <CheckCircle size={10} style={{ color: '#059669' }} />
+                <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: '#059669' }}>Recovered · Delivered 🎉</span>
+              </span>
+            )}
             {o.statusDateTime && o.bucket !== 'orders' && o.bucket !== 'ready' && (
               <p className="t-sub text-[10px] mt-1.5 leading-snug" style={{ color: 'var(--text-2)' }}>
                 {fmtDT(o.statusDateTime)}{o.scanLocation ? ` · ${o.scanLocation.split(',')[0]}` : ''}
@@ -588,13 +596,27 @@ function Overview({ allOrders, onJump }) {
     const reasons = {};
     everNdr.forEach(o => { const r = (o.ndrScanReason || o.ndrReason || o.ndrRemark || 'Unknown').slice(0, 60); reasons[r] = (reasons[r] || 0) + 1; });
 
+    const ndrRate = shipped.length ? (everNdr.length / shipped.length) * 100 : 0;
+    const rtoRate = closed ? (everRto.length / closed) * 100 : 0;
+
+    // ── Warning system (all from the FULL board, always current) ──
+    const days = (v) => (now - parseDate(v)) / 864e5;
+    const agingNdr = openNdr.filter(o => !o.requested && o.ndrDate && days(o.ndrDate) > 3);
+    const stuckPickup = allOrders.filter(o => ['ready', 'manifested'].includes(o.bucket) && days(o.orderDate) > 2);
+    const staleTransit = allOrders.filter(o => o.bucket === 'transit' && days(o.statusDateTime) > 7);
+    const warnings = [];
+    if (agingNdr.length) warnings.push({ level: 'high', text: `${agingNdr.length} NDR${agingNdr.length > 1 ? 's' : ''} open 3+ days with no re-attempt`, tab: 'ndr' });
+    if (stuckPickup.length) warnings.push({ level: 'high', text: `${stuckPickup.length} order${stuckPickup.length > 1 ? 's' : ''} not picked up for 2+ days`, tab: 'manifested' });
+    if (staleTransit.length) warnings.push({ level: 'mid', text: `${staleTransit.length} shipment${staleTransit.length > 1 ? 's' : ''} stuck in transit 7+ days`, tab: 'transit' });
+    if (rtoRate > 10) warnings.push({ level: 'high', text: `RTO rate is ${rtoRate.toFixed(1)}% — above the 10% threshold` });
+    if (ndrRate > 15) warnings.push({ level: 'mid', text: `NDR rate is ${ndrRate.toFixed(1)}% — running high` });
+
     return {
       shippedCount: shipped.length,
       delivered, transit, ready, manifested,
       rtoCount: everRto.length, ndrCount: everNdr.length,
-      openNdr, newNdr48, newRto48,
-      ndrRate: shipped.length ? (everNdr.length / shipped.length) * 100 : 0,
-      rtoRate: closed ? (everRto.length / closed) * 100 : 0,
+      openNdr, newNdr48, newRto48, warnings,
+      ndrRate, rtoRate,
       couriers: Object.values(couriers).sort((a, b) => b.shipped - a.shipped),
       reasons: Object.entries(reasons).sort((a, b) => b[1] - a[1]),
     };
@@ -617,6 +639,31 @@ function Overview({ allOrders, onJump }) {
 
   return (
     <div className="space-y-5">
+      {/* ═ Warnings ═ */}
+      {stats.warnings.length > 0 && (
+        <motion.section variants={fadeUp} initial="hidden" animate="visible" exit="exit" className="tcard overflow-hidden"
+          style={{ borderLeft: '4px solid #e11d48' }}>
+          <div className="p-5 sm:p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <AlertTriangle size={15} style={{ color: '#e11d48' }} />
+              <h3 className="t-display text-[15px]" style={{ color: 'var(--text)' }}>Needs Attention</h3>
+              <span className="t-sub text-[11px]" style={{ color: 'var(--text-2)' }}>{stats.warnings.length} warning{stats.warnings.length > 1 ? 's' : ''}</span>
+            </div>
+            <div className="space-y-2">
+              {stats.warnings.map((w, wi) => (
+                <button key={wi} onClick={() => w.tab && onJump(w.tab)} disabled={!w.tab}
+                  className="w-full flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-left border-none cursor-pointer disabled:cursor-default"
+                  style={{ background: w.level === 'high' ? 'rgba(225,29,72,0.08)' : 'rgba(245,158,11,0.1)' }}>
+                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: w.level === 'high' ? '#e11d48' : '#f59e0b' }} />
+                  <span className="t-head text-[12px] flex-1" style={{ color: w.level === 'high' ? '#e11d48' : '#b45309' }}>{w.text}</span>
+                  {w.tab && <ChevronDown size={13} style={{ color: 'var(--text-3)', transform: 'rotate(-90deg)' }} />}
+                </button>
+              ))}
+            </div>
+          </div>
+        </motion.section>
+      )}
+
       <motion.section custom={0} variants={fadeUp} initial="hidden" animate="visible" exit="exit" className="tcard p-6 sm:p-7">
         <div className="flex items-center gap-2 mb-5">
           <Zap size={15} style={{ color: 'var(--accent-deep)' }} />
@@ -973,9 +1020,12 @@ export default function NDRDashboard() {
     const filtered = source
       .filter(o => {
         if (tab === 'overview') return true;
-        if (tab === 'requested') return !!o.requested;                    // reattempt already requested
-        if (tab === 'ndr') return o.bucket === 'ndr' && !o.requested;     // still need action
-        if (tab === 'rto') return o.bucket === 'rto' && !o.requested;
+        if (tab === 'requested') return !!o.requested;   // reattempt already requested
+        // NDR tab: EVERY order that ever had an NDR in this timeline — current
+        // NDRs + ones since delivered (happy tag) + ones now RTO. Requested
+        // ones stay here too (with a pill) and also appear in Action Requested.
+        if (tab === 'ndr') return hadNdr(o);
+        return o.bucket === tab;
         return o.bucket === tab;
       })
       .filter(o => !s ||
@@ -989,11 +1039,11 @@ export default function NDRDashboard() {
   const counts = useMemo(() => {
     const c = { overview: null, orders: 0, ready: 0, manifested: 0, transit: 0, delivered: 0, ndr: 0, rto: 0, requested: 0 };
     dateFiltered.forEach(o => {
-      const requested = !!o.requested;
-      if (requested) { c.requested++; return; } // requested orders live only in the Requested tab
-      if (c[o.bucket] !== undefined && !ALWAYS_ALL.includes(o.bucket)) c[o.bucket]++;
+      if (o.requested) c.requested++;                    // Action Requested tab
+      if (hadNdr(o)) c.ndr++;                             // NDR tab = every order that ever had an NDR
+      if (o.bucket !== 'ndr' && c[o.bucket] !== undefined && !ALWAYS_ALL.includes(o.bucket)) c[o.bucket]++;
     });
-    (board?.orders || []).forEach(o => { if (ALWAYS_ALL.includes(o.bucket) && !o.requested) c[o.bucket]++; });
+    (board?.orders || []).forEach(o => { if (ALWAYS_ALL.includes(o.bucket)) c[o.bucket]++; });
     return c;
   }, [dateFiltered, board]);
 
