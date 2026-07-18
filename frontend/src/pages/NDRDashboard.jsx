@@ -295,10 +295,10 @@ const BoardCard = React.memo(function BoardCard({ o, i, actionEntry, onAction, o
             </p>
             {/* Recovered: had an NDR, now delivered — happy tag */}
             {o.bucket === 'delivered' && hadNdr(o) && (
-              <span className="inline-flex items-center gap-1 mt-1.5 rounded-full px-2 py-0.5"
+              <span className="inline-flex items-center gap-1 mt-1.5 rounded-full px-2 py-0.5 whitespace-nowrap"
                 style={{ background: 'rgba(52,211,153,0.15)' }}>
-                <CheckCircle size={10} style={{ color: '#059669' }} />
-                <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: '#059669' }}>Recovered · Delivered 🎉</span>
+                <CheckCircle size={10} className="shrink-0" style={{ color: '#059669' }} />
+                <span className="text-[9px] font-bold uppercase tracking-wider whitespace-nowrap" style={{ color: '#059669' }}>Recovered · Delivered</span>
               </span>
             )}
             {o.statusDateTime && o.bucket !== 'orders' && o.bucket !== 'ready' && (
