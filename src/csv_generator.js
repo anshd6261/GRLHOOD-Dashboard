@@ -4,6 +4,36 @@ const path = require('path');
 
 console.log('[CSV Module] Loaded Version 2.0 (Dual Export)');
 
+// Authoritative NBE (NextBigE) supplier cost per unit, ex-GST — verified to the rupee
+// against the real supplier invoices (13 Jul, 9 Jul, 24 Jun 2026). The Financial /
+// Calculation CSV is priced from this so it reconciles exactly to the NBE invoice,
+// regardless of whether Shopify's per-variant "Cost per item" is set.
+const NBE_UNIT_COST = {
+    'Premium Tough Case': 235,
+    'Premium Hard Case': 135,
+    'Glass Case': 160,
+    'Silicone Clear Case': 115,
+    'MagSafe Armoured': 350,   // billed as "Premium Tough Case With Magsafe" on the NBE invoice
+    'GripPad': 65,             // billed as "Suction Sticky Grip" on the NBE invoice
+};
+
+// Resolve a row's unit cost: exact category match first, then a few known aliases,
+// finally fall back to whatever cost the row already carried (e.g. Shopify unitCost).
+const resolveUnitCost = (category, fallback) => {
+    const fb = (fallback == null || isNaN(parseFloat(fallback))) ? 0 : parseFloat(fallback);
+    if (!category) return fb;
+    const key = String(category).trim();
+    if (NBE_UNIT_COST[key] != null) return NBE_UNIT_COST[key];
+    const l = key.toLowerCase();
+    if (l.includes('magsafe') || l.includes('mag safe')) return NBE_UNIT_COST['MagSafe Armoured'];
+    if (l.includes('grip')) return NBE_UNIT_COST['GripPad'];
+    if (l.includes('glass')) return NBE_UNIT_COST['Glass Case'];
+    if (l.includes('clear') || l.includes('silicone')) return NBE_UNIT_COST['Silicone Clear Case'];
+    if (l.includes('hard') || l.includes('slim snap')) return NBE_UNIT_COST['Premium Hard Case'];
+    if (l.includes('tough') || l.includes('double armoured')) return NBE_UNIT_COST['Premium Tough Case'];
+    return fb;
+};
+
 const getFormattedDate = () => {
     // Use IST (UTC+5:30) so folder names match Indian business day
     const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
@@ -55,8 +85,9 @@ const generateFinancialCSV = (inputRows, gstRate = 18) => {
         }
         categoryCounts[cat]++;
 
-        const cogsVal = parseFloat(row.cogs);
-        row.cogs = isNaN(cogsVal) ? 0 : cogsVal;
+        // Price from the authoritative NBE rate card so the calc CSV matches the supplier
+        // invoice; fall back to the row's own cogs only for categories not in the map.
+        row.cogs = resolveUnitCost(row.category, row.cogs);
         totalCOGS += row.cogs;
     });
 
