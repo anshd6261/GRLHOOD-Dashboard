@@ -1197,9 +1197,9 @@ export default function NDRDashboard() {
             {tab === 'requested' && board && (
               <>
                 {!loading && visible.length === 0 && (
-                  <div className="flex flex-col items-center py-24" style={{ color: 'var(--text-3)' }}>
-                    <CheckCircle size={38} />
-                    <p className="mt-4 t-head text-[13px]" style={{ color: 'var(--text-2)' }}>No re-attempts requested yet</p>
+                  <div className="flex flex-col items-center py-20" style={{ color: 'var(--text-3)' }}>
+                    <CheckCircle size={24} />
+                    <p className="mt-3 t-sub text-[11px]" style={{ color: 'var(--text-2)' }}>No re-attempts requested yet</p>
                   </div>
                 )}
                 {renderCards(visible)}
@@ -1214,9 +1214,9 @@ export default function NDRDashboard() {
             {tab !== 'overview' && tab !== 'requested' && (
               <>
                 {!loading && visible.length === 0 && (
-                  <div className="flex flex-col items-center py-24" style={{ color: 'var(--text-3)' }}>
-                    <Package size={38} />
-                    <p className="mt-4 t-head text-[13px]" style={{ color: 'var(--text-2)' }}>Nothing here for this period</p>
+                  <div className="flex flex-col items-center py-20" style={{ color: 'var(--text-3)' }}>
+                    <Package size={24} />
+                    <p className="mt-3 t-sub text-[11px]" style={{ color: 'var(--text-2)' }}>Nothing here for this period</p>
                   </div>
                 )}
                 {renderCards(visible)}
