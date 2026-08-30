@@ -3,6 +3,18 @@
  * Higher risk = higher percentage. Sense's model_probability is confidence in its prediction,
  * so for "low" risk orders we invert it (high confidence in low risk → low RTO %).
  */
+
+// FULFILMENT CUTOFF — orders placed before #GRL15853 are handled outside this dashboard
+// (already fulfilled via the old process). They must never enter the order list, so they
+// can never be put on a supplier/financial CSV or shipped. The value is the numeric part
+// of the order NAME (#GRL15853 -> 15853). Legacy plain-numbered orders (#5333 -> 5333) are
+// all far below this, so they are excluded too. Bump this to move the cutoff forward.
+const MIN_FULFILL_ORDER_NUM = 15853;
+const orderNameNum = (name) => {
+    const digits = String(name || '').replace(/\D/g, '');
+    return digits ? parseInt(digits, 10) : NaN;
+};
+
 const mapRiskLevel = (risk) => {
     const r = (risk || '').toLowerCase();
     if (r === 'high' || r === 'very high') return 'High';
@@ -54,6 +66,11 @@ const processOrders = (orders, gstRate = 18, rtoMap = {}, senseRiskMap = {}) => 
 
     for (const order of orders) {
         if (order.cancelledAt) continue; // Skip completely cancelled orders
+
+        // Ignore anything placed before the fulfilment cutoff (#GRL15853). Unparseable
+        // names are kept so a malformed order is never silently dropped.
+        const nameNum = orderNameNum(order.name);
+        if (!isNaN(nameNum) && nameNum < MIN_FULFILL_ORDER_NUM) continue;
 
         const orderId = order.name; // Keep # for Shiprocket lookup since SR channel_order_id includes it
         const displayOrderId = order.name.replace('#', '');
